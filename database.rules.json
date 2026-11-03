@@ -1,0 +1,72 @@
+{
+  "rules": {
+    "cakeshop": {
+      "links": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        }
+      },
+      "saves": {
+        "$sid": {
+          ".read": "auth != null && data.child('owners').child(auth.uid).exists()",
+          ".write": "auth != null && (data.child('owners').child(auth.uid).exists() || (!data.exists() && newData.child('owners').child(auth.uid).val() === 'origin'))",
+          "owners": {
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && newData.isString() && root.child('cakeshop/transfer').child(newData.val()).child('saveId').val() === $sid && root.child('cakeshop/transfer').child(newData.val()).child('expiresAt').val() > now"
+            }
+          },
+          "rev": { ".validate": "newData.isNumber()" },
+          "updatedAt": { ".validate": "newData.isNumber()" }
+        }
+      },
+      "transfer": {
+        "$code": {
+          ".read": "auth != null",
+          ".write": "auth != null && (!data.exists() || data.child('expiresAt').val() < now) && newData.exists() && root.child('cakeshop/saves').child(newData.child('saveId').val()).child('owners').child(auth.uid).exists()",
+          ".validate": "$code.length === 12 && newData.hasChildren(['saveId', 'by', 'createdAt', 'expiresAt']) && newData.child('by').val() === auth.uid && newData.child('expiresAt').isNumber() && newData.child('expiresAt').val() <= now + 259500000"
+        }
+      },
+      "rooms": {
+        "$room": {
+          ".read": "auth != null",
+          "meta": {
+            ".write": "auth != null && (!data.exists() || root.child('cakeshop/rooms').child($room).child('devices').child(auth.uid).exists())",
+            "name": { ".validate": "newData.isString() && newData.val().length <= 40" }
+          },
+          "members": {
+            "$pid": {
+              ".write": "auth != null && root.child('cakeshop/saves').child($pid).child('owners').child(auth.uid).exists()",
+              "name": { ".validate": "newData.isString() && newData.val().length <= 24" }
+            }
+          },
+          "devices": {
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid"
+            }
+          },
+          "state": {
+            ".write": "auth != null && (!data.exists() || root.child('cakeshop/rooms').child($room).child('meta/host').val() === auth.uid)"
+          },
+          "actions": {
+            "$aid": {
+              ".write": "auth != null && root.child('cakeshop/rooms').child($room).child('devices').child(auth.uid).exists()"
+            }
+          },
+          "pos": {
+            "$pid": {
+              ".write": "auth != null && root.child('cakeshop/rooms').child($room).child('devices').child(auth.uid).child('pid').val() === $pid"
+            }
+          },
+          "chat": {
+            "$cid": {
+              ".write": "auth != null && root.child('cakeshop/rooms').child($room).child('devices').child(auth.uid).exists()",
+              "text": { ".validate": "newData.isString() && newData.val().length <= 200" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
