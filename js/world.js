@@ -48,7 +48,10 @@
     L.work = [wx0, wx1, z2];
     L.spots = []; for (let r = 0; r < 2; r++) for (let k = 0; k < 6; k++) L.spots.push([wx0 + 0.35 + (k * (wx1 - wx0 - 0.7)) / 5, 0.915, z2 - 0.2 + r * 0.4]);
     L.backDoor = [-RX, -RZ + 1.55];
-    L.deliv = []; for (let j = 0; j < D.KITCHEN.deliv; j++) L.deliv.push([-RX + 0.6 + (j % 2) * 0.62, 0.12, -RZ + 2.45 + Math.floor(j / 2) * 0.62]);
+    // 仕入れの段ボールは裏口の外（路地）にトラックが置いていく
+    L.deliv = []; for (let j = 0; j < D.KITCHEN.deliv; j++) L.deliv.push([-RX - 0.55 - (j % 2) * 0.64, 0.0, -RZ + 1.55 + 1.0 + Math.floor(j / 2) * 0.64]);
+    L.truck = { x: -RX - 3.45, z: -RZ + 1.55 + 2.3 };
+    L.alley = [-RX - 5.6, -RZ - 3.0];
     L.shelf = [-RX + 0.36, -RZ + 6.1];
     L.trash = [[-RX + 0.5, -RZ + 7.6], [RX - 0.55, -RZ + 6.4]];
     L.cases = []; for (let i = 0; i < 8; i++) L.cases.push([CASE_X0 + i, 0.92, CASE_Z]);
@@ -100,9 +103,10 @@
     W.T = null; W.boardTex = null; W.signTex = null; W.openTex = null; W.blobTex = null; W.blobMesh = null; for (const k in meshCache) delete meshCache[k];
     let e;
     try { e = W.eng = new Engine(canvas, { aa: !ST.light }); } catch (err) { host.innerHTML = '<div class="banner" style="margin:20px">この端末では 3D 表示（WebGL）が使えません。</div>'; W.ready = false; return false; }
-    e.env.light = norm3([0.3, 0.8, 0.52]);
-    e.env.sky = [0.52, 0.52, 0.54]; e.env.ground = [0.28, 0.24, 0.21]; e.env.sun = [1.55, 1.46, 1.32];
-    e.env.fog = rgb('#D7DEE5'); e.env.fogR = [40, 95]; e.env.clear = rgb('#9EBBD6'); e.env.expo = 1.08;
+    // 天井からのやわらかい光（影は真下に落ちる）＋近くの照明4灯。映り込みは「床・壁・天井」
+    e.env.light = norm3([0.2, 1.0, 0.34]);
+    e.env.sky = [0.62, 0.59, 0.55]; e.env.ground = [0.36, 0.32, 0.28]; e.env.wall = [0.56, 0.53, 0.49]; e.env.sun = [1.38, 1.32, 1.22];
+    e.env.fog = rgb('#D7DEE5'); e.env.fogR = [40, 95]; e.env.clear = rgb('#9EBBD6'); e.env.expo = 1.06; e.env.lampR = 0.55;
     W.scene = new Node();
     W.labels = host.querySelector('#labels');
     W.me = { x: 0, z: 0, yaw: 0, pitch: -0.18, vx: 0, vz: 0, bob: 0, speed: 0 };
@@ -119,11 +123,13 @@
   W.destroy = function () { W.ready = false; W.unbind && W.unbind(); if (document.pointerLockElement) document.exitPointerLock(); if (W.eng) { const x = W.eng.gl.getExtension('WEBGL_lose_context'); if (x) x.loseContext(); } if (W.host) W.host.innerHTML = ''; };
   W.applyQuality = function () {
     const e = W.eng; if (!e) return;
-    e.scale = ST.light ? 0.55 : 1;
+    const coarse = G.matchMedia && matchMedia('(pointer: coarse)').matches;
+    e.scale = ST.light ? 0.55 : coarse ? 0.8 : 1; // スマホは仕上げ処理の分だけ少し解像度を下げて軽く
     e.shadows = !ST.light;
     e.outline = 0;
     e.smSize = ST.light ? 1024 : 2048;
-    e.shadowRadius = 9;
+    e.shadowRadius = 8;
+    e.post = !ST.light; e.softShadow = !ST.light; e.bloom = 0.5; e.vignette = 0.24; e.bloomThr = 0.82;
     W.nLights = ST.light ? 2 : 4;
     if (W.people) W.people.kids.forEach((n) => n.kids.forEach((k) => { if (k.isBlob) k.vis = !e.shadows; }));
     if (W.extras) W.extras.vis = !ST.light;
@@ -149,6 +155,8 @@
       plaster: e.texFromCanvas(MD.TX.plaster('#EFE8DD'), true), panel: e.texFromCanvas(MD.TX.panel(), true), asphalt: e.texFromCanvas(MD.TX.asphalt(), true),
       walk: e.texFromCanvas(MD.TX.sidewalk(), true), grass: e.texFromCanvas(MD.TX.grass(), true), facade: e.texFromCanvas(MD.TX.facade(), true),
       sky: e.texFromCanvas(MD.TX.sky(), false), ceil: e.texFromCanvas(MD.TX.plaster('#F6F3EE'), true),
+      subway: e.texFromCanvas(MD.TX.subway(), true), mat: e.texFromCanvas(MD.TX.mat(), true), clock: e.texFromCanvas(MD.TX.clock(), false),
+      art: [0, 1, 2].map((k) => e.texFromCanvas(MD.TX.art(k), false)),
     });
     const mats = {
       oak: { tex: T.oak, rough: 0.55 }, walnut: { tex: T.walnut, rough: 0.45 }, marble: { tex: T.marble, rough: 0.18 }, steel: { tex: T.steel, rough: 0.32, metal: 1 },
@@ -181,13 +189,30 @@
       W.walls[name] = n;
       return n;
     };
-    wall('back', [[0, WH / 2, -RZ - 0.1, RX * 2 + 0.4, WH, 0.2]], [[0, 0.5, -RZ + 0.03, RX * 2, 1.0, 0.06]]);
+    wall('back', [[0, WH / 2, -RZ - 0.1, RX * 2 + 0.4, WH, 0.2]], []);
     const bd = L.backDoor[1];
-    wall('left', [[-RX - 0.1, WH / 2, (bd - 0.6 - RZ) / 2, 0.2, WH, bd - 0.6 + RZ], [-RX - 0.1, WH / 2, (bd + 0.6 + RZ) / 2, 0.2, WH, RZ - bd - 0.6], [-RX - 0.1, 2.65, bd, 0.2, 1.1, 1.2]], [[-RX + 0.03, 0.5, (bd + 0.6 + RZ) / 2, 0.06, 1.0, RZ - bd - 0.6]]);
-    wall('right', [[RX + 0.1, WH / 2, 0, 0.2, WH, RZ * 2]], [[RX - 0.03, 0.5, 0, 0.06, 1.0, RZ * 2]]);
-    P('steel', Geo.box(0.06, 2.1, 1.1), [-RX - 0.05, 1.05, bd], 0, 1, rgb('#9AA0A6'));
-    P('steel', Geo.cyl(0.015, 0.015, 0.25, 8), [-RX + 0.02, 1.05, bd + 0.35], [PI / 2, 0, 0]);
-    block(-RX - 1, bd - 0.6, -RX, bd + 0.6);
+    wall('left', [[-RX - 0.1, WH / 2, (bd - 0.6 - RZ) / 2, 0.2, WH, bd - 0.6 + RZ], [-RX - 0.1, WH / 2, (bd + 0.6 + RZ) / 2, 0.2, WH, RZ - bd - 0.6], [-RX - 0.1, 2.65, bd, 0.2, 1.1, 1.2]], [[-RX + 0.03, 0.5, (KZ + RZ) / 2, 0.06, 1.0, RZ - KZ]]);
+    wall('right', [[RX + 0.1, WH / 2, 0, 0.2, WH, RZ * 2]], [[RX - 0.03, 0.5, (KZ + RZ) / 2, 0.06, 1.0, RZ - KZ]]);
+    // 厨房の壁はサブウェイタイル（床から 1.9m）
+    { const TB = new Builder(), th = 1.9, tg = { rough: 0.16 };
+      TB.put(Geo.box(RX * 2, th, 0.02, 1), [0, th / 2, -RZ + 0.012], 0, 1, [1, 1, 1], tg);
+      [[-RZ, L.backDoor[1] - 0.6], [L.backDoor[1] + 0.6, KZ]].forEach(([z0, z1]) => TB.put(Geo.box(0.02, th, z1 - z0, 1), [-RX + 0.012, th / 2, (z0 + z1) / 2], 0, 1, [1, 1, 1], tg));
+      TB.put(Geo.box(0.02, th, KZ + RZ, 1), [RX - 0.012, th / 2, (KZ - RZ) / 2], 0, 1, [1, 1, 1], tg);
+      sc.add(new Node(TB.build(e), { tex: T.subway, ao: 0, cast: false }));
+      P('steel', Geo.box(RX * 2, 0.03, 0.035), [0, th + 0.015, -RZ + 0.02]);
+      P('steel', Geo.box(0.035, 0.03, KZ + RZ), [-RX + 0.02, th + 0.015, (KZ - RZ) / 2]); P('steel', Geo.box(0.035, 0.03, KZ + RZ), [RX - 0.02, th + 0.015, (KZ - RZ) / 2]);
+    }
+    // 天井の回り縁
+    [[0, -RZ + 0.04, RX * 2, 0.08], [0, RZ - 0.04, RX * 2, 0.08]].forEach(([x, z, w, d]) => P('paint', Geo.box(w, 0.09, d), [x, WH - 0.045, z], 0, 1, rgb('#F4F0E9')));
+    [-RX + 0.04, RX - 0.04].forEach((x) => P('paint', Geo.box(0.08, 0.09, RZ * 2), [x, WH - 0.045, 0], 0, 1, rgb('#F4F0E9')));
+    // 裏口（開けっぱなしの鉄の扉。ここから外の路地へ出られる）
+    P('steel', Geo.box(0.05, 2.1, 1.1), [-RX - 0.26, 1.05, bd - 1.16], 0, 1, rgb('#8E959C'));
+    P('steel', Geo.cyl(0.015, 0.015, 0.22, 8), [-RX - 0.3, 1.05, bd - 1.55], [PI / 2, 0, 0]);
+    [[bd - 0.63, 0.06], [bd + 0.63, 0.06]].forEach(([z, w]) => P('steel', Geo.box(0.26, 2.15, w), [-RX - 0.1, 1.075, z], 0, 1, rgb('#6E757C')));
+    P('steel', Geo.box(0.26, 0.06, 1.32), [-RX - 0.1, 2.15, bd], 0, 1, rgb('#6E757C'));
+    block(-RX - 0.2, -RZ - 0.25, -RX, bd - 0.6); block(-RX - 0.2, bd + 0.6, -RX, RZ + 0.25);
+    block(-RX - 0.32, bd - 1.75, -RX - 0.2, bd - 0.6);
+    block(-RX - 0.2, -RZ - 8, RX + 1, -RZ);
     // 正面：腰壁・窓・入口（幅 1.44m）
     const fz = RZ + 0.1, DW = 0.72, ww = RX - 1.8, wc = (RX + 0.6) / 2;
     const front = wall('front', [
@@ -203,12 +228,15 @@
     const na = Math.floor((RX * 2 - 0.4) / 0.5);
     for (let i = 0; i < na; i++) FB.put(Geo.box(0.5, 0.025, 1.15), [-(na - 1) * 0.25 + i * 0.5, 2.55, RZ + 0.62], [0.42, 0, 0], 1, i % 2 ? C.cream : rgb('#2F4A3F'), { rough: 0.85 });
     FB.put(Geo.cyl(0.02, 0.02, na * 0.5, 8), [0, 2.32, RZ + 1.1], [0, 0, PI / 2], 1, C.dark, { rough: 0.4 });
-    FB.put(Geo.box(0.05, 2.2, 0.74), [-DW, 1.1, RZ + 0.55], 0, 1, C.walnut, { rough: 0.45 });
-    FB.put(Geo.box(0.05, 2.2, 0.74), [DW, 1.1, RZ + 0.55], 0, 1, C.walnut, { rough: 0.45 });
+    [-1, 1].forEach((sd) => { const dx = sd * DW, fr = { rough: 0.4 };
+      FB.put(Geo.box(0.05, 2.2, 0.06), [dx, 1.1, RZ + 0.22], 0, 1, C.dark, fr); FB.put(Geo.box(0.05, 2.2, 0.06), [dx, 1.1, RZ + 0.88], 0, 1, C.dark, fr);
+      FB.put(Geo.box(0.05, 0.08, 0.72), [dx, 2.16, RZ + 0.55], 0, 1, C.dark, fr); FB.put(Geo.box(0.05, 0.14, 0.72), [dx, 0.07, RZ + 0.55], 0, 1, C.dark, fr);
+      FB.put(Geo.cyl(0.012, 0.012, 0.42, 8), [dx - sd * 0.035, 1.05, RZ + 0.8], 0, 1, rgb('#C9A35E'), { rough: 0.25, metal: 1 }); });
     front.add(new Node(FB.build(e), { cast: false }));
     const glass = (w, h, p, r) => { const n = new Node(e.mesh(Geo.box(w, h, 0.02), null, { rough: 0.05 }), { color: rgb('#BFD8E6'), op: 0.16, cast: false, recv: false }); n.p = p; if (r) n.r = r; front.add(n); };
     glass(ww, 1.38, [-wc, 1.6, fz]); glass(ww, 1.38, [wc, 1.6, fz]);
-    block(-RX - 1, RZ - 0.02, -DW, RZ + 0.25); block(DW, RZ - 0.02, RX + 1, RZ + 0.25);
+    [-1, 1].forEach((sd) => glass(0.62, 1.98, [sd * DW, 1.13, RZ + 0.55], [0, PI / 2, 0]));
+    block(-RX - 0.2, RZ - 0.02, -DW, RZ + 0.25); block(DW, RZ - 0.02, RX + 1, RZ + 0.25);
     block(-DW - 0.05, RZ + 0.2, -DW + 0.05, RZ + 0.92); block(DW - 0.05, RZ + 0.2, DW + 0.05, RZ + 0.92);
 
     // ---------- 奥：型の棚・ミキサー台・オーブン・洗い場 ----------
@@ -282,8 +310,6 @@
     if (L.work[1] - L.work[0] > 1) island((L.work[0] + L.work[1]) / 2, L.work[2], L.work[1] - L.work[0], C.sage, 'steel');
     L.spots.forEach((p) => P('paint', Geo.box(0.32, 0.003, 0.32), [p[0], 0.912, p[2]], 0, 1, rgb('#BFC4C8')));
     // ---------- 左：裏口の配達置き場・在庫棚・ゴミ箱 ----------
-    for (let k = 0; k < 7; k++) P('oak', Geo.box(1.3, 0.025, 0.3), [-RX + 0.9, 0.11, -RZ + 2.15 + k * 0.4], 0, 1, rgb('#B08A60'));
-    for (let k = 0; k < 3; k++) P('oak', Geo.box(0.1, 0.09, 2.6), [-RX + 0.3 + k * 0.6, 0.045, -RZ + 3.35], 0, 1, rgb('#9A7550'));
     const [shx, shz] = L.shelf;
     P('oak', Geo.box(0.03, 1.95, 2.0), [shx - 0.02, 0.975, shz]);
     [-1, 1].forEach((sd) => P('oak', Geo.box(0.6, 1.95, 0.03), [shx + 0.29, 0.975, shz + sd * 0.985]));
@@ -327,14 +353,18 @@
     { const rx = RX - 0.25, rz = CASE_Z + 3.4; P('walnut', Geo.box(0.04, 1.8, 1.6), [rx + 0.18, 0.9, rz]); [0.35, 0.8, 1.25, 1.7].forEach((y, k) => { P('walnut', Geo.box(0.38, 0.03, 1.6), [rx, y, rz]); if (k < 3) for (let i = 0; i < 5; i++) P('paint', Geo.rbox(0.12, 0.16, 0.2, 0.02), [rx, y + 0.095, rz - 0.6 + i * 0.3], [0, 0.1 * (i % 2), 0], 1, rgb(['#E8D9C4', '#D9C2A3', '#F2E6D8', '#C9A35E', '#E9CFC9'][(i + k) % 5]), { rough: 0.6 }); }); block(rx - 0.2, rz - 0.82, RX, rz + 0.82); }
     // ---------- 天井の照明 ----------
     const LB = new Builder();
-    L.lamps.forEach(([x, z]) => { LB.put(Geo.cyl(0.26, 0.26, 0.03, 28), [x, WH - 0.015, z], 0, 1, rgb('#F2EFE8'), { rough: 0.4 }); LB.put(Geo.cyl(0.21, 0.21, 0.01, 28), [x, WH - 0.032, z], 0, 1, rgb('#FFF4DF'), { rough: 0.2 }); });
+    L.lamps.forEach(([x, z]) => {
+      if (z < KZ) { P('paint', Geo.box(1.25, 0.03, 0.38), [x, WH - 0.015, z], 0, 1, rgb('#E6E3DD')); LB.put(Geo.box(1.15, 0.01, 0.29), [x, WH - 0.034, z], 0, 1, rgb('#FFF8EC')); }
+      else { P('paint', Geo.cyl(0.17, 0.17, 0.03, 28), [x, WH - 0.015, z], 0, 1, rgb('#E6E3DD')); LB.put(Geo.cyl(0.12, 0.12, 0.01, 28), [x, WH - 0.034, z], 0, 1, rgb('#FFF1D6')); }
+    });
+    W.buildDetails(e, sc, L, P, T, LB);
     sc.add(new Node(LB.build(e), { cast: false, em: 1, recv: false }));
     // ---------- 外：街並み ----------
     const EB = new Builder();
     for (let i = 0; i < 16; i++) { const x = -38 + i * 5; EB.put(Geo.box(4.6, 6 + (i % 3), 6), [x, 3 + (i % 3) / 2, RZ + 20], 0, 1, [1, 1, 1], { rough: 0.85 }); }
-    [[-RX - 6, -2, 4, 5], [RX + 6, -3, 4, 6]].forEach(([x, z, w, h]) => EB.put(Geo.box(w, h, 8), [x, h / 2, z], 0, 1, [1, 1, 1], { rough: 0.85 }));
+    [[-RX - 8.6, -2, 4, 5], [RX + 6, -3, 4, 6]].forEach(([x, z, w, h]) => EB.put(Geo.box(w, h, 8), [x, h / 2, z], 0, 1, [1, 1, 1], { rough: 0.85 }));
     W.extras = sc.add(new Node(EB.build(e), { tex: T.facade, cast: false }));
-    [[-RX - 2, RZ + 3], [RX + 2, RZ + 3], [-RX / 2 - 0.5, RZ + 3], [RX / 2 + 0.5, RZ + 3]].forEach(([x, z]) => { P('walnut', Geo.cyl(0.12, 0.16, 2.2, 8), [x, 1.1, z]); for (let k = 0; k < 5; k++) P('plant', Geo.sphere(0.8, 10, 8), [x + Math.sin(k * 1.3) * 0.5, 2.4 + (k % 2) * 0.4, z + Math.cos(k * 1.3) * 0.4], 0, [1, 0.85, 1], shade(C.leaf, (k % 3) * 0.1 - 0.05)); });
+    [[-RX - 7, RZ + 3], [RX + 2, RZ + 3], [-RX / 2 - 0.5, RZ + 3], [RX / 2 + 0.5, RZ + 3]].forEach(([x, z]) => { P('walnut', Geo.cyl(0.12, 0.16, 2.2, 8), [x, 1.1, z]); for (let k = 0; k < 5; k++) P('plant', Geo.sphere(0.8, 10, 8), [x + Math.sin(k * 1.3) * 0.5, 2.4 + (k % 2) * 0.4, z + Math.cos(k * 1.3) * 0.4], 0, [1, 0.85, 1], shade(C.leaf, (k % 3) * 0.1 - 0.05)); });
     W.staticNodes = [];
     for (const m in BB) { const n = new Node(BB[m].build(e), { tex: mats[m].tex || null }); sc.add(n); W.staticNodes.push(n); }
     sc.add(W.pcScreen);
@@ -361,7 +391,176 @@
     W.stationGroup = sc.add(new Node()); W.decoGroup = sc.add(new Node()); W.people = sc.add(new Node());
     W.blobTex = W.blobTex || e.texFromCanvas(MD.TX.shadow(), false);
     W.blobMesh = W.blobMesh || e.mesh(Geo.plane(1, 1));
+    W.buildAlley(e, sc, L, T);
     W.buildStations();
+  };
+  // 雰囲気を出す細部（レンジフード・ペンダント照明・ゴムマット・棚の小物・絵・時計・外の街灯など）
+  W.buildDetails = function (e, sc, L, P, T, LB) {
+    const steel = { rough: 0.3, metal: 1 };
+    // レンジフード（オーブンの上。下に照明）
+    if (L.ovens.length) {
+      const HB = new Builder(), x0 = L.ovens[0].x - 0.64, x1 = L.ovens[L.ovens.length - 1].x + 0.64, w = x1 - x0, cx = (x0 + x1) / 2;
+      HB.put(Geo.box(w, 0.4, 1.08), [cx, 2.56, -RZ + 0.54], 0, 1, rgb('#C9CDD2'), steel);
+      HB.put(Geo.box(w, 0.07, 0.06), [cx, 2.36, -RZ + 1.06], 0, 1, rgb('#B9BEC4'), steel);
+      HB.put(Geo.box(0.6, WH - 2.76, 0.5), [cx, (WH + 2.76) / 2, -RZ + 0.3], 0, 1, rgb('#C9CDD2'), steel);
+      L.ovens.forEach((ov) => {
+        HB.put(Geo.box(0.95, 0.006, 0.62), [ov.x, 2.358, -RZ + 0.45], 0, 1, rgb('#7E848A'), steel);
+        for (let k = 0; k < 6; k++) HB.put(Geo.box(0.93, 0.004, 0.012), [ov.x, 2.354, -RZ + 0.2 + k * 0.1], 0, 1, rgb('#5E6368'), steel);
+        LB.put(Geo.box(0.5, 0.008, 0.05), [ov.x, 2.355, -RZ + 0.86], 0, 1, rgb('#FFF6E4'));
+      });
+      sc.add(new Node(HB.build(e), { tex: T.steel, cast: false }));
+    }
+    // ミキサー台の上の棚（ボウル・保存びん）
+    L.mix.forEach((m) => {
+      P('steel', Geo.box(1.55, 0.025, 0.3), [m.x, 1.88, -RZ + 0.17]);
+      [-0.7, 0.7].forEach((dx) => P('steel', Geo.box(0.02, 0.2, 0.26), [m.x + dx, 1.79, -RZ + 0.17]));
+      for (let k = 0; k < 3; k++) P('steel', Geo.cyl(0.13 - k * 0.012, 0.08 - k * 0.008, 0.07, 20, 0, PI * 2, true), [m.x - 0.45, 1.93 + k * 0.03, -RZ + 0.17], 0, 1, rgb('#D6D9DD'));
+      ['#E9D7B5', '#F3EEE6', '#8B5A3C', '#C9A35E'].forEach((c, k) => {
+        const jx = m.x - 0.05 + k * 0.17;
+        P('gloss', Geo.cyl(0.055, 0.055, 0.16, 16), [jx, 1.97, -RZ + 0.17], 0, 1, rgb('#EEF2F4'), { rough: 0.08 });
+        P('paint', Geo.cyl(0.05, 0.05, 0.1, 16), [jx, 1.94, -RZ + 0.17], 0, 1, rgb(c), { rough: 0.7 });
+        P('walnut', Geo.cyl(0.057, 0.057, 0.025, 16), [jx, 2.06, -RZ + 0.17]);
+      });
+    });
+    // 作業場の黒いゴムマット
+    const MB = new Builder(), mat = (x, z, w, d) => MB.put(Geo.box(w, 0.012, d, 3), [x, 0.006, z], 0, 1, [1, 1, 1], { rough: 0.95 });
+    L.mix.forEach((m) => mat(m.x, m.z + 0.82, 1.45, 0.62));
+    if (L.ovens.length) { const a = L.ovens[0].x - 0.5, b = L.ovens[L.ovens.length - 1].x + 0.5; mat((a + b) / 2, -RZ + 1.4, b - a, 0.7); }
+    L.deco.forEach((d) => mat(d.x, d.z + 0.82, 1.7, 0.6));
+    L.whip.forEach((w) => mat(w.x, w.z + 0.82, 1.7, 0.6));
+    mat(0, RZ + 0.62, 1.3, 0.75);
+    sc.add(new Node(MB.build(e), { tex: T.mat, cast: false, ao: 0 }));
+    // ショーケースの中の照明
+    LB.put(Geo.box(8.1, 0.012, 0.03), [CASE_X0 + 3.5, 1.384, CASE_Z - 0.2], 0, 1, rgb('#FFEBC8'));
+    // ペンダント照明（ショーケースとレジの上）
+    const PD = new Builder(), brass = { rough: 0.28, metal: 1 };
+    const pend = (x, z, y) => {
+      PD.put(Geo.cyl(0.006, 0.006, WH - y - 0.15, 6), [x, (WH + y + 0.15) / 2, z], 0, 1, C.dark, { rough: 0.5 });
+      PD.put(Geo.cyl(0.045, 0.2, 0.2, 28, 0, PI * 2, true), [x, y + 0.03, z], 0, 1, rgb('#B88A4A'), brass);
+      PD.put(Geo.cyl(0.035, 0.035, 0.06, 12), [x, y + 0.15, z], 0, 1, rgb('#B88A4A'), brass);
+      LB.put(Geo.sphere(0.055, 14, 10), [x, y - 0.02, z], 0, 1, rgb('#FFE6B5'));
+    };
+    for (let k = 0; k < 4; k++) pend(CASE_X0 + 0.5 + k * 2, CASE_Z + 0.05, 2.25);
+    L.reg.forEach((r) => pend(r.x, CASE_Z + 0.05, 2.25));
+    sc.add(new Node(PD.build(e), { twoSide: true, cast: false }));
+    // 壁の絵（売り場）と時計
+    const AB = [new Builder(), new Builder(), new Builder()];
+    const art = (x, z, k, w, h) => {
+      P('walnut', Geo.rbox(0.05, h + 0.12, w + 0.12, 0.01), [x, 1.85, z]);
+      AB[k].put(Geo.card(w, h), [x + (x < 0 ? 0.03 : -0.03), 1.85, z], [0, x < 0 ? PI / 2 : -PI / 2, 0], 1, [1, 1, 1], { rough: 0.8 });
+    };
+    art(-RX + 0.03, CASE_Z + 4.3, 0, 0.9, 0.7);
+    art(-RX + 0.03, CASE_Z + 6.4, 1, 0.7, 0.9);
+    if (CASE_Z + 6.0 < RZ - 1) art(RX - 0.03, CASE_Z + 6.0, 2, 0.9, 0.7);
+    AB.forEach((b, k) => { if (!b.empty()) sc.add(new Node(b.build(e), { tex: T.art[k], cast: false })); });
+    {
+      const cz = CASE_Z + 1.1, cx = RX - 0.04;
+      P('paint', Geo.cyl(0.25, 0.25, 0.04, 36), [cx, 2.4, cz], [0, 0, PI / 2], 1, C.dark);
+      const face = new Node(e.mesh(Geo.card(0.44, 0.44), null, { rough: 0.5 }), { tex: T.clock, cast: false }); face.p = [cx - 0.025, 2.4, cz]; face.r = [0, -PI / 2, 0]; sc.add(face);
+      P('paint', Geo.box(0.006, 0.12, 0.018), [cx - 0.03, 2.45, cz - 0.02], [0.6, 0, 0], 1, C.dark);
+      P('paint', Geo.box(0.006, 0.17, 0.012), [cx - 0.032, 2.47, cz + 0.05], [-1.05, 0, 0], 1, C.dark);
+    }
+    // 空調の吹き出し口（売り場の天井）
+    [[-3.2, CASE_Z + 4.6], [5.2, CASE_Z + 3.4]].forEach(([x, z]) => {
+      P('paint', Geo.box(0.8, 0.05, 0.8), [x, WH - 0.025, z], 0, 1, rgb('#F2F0EC'));
+      for (let k = 0; k < 5; k++) P('paint', Geo.box(0.62, 0.012, 0.02), [x, WH - 0.054, z - 0.24 + k * 0.12], 0, 1, rgb('#CFCBC4'));
+    });
+    // 裏口：非常口の表示・消火器
+    const bd = L.backDoor[1];
+    LB.put(Geo.box(0.04, 0.14, 0.36), [-RX + 0.04, 2.35, bd], 0, 1, rgb('#2FBF71'));
+    P('gloss', Geo.cyl(0.07, 0.07, 0.48, 16), [-RX + 0.18, 0.3, bd + 0.95], 0, 1, rgb('#C21F24'), { rough: 0.25 });
+    P('paint', Geo.cyl(0.03, 0.03, 0.08, 10), [-RX + 0.18, 0.58, bd + 0.95], 0, 1, C.dark);
+    // ペーパータオル（洗い場）
+    if (L.sink[1] - L.sink[0] > 1.4) P('gloss', Geo.rbox(0.3, 0.32, 0.12, 0.03), [L.sink[0] + 1.15, 1.45, -RZ + 0.08], 0, 1, rgb('#F2F0EC'), { rough: 0.2 });
+    // 外：街灯・花のプランター
+    const OB = new Builder(), iron = { rough: 0.4, metal: 0.6 };
+    [-(RX - 1.2), RX - 1.2].forEach((x) => {
+      P('paint', Geo.cyl(0.05, 0.07, 3.3, 10), [x, 1.65, RZ + 3.7], 0, 1, rgb('#2B3330'), iron);
+      P('paint', Geo.cyl(0.16, 0.1, 0.3, 12), [x, 3.35, RZ + 3.7], 0, 1, rgb('#2B3330'), iron);
+      OB.put(Geo.cyl(0.11, 0.11, 0.16, 12), [x, 3.15, RZ + 3.7], 0, 1, rgb('#FFF0D0'));
+    });
+    const flower = ['#E36A7E', '#F2D16B', '#F4F1EC'];
+    [-1.6, 1.6].forEach((x) => {
+      P('walnut', Geo.box(0.7, 0.42, 0.34), [x, 0.21, RZ + 0.42]);
+      for (let k = 0; k < 10; k++) P('plant', Geo.sphere(0.07, 8, 6), [x - 0.27 + (k % 5) * 0.135, 0.5 + (k % 2) * 0.05, RZ + 0.36 + Math.floor(k / 5) * 0.12], 0, 1, k % 2 ? shade(C.leaf, 0.1) : rgb(flower[(k / 2) % 3]));
+      block(x - 0.36, RZ + 0.24, x + 0.36, RZ + 0.6);
+    });
+    sc.add(new Node(OB.build(e), { em: 1, cast: false, recv: false }));
+  };
+  // 裏の路地（トラックが材料を届けに来る）
+  W.buildAlley = function (e, sc, L, T) {
+    const bd = L.backDoor[1], x0 = L.alley[0], len = RZ + 40;
+    const g = new Node(e.mesh(Geo.plane(-x0 - RX + 0.2, len, 1.6, len / 4), null, { rough: 0.85 }), { tex: T.asphalt, cast: false, ao: 0 });
+    g.p = [(x0 - RX) / 2, -0.008, RZ - len / 2]; sc.add(g);
+    const B = new Builder(), paint = { rough: 0.7 };
+    // 駐車の白線・止まれ
+    [L.truck.x - 1.35, L.truck.x + 1.35].forEach((x) => B.put(Geo.box(0.08, 0.004, 5.6), [x, 0.002, L.truck.z], 0, 1, rgb('#E9E6DF'), paint));
+    B.put(Geo.box(2.78, 0.004, 0.08), [L.truck.x, 0.002, L.truck.z + 2.8], 0, 1, rgb('#E9E6DF'), paint);
+    // 路地の向こう側のレンガ塀
+    const wall = new Node(e.mesh(Geo.box(0.3, 2.3, RZ + 30, 1), null, { rough: 0.85 }), { tex: T.facade, cast: false }); wall.p = [x0 - 0.15, 1.15, RZ - (RZ + 30) / 2 - 0.5]; sc.add(wall);
+    // ゴミ置き場・パレット
+    B.put(Geo.rbox(1.5, 1.05, 0.9, 0.04), [-RX - 0.7, 0.55, -RZ - 1.6], [0, PI / 2, 0], 1, rgb('#2F5D44'), { rough: 0.5 }); B.put(Geo.box(0.95, 0.06, 1.55), [-RX - 0.7, 1.1, -RZ - 1.6], [0.12, 0, 0], 1, rgb('#244A36'), { rough: 0.5 });
+    block(-RX - 1.2, -RZ - 2.4, -RX - 0.2, -RZ - 0.8);
+    for (let k = 0; k < 4; k++) { const y = 0.07 + k * 0.14; for (let i = 0; i < 5; i++) B.put(Geo.box(0.12, 0.025, 1.2), [-RX - 0.75 - 0.4 + i * 0.2, y + 0.06, bd + 4.4], 0, 1, rgb('#B08A60'), { rough: 0.8 }); B.put(Geo.box(1.0, 0.1, 0.1), [-RX - 0.75, y, bd + 4.4 - 0.5], 0, 1, rgb('#9A7550'), { rough: 0.8 }); B.put(Geo.box(1.0, 0.1, 0.1), [-RX - 0.75, y, bd + 4.4 + 0.5], 0, 1, rgb('#9A7550'), { rough: 0.8 }); }
+    block(-RX - 1.3, bd + 3.75, -RX - 0.2, bd + 5.05);
+    // 搬入口の灯り・表示
+    B.put(Geo.box(0.16, 0.08, 0.3), [-RX - 0.28, 2.42, bd], 0, 1, rgb('#2A2624'), { rough: 0.4 });
+    sc.add(new Node(B.build(e)));
+    const lamp = new Node(e.mesh(Geo.box(0.12, 0.03, 0.24), '#FFF1D2'), { em: 1, cast: false, recv: false }); lamp.p = [-RX - 0.3, 2.37, bd]; sc.add(lamp);
+    if (!W.dockCv) { W.dockCv = document.createElement('canvas'); W.dockCv.width = 256; W.dockCv.height = 96; const c = W.dockCv.getContext('2d'); c.fillStyle = '#1F2A24'; c.fillRect(0, 0, 256, 96); c.fillStyle = '#E8D3A6'; c.textAlign = 'center'; c.font = '700 40px "Zen Kaku Gothic New",sans-serif'; c.fillText('搬入口', 128, 52); c.font = '500 18px "Zen Kaku Gothic New",sans-serif'; c.fillText('DELIVERY', 128, 80); }
+    W.dockTex = W.dockTex || e.texFromCanvas(W.dockCv, false);
+    const sign = new Node(e.mesh(Geo.card(0.75, 0.28), null, { rough: 0.6 }), { tex: W.dockTex, cast: false }); sign.p = [-RX - 0.21, 2.62, bd]; sign.r = [0, -PI / 2, 0]; sc.add(sign);
+    W.buildTruck(e, sc);
+  };
+  // 配送トラック（前が +z）
+  W.buildTruck = function (e, sc) {
+    if (!W.truckCv) {
+      const c = (W.truckCv = document.createElement('canvas')); c.width = 512; c.height = 256; const x = c.getContext('2d');
+      x.fillStyle = '#F6F4EF'; x.fillRect(0, 0, 512, 256); x.fillStyle = '#2F4A3F'; x.fillRect(0, 170, 512, 40); x.fillStyle = '#C9A35E'; x.fillRect(0, 210, 512, 8);
+      x.fillStyle = '#2F4A3F'; x.textAlign = 'center'; x.font = '700 64px "Zen Kaku Gothic New",sans-serif'; x.fillText('新鮮食材便', 256, 110);
+      x.font = '600 26px "Zen Kaku Gothic New",sans-serif'; x.fillStyle = '#7A6A58'; x.fillText('FRESH  INGREDIENTS  DELIVERY', 256, 150);
+    }
+    W.truckTex = W.truckTex || e.texFromCanvas(W.truckCv, false);
+    const root = new Node(), B = new Builder(), gloss = { rough: 0.3 };
+    B.put(Geo.box(1.9, 0.28, 5.4), [0, 0.62, -0.1], 0, 1, rgb('#2A2624'), { rough: 0.6 });
+    B.put(Geo.rbox(2.24, 2.3, 3.6, 0.05), [0, 1.95, -0.95], 0, 1, rgb('#F6F4EF'), { rough: 0.45 });
+    B.put(Geo.rbox(2.12, 1.55, 1.55, 0.14), [0, 1.48, 1.85], 0, 1, rgb('#2F6E9E'), gloss);
+    B.put(Geo.rbox(2.0, 0.55, 1.2, 0.1), [0, 2.3, 1.72], 0, 1, rgb('#2F6E9E'), gloss);
+    B.put(Geo.box(1.86, 0.62, 0.04), [0, 2.0, 2.56], [-0.18, 0, 0], 1, rgb('#1B2530'), { rough: 0.05 });
+    [-1, 1].forEach((sd) => { B.put(Geo.box(0.04, 0.5, 0.75), [sd * 1.065, 2.05, 1.95], 0, 1, rgb('#1B2530'), { rough: 0.05 }); B.put(Geo.box(0.06, 0.2, 0.14), [sd * 1.15, 2.0, 2.45], 0, 1, rgb('#2A2624'), gloss); });
+    B.put(Geo.box(2.14, 0.32, 0.12), [0, 0.78, 2.66], 0, 1, rgb('#3A3E42'), { rough: 0.4, metal: 0.6 });
+    B.put(Geo.box(2.22, 0.05, 0.05), [0, 0.93, -2.78], 0, 1, rgb('#3A3E42'), { rough: 0.4, metal: 0.6 });
+    for (let k = 0; k < 2; k++) B.put(Geo.box(0.02, 2.1, 0.02), [k ? 0.01 : -0.01, 1.95, -2.76], 0, 1, rgb('#B9B4AC'), gloss);
+    root.add(new Node(B.build(e)));
+    [-1, 1].forEach((sd) => { const side = new Node(e.mesh(Geo.card(3.3, 1.65), null, { rough: 0.5 }), { tex: W.truckTex, cast: false }); side.p = [sd * 1.125, 1.95, -0.95]; side.r = [0, sd * PI / 2, 0]; root.add(side); });
+    const L2 = new Builder();
+    [-0.78, 0.78].forEach((x) => L2.put(Geo.box(0.32, 0.14, 0.04), [x, 1.0, 2.72], 0, 1, rgb('#FFF6DD')));
+    [-0.95, 0.95].forEach((x) => L2.put(Geo.box(0.16, 0.24, 0.04), [x, 0.95, -2.8], 0, 1, rgb('#E2402F')));
+    root.add(new Node(L2.build(e), { em: 1, cast: false, recv: false }));
+    const wm = new Builder(); wm.put(Geo.cyl(0.42, 0.42, 0.3, 20), [0, 0, 0], [0, 0, PI / 2], 1, rgb('#1C1C1E'), { rough: 0.8 }); wm.put(Geo.cyl(0.24, 0.24, 0.32, 14), [0, 0, 0], [0, 0, PI / 2], 1, rgb('#9AA0A6'), { rough: 0.3, metal: 1 }); for (let k = 0; k < 5; k++) wm.put(Geo.box(0.33, 0.06, 0.06), [0, 0, 0.16], [k * PI * 0.4, 0, 0], 1, rgb('#6E757C'), { rough: 0.3, metal: 1 });
+    const wmesh = wm.build(e), wheels = [];
+    [[-0.95, 1.75], [0.95, 1.75], [-0.95, -1.55], [0.95, -1.55], [-0.95, -2.15], [0.95, -2.15]].forEach(([x, z]) => { const w = new Node(wmesh); w.p = [x, 0.42, z]; root.add(w); wheels.push(w); });
+    root.vis = false; sc.add(root);
+    W.truck = { node: root, wheels, spin: 0, z: null };
+  };
+  // トラックの動き（到着時刻から決まるので全員の画面で同じ）
+  W.updateTruck = function (s, g, dt) {
+    const tr = W.truck, TT = K.TRUCK; W.dynBlocks = [];
+    if (!tr) return;
+    let at = null; for (const t of sim._.toArr(s.k.trucks)) if (g > t - TT.IN && g < t + TT.STAY + TT.OUT) { if (at === null || t < at) at = t; }
+    if (at === null) { tr.node.vis = false; tr.z = null; return; }
+    const P0 = W.L.truck; let z;
+    if (g < at) { const f = clamp(1 - (at - g) / TT.IN, 0, 1); z = P0.z - 42 * Math.pow(1 - f, 2.2); }
+    else if (g < at + TT.STAY) z = P0.z;
+    else { const f = clamp((g - at - TT.STAY) / TT.OUT, 0, 1); z = P0.z + 40 * f * f; }
+    tr.node.vis = z < RZ + 16; tr.node.p = [P0.x, 0, z];
+    if (tr.z !== null) { tr.spin += (z - tr.z) / 0.42; tr.wheels.forEach((w) => (w.r = [tr.spin, 0, 0])); }
+    tr.z = z;
+    if (Math.abs(z - P0.z) < 6) W.dynBlocks.push([P0.x - 1.15, z - 2.85, P0.x + 1.15, z + 2.75]);
+    if (g >= at && g < at + TT.STAY && W._truckAt !== at) {
+      W._truckAt = at;
+      if (Object.values(s.k.items).some((it) => it.t === 'crate' && it.ar === at)) { CS.sound.play('beep'); CS.ui.toast('トラックが到着！裏口の外の段ボールを運び入れよう', 'good'); }
+    }
   };
   W.drawOpen = function (open) {
     const g = W.openCv.getContext('2d'), w = 256, h = 320;
@@ -509,6 +708,9 @@
     if (W.keys.op !== s.phase) { W.keys.op = s.phase; W.drawOpen(s.phase === 'open'); }
   };
   W.rebuild = function () {
+    W._keep = {};
+    for (const id in W.custs) { const o = W.custs[id]; W._keep[id] = [o.x, o.z, o.r]; }
+    for (const id in W.staffN) { const o = W.staffN[id]; W._keep[id] = [o.x, o.z, o.r]; }
     W.scene.clear();
     W.keys = { mb: W.keys.mb }; W.ovens = []; W.items = {}; W.others = {}; W.custs = {}; W.staffN = {};
     W.buildStatic();
@@ -533,10 +735,10 @@
       fblock(x - 1.0, z - 0.35, x + 1.0, z + 0.35);
     });
     const plants = s.furn.plant || 0;
-    for (let i = 0; i < plants; i++) { const px = i % 2 ? RX - 0.6 : -RX + 0.6, z = CASE_Z + 3.0 + Math.floor(i / 2) * 2.2 + (i % 2) * 0.6; if (z > RZ - 1.3) continue; P('d', Geo.cyl(0.2, 0.15, 0.4, 18), [px, 0.2, z], 0, 1, C.terracotta, { rough: 0.6 }); for (let k = 0; k < 7; k++) P('d', Geo.sphere(0.13, 10, 8), [px + Math.sin(k * 2.4) * 0.12, 0.55 + k * 0.08, z + Math.cos(k * 2.4) * 0.12], [k * 0.5, 0, 0.3], [1, 1.6, 0.5], shade(C.leaf, (k % 3) * 0.08), { rough: 0.7 }); fblock(px - 0.22, z - 0.22, px + 0.22, z + 0.22); }
+    for (let i = 0; i < plants; i++) { const px = i % 2 ? RX - 0.6 : -RX + 0.6, z = CASE_Z + (i % 2 ? 4.7 : 3.0) + Math.floor(i / 2) * 2.2; if (z > RZ - 1.3) continue; P('d', Geo.cyl(0.2, 0.15, 0.4, 18), [px, 0.2, z], 0, 1, C.terracotta, { rough: 0.6 }); for (let k = 0; k < 7; k++) P('d', Geo.sphere(0.13, 10, 8), [px + Math.sin(k * 2.4) * 0.12, 0.55 + k * 0.08, z + Math.cos(k * 2.4) * 0.12], [k * 0.5, 0, 0.3], [1, 1.6, 0.5], shade(C.leaf, (k % 3) * 0.08), { rough: 0.7 }); fblock(px - 0.22, z - 0.22, px + 0.22, z + 0.22); }
     if (s.furn.coffee) { const x = RX - 0.45, z = CASE_Z + 1.1; P('w', Geo.rbox(0.6, 0.9, 0.9, 0.02), [x - 0.05, 0.45, z], 0, 1, null, { rough: 0.5 }); P('d', Geo.rbox(0.42, 0.45, 0.4, 0.04), [x - 0.05, 1.13, z], 0, 1, rgb('#2A2624'), { rough: 0.3, metal: 0.4 }); P('d', Geo.cyl(0.035, 0.03, 0.08, 12), [x - 0.15, 0.94, z + 0.25], 0, 1, rgb('#F2EFE8'), { rough: 0.15 }); fblock(x - 0.36, z - 0.46, RX, z + 0.46); }
     if (s.furn.speaker) [-1, 1].forEach((sd) => P('d', Geo.rbox(0.22, 0.34, 0.2, 0.02), [sd * (RX - 0.15), 2.7, CASE_Z + 1.5], [0, sd * 0.5, 0], 1, rgb('#2A2624'), { rough: 0.5 }));
-    if (lv >= 1) [[-RX + 0.1, 2.0, CASE_Z + 4.0], [RX - 0.1, 2.0, CASE_Z + 4.0]].forEach(([x, y, z], i) => { P('w', Geo.rbox(0.05, 0.85, 1.1, 0.01), [x, y, z], 0, 1, null, { rough: 0.5 }); P('d', Geo.box(0.06, 0.65, 0.9), [x, y, z], 0, 1, rgb(['#C7B299', '#8FA9B8'][i]), { rough: 0.7 }); });
+    if (lv >= 1) [[-RX + 0.1, CASE_Z + 4.3], [-RX + 0.1, CASE_Z + 6.4]].forEach(([x, z]) => { P('d', Geo.cyl(0.015, 0.015, 0.6, 10), [x + 0.1, 2.38, z], [PI / 2, 0, 0], 1, rgb('#C9A35E'), { rough: 0.25, metal: 1 }); P('d', Geo.box(0.12, 0.02, 0.02), [x + 0.05, 2.38, z], 0, 1, rgb('#C9A35E'), { rough: 0.25, metal: 1 }); });
     if (lv >= 2) for (let x = 2.0; x <= RX - 1.3; x += 1.9) [-1, 1].forEach((sd) => { const px = sd * x, pz = RZ - 0.04; P('d', Geo.cyl(0.06, 0.045, 0.16, 14), [px, 1.04, pz], 0, 1, rgb('#E8E2D8'), { rough: 0.15 }); for (let k = 0; k < 4; k++) P('d', Geo.sphere(0.032, 8, 6), [px + Math.sin(k * 1.6) * 0.035, 1.16 + k * 0.018, pz + Math.cos(k * 1.6) * 0.03], 0, 1, rgb(['#D46A7A', '#F2D16B', '#F4F1EC', '#C98FB0'][(Math.round(x) + k) % 4]), { rough: 0.6 }); });
     if (lv >= 3) for (let x = -RX + 2.5; x < -1.5; x += 2.1) P('d', Geo.cyl(0.18, 0.1, 0.22, 20, 0, PI * 2, true), [x, WH - 0.55, CASE_Z + 4.2], 0, 1, rgb('#C9A35E'), { rough: 0.3, metal: 1 });
     const texOf = { marble: W.T.marble, w: W.T.walnut };
@@ -578,21 +780,31 @@
     const down = (e) => {
       if (W.blocked()) return;
       if (e.pointerType === 'mouse') {
-        if (!document.pointerLockElement) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { /* noop */ } return; }
+        // クリックはそのまま操作（左＝つかむ・置く／右＝使う）。設定で「マウスを固定」にしたときだけ画面に固定する
+        if (ST.lockMouse && !document.pointerLockElement) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { /* noop */ } }
         if (e.button === 0) W.primary(); else if (e.button === 2) W.secondary();
+        if (W.onMouseUsed) W.onMouseUsed('click');
         return;
       }
       touches[e.pointerId] = { x: e.clientX, y: e.clientY };
       try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
     };
     const move = (e) => {
-      if (e.pointerType === 'mouse') { if (document.pointerLockElement === canvas) look(e.movementX || 0, e.movementY || 0, 0.0022); return; }
+      if (e.pointerType === 'mouse') {
+        if (W.blocked()) return;
+        // ボタンを押さなくても、マウスを動かすだけで見回せる
+        look(e.movementX || 0, e.movementY || 0, 0.0022);
+        W.mouse = document.pointerLockElement === canvas ? null : { x: e.clientX, y: e.clientY };
+        if (W.onMouseUsed && (e.movementX || e.movementY)) W.onMouseUsed('move');
+        return;
+      }
       const t = touches[e.pointerId]; if (!t) return;
       look(e.clientX - t.x, e.clientY - t.y, 0.0058); t.x = e.clientX; t.y = e.clientY;
     };
     const up = (e) => { delete touches[e.pointerId]; };
     canvas.addEventListener('pointerdown', down); canvas.addEventListener('pointermove', move); canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    canvas.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') W.mouse = null; });
     const kd = (e) => {
       if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
       if (W.blocked()) return;
@@ -646,7 +858,7 @@
     for (let k = 0, n = Math.min(5, Math.ceil(raw / 0.05) || 1); k < n; k++) W.updatePlayer(Math.min(0.05, raw / n));
     W.updateCamera(dt);
     W.updateOthers(dtN);
-    if (s) { W.updateStations(s, g, dtN); W.updateCustomers(dtN, s, g); W.updateStaff(dtN, s, g); W.updateOvens(s, g); }
+    if (s) { W.updateStations(s, g, dtN); W.updateCustomers(dtN, s, g); W.updateStaff(dtN, s, g); W.updateOvens(s, g); W.updateTruck(s, g, dtN); }
     W.updateTarget(s, g);
     if (s) W.updateItems(s, g);
     W.updateLights();
@@ -655,8 +867,9 @@
     W.updateLabels(s, g);
   };
   function collide(x, z, r) {
-    x = clamp(x, -RX + r, RX - r); z = clamp(z, -RZ + r, RZ + 3.2);
-    for (let pass = 0; pass < 2; pass++) for (const b of W.obstacles) {
+    x = clamp(x, (W.L.alley ? W.L.alley[0] : -RX) + r, RX - r); z = clamp(z, (W.L.alley ? W.L.alley[1] : -RZ) + r, RZ + 3.2);
+    const list = W.dynBlocks && W.dynBlocks.length ? W.obstacles.concat(W.dynBlocks) : W.obstacles;
+    for (let pass = 0; pass < 2; pass++) for (const b of list) {
       const nx = clamp(x, b[0], b[2]), nz = clamp(z, b[1], b[3]);
       const dx = x - nx, dz = z - nz, d = Math.hypot(dx, dz);
       if (d < r) {
@@ -676,6 +889,10 @@
       if (k.ArrowLeft) me.yaw += dt * 2.2; if (k.ArrowRight) me.yaw -= dt * 2.2;
       if (W.input.joy) { ix += W.input.joy.x; iz += W.input.joy.y; run = Math.hypot(W.input.joy.x, W.input.joy.y) > 0.92; }
       if (k.ShiftLeft || k.ShiftRight) run = true;
+    }
+    if (W.mouse && !document.pointerLockElement && !W.blocked() && W.eng) {
+      const rc = W.eng.canvas.getBoundingClientRect(), u = (W.mouse.x - rc.left) / Math.max(1, rc.width), ed = 0.04;
+      if (u < ed) me.yaw += dt * 2.4 * (ST.camSens || 1) * (1 - u / ed); else if (u > 1 - ed) me.yaw -= dt * 2.4 * (ST.camSens || 1) * ((u - (1 - ed)) / ed);
     }
     const il = Math.hypot(ix, iz); if (il > 1) { ix /= il; iz /= il; }
     const fx = -Math.sin(me.yaw), fz = -Math.cos(me.yaw), rx = Math.cos(me.yaw), rz = -Math.sin(me.yaw);
@@ -704,7 +921,7 @@
   W.updateLights = function () {
     const e = W.eng, me = W.me, f = W.fwd;
     const ls = W.L.lamps.map(([x, z]) => ({ x, z, d: (x - me.x - f[0] * 2) ** 2 + (z - me.z - f[2] * 2) ** 2 })).sort((a, b) => a.d - b.d).slice(0, W.nLights || 4);
-    e.lights = ls.map((l) => ({ p: [l.x, WH - 0.3, l.z], c: [2.4, 2.1, 1.7], r: 7.5 }));
+    e.lights = ls.map((l) => ({ p: [l.x, WH - 0.3, l.z], c: [2.3, 2.02, 1.65], r: 7.5 }));
   };
   W.addBlob = function (node) {
     const b = new Node(W.blobMesh, { tex: W.blobTex, op: 0.85, blend: true, outline: false, cast: false, recv: false, em: 1, color: [1, 1, 1], isBlob: true });
@@ -753,7 +970,7 @@
     });
   };
   // ---------- 小物の位置（置き場・手の中） ----------
-  W.updateItems = function (s) {
+  W.updateItems = function (s, g) {
     const me = W.me, pid = W.room && W.room.pid;
     for (const id in W.items) {
       const o = W.items[id], it = o.it; if (!it) continue;
@@ -777,7 +994,15 @@
           const ot = W.others[who] || W.staffN[who];
           if (ot) { const r = ot.r || 0; p = [ot.x + Math.sin(r) * 0.42, 1.02, ot.z + Math.cos(r) * 0.42]; ry = r; }
         }
-      } else p = W.slotPos(at);
+      } else {
+        p = W.slotPos(at);
+        if (p && it.t === 'crate' && it.ar) {
+          if (g < it.ar) p = null;
+          else if (g - it.ar < 900) { const f = (g - it.ar) / 900; p = [p[0] - (1 - f) * 1.4, p[1] + Math.sin(f * PI) * 0.5 + (1 - f) * 0.6, p[2]]; }
+        }
+        const sk = it.res && W.staffN[it.res];
+        if (p && sk && sk.m && sk.m.job && sk.m.job.k === 'stock' && sk.carry) { const r = sk.r || 0; p = [sk.x + Math.sin(r) * 0.42, 1.02, sk.z + Math.cos(r) * 0.42]; ry = r; }
+      }
       o.n.vis = !!p;
       if (!p) continue;
       o.n.p = [p[0], p[1], p[2]];
@@ -826,7 +1051,7 @@
     for (const id in s.cust) {
       const c = s.cust[id];
       let o = W.custs[id];
-      if (!o) { const sd = Math.random() < 0.5 ? -1 : 1; o = W.custs[id] = { ch: MD.character(W.eng, MD.customerSkin(c.ty, c.v || 0)), x: sd * 7, z: RZ + 2.2, r: -sd * PI / 2 }; W.people.add(o.ch.node); W.addBlob(o.ch.node); }
+      if (!o) { const sd = Math.random() < 0.5 ? -1 : 1, kp = W._keep && W._keep[id]; o = W.custs[id] = { ch: MD.character(W.eng, MD.customerSkin(c.ty, c.v || 0)), x: kp ? kp[0] : sd * 7, z: kp ? kp[1] : RZ + 2.2, r: kp ? kp[2] : -sd * PI / 2 }; if (kp) o.fresh = false; W.people.add(o.ch.node); W.addBlob(o.ch.node); }
       if (o.fresh === undefined) { o.fresh = false; if (c.st === 'in' && s.phase === 'open' && W.room && W.room.now() - (c.t0 || 0) < 2500) setTimeout(() => CS.sound.play('chime'), 2400); }
       const tgt = custTarget(s, c, id);
       // 入口を通る道順
@@ -853,7 +1078,10 @@
     if (m.task === 'bake') { const q = L.ovens[j ? j.i : 0] || L.ovens[0]; return { x: q.stand[0], z: q.stand[1], fx: q.x, fz: q.z }; }
     if (m.task === 'whip') { const q = L.whip[j ? j.i : 0] || L.whip[0]; return { x: q.stand[0], z: q.stand[1] - 0.15, fx: q.x, fz: q.z }; }
     if (m.task === 'deco') { const q = L.deco[j ? j.di : 0] || L.deco[0]; return { x: q.stand[0], z: q.stand[1] - 0.15, fx: q.x, fz: q.z }; }
-    if (m.task === 'stock') { const p = j ? [L.shelf[0] + 0.95, L.shelf[1]] : [-RX + 1.9, -RZ + 3.3]; return { x: p[0], z: p[1], fx: -RX, fz: p[1] }; }
+    if (m.task === 'stock') {
+      if (j && j.id && s.k.items[j.id] && W.room) { const half = (j.t0 + j.end) / 2, cp = W.slotPos(s.k.items[j.id].at); if (W.room.now() < half && cp) return { x: cp[0] - 0.55, z: cp[2], fx: cp[0], fz: cp[2], pick: true }; }
+      const p = j ? [L.shelf[0] + 0.95, L.shelf[1]] : [-RX + 1.9, -RZ + 3.3]; return { x: p[0], z: p[1], fx: -RX, fz: p[1], carry: !!j };
+    }
     const r = L.reg[0]; return { x: r.x, z: CASE_Z - 0.7, fx: r.x, fz: CASE_Z + 2 };
   }
   W.updateStaff = function (dt, s) {
@@ -864,10 +1092,14 @@
       if (o && o.key !== key) { W.people.remove(o.ch.node); delete W.staffN['staff' + i]; o = null; }
       if (!m) continue;
       const t = staffSpot(s, m);
-      if (!o) { o = W.staffN['staff' + i] = { ch: MD.character(W.eng, Object.assign({}, D.DEFAULT_SKIN, m.skin || {})), key, x: t.x, z: t.z, r: 0 }; W.people.add(o.ch.node); W.addBlob(o.ch.node); }
-      const dx = t.x - o.x, dz = t.z - o.z, d = Math.hypot(dx, dz);
+      if (!o) { const kp = W._keep && W._keep['staff' + i]; o = W.staffN['staff' + i] = { ch: MD.character(W.eng, Object.assign({}, D.DEFAULT_SKIN, m.skin || {})), key, x: kp ? kp[0] : t.x, z: kp ? kp[1] : t.z, r: kp ? kp[2] : 0 }; W.people.add(o.ch.node); W.addBlob(o.ch.node); }
+      // 店の中と外を行き来するときは裏口を通る
+      let gx = t.x, gz = t.z; const bdz = W.L.backDoor[1], inO = o.x > -RX, inT = t.x > -RX;
+      if (inO !== inT) { const near = Math.abs(o.z - bdz) < 0.25 && Math.abs(o.x + RX) < 0.95; gx = near ? (inT ? -RX + 0.85 : -RX - 0.85) : (inO ? -RX + 0.8 : -RX - 0.8); gz = bdz; }
+      o.carry = !!t.carry;
+      const dx = gx - o.x, dz = gz - o.z, d = Math.hypot(dx, dz);
       let mode = 'idle';
-      if (d > 0.06) { const v = Math.min(d, dt * 1.6); o.x += (dx / d) * v; o.z += (dz / d) * v; o.r = angLerp(o.r, Math.atan2(dx, dz), 1 - Math.exp(-dt * 10)); mode = 'walk'; }
+      if (d > 0.06 || gx !== t.x) { const v = Math.min(d, dt * 1.6); o.x += (dx / d) * v; o.z += (dz / d) * v; o.r = angLerp(o.r, Math.atan2(dx, dz), 1 - Math.exp(-dt * 10)); mode = 'walk'; }
       else { o.r = angLerp(o.r, Math.atan2(t.fx - o.x, t.fz - o.z), 1 - Math.exp(-dt * 6)); mode = m.job ? 'work' : 'idle'; }
       o.ch.node.p = [o.x, 0, o.z]; o.ch.node.r = [0, o.r, 0];
       o.ch.anim(dt, mode, 0.8);
@@ -882,18 +1114,26 @@
   const nm = (id) => (D.ING[id] ? D.ING[id].name : id);
   const itemName = (it, s) => (it.t === 'pan' ? (it.st === 'empty' ? '空の型' : (D.BASES[it.b] || {}).short + (it.st === 'baked' ? '（焼けた）' : it.st === 'baking' ? '（焼いている）' : '生地')) : it.t === 'cream' ? (D.CREAMS[it.k] || {}).name : it.t === 'cake' ? (sim.recipe(s, it.r) || {}).name || 'ケーキ' : it.t === 'deco' ? 'デコ中のケーキ' : it.t === 'box' ? 'ケーキの箱' + (it.s.length ? '（' + it.s.length + '個）' : '（空）') : it.t === 'crate' ? nm(it.ing) + '×' + it.n + ' の段ボール' : it.t === 'top' ? nm(it.k) : '');
   W.itemName = itemName;
-  W.updateTarget = function (s) {
+  W.updateTarget = function (s, g) {
     W.target = null;
     if (!s || !W.room || W.blocked()) { if (W.onTarget) W.onTarget(null, null); return; }
     const L = W.L, o = W.eng.cam.pos, d = W.fwd, pid = W.room.pid;
     const hid = K.held(s, pid), held = hid ? s.k.items[hid] : null;
     const cands = [];
-    const add = (p, r, t) => { const dist = raySphere(o, d, p, r); if (dist >= 0 && dist <= REACH) cands.push(Object.assign(t, { dist, p })); };
+    // 壁ごしには触れない（裏口・入口を通して見えている物だけ）
+    const bdz = L.backDoor[1];
+    const reachable = (p) => {
+      if ((o[0] > -RX) !== (p[0] > -RX)) { const t = (-RX - o[0]) / (p[0] - o[0]), z = o[2] + (p[2] - o[2]) * t, y = o[1] + (p[1] - o[1]) * t; if (Math.abs(z - bdz) > 0.6 || y > 2.1) return false; }
+      if ((o[2] < RZ) !== (p[2] < RZ) && o[0] > -RX && p[0] > -RX) { const t = (RZ - o[2]) / (p[2] - o[2]), x = o[0] + (p[0] - o[0]) * t; if (Math.abs(x) > 0.72) return false; }
+      return true;
+    };
+    const add = (p, r, t) => { const dist = raySphere(o, d, p, r); if (dist >= 0 && dist <= REACH && reachable(p)) cands.push(Object.assign(t, { dist, p })); };
     const working = s.phase === 'prep' || s.phase === 'open';
     // 置いてある物
     for (const id in s.k.items) {
       const it = s.k.items[id], at = String(it.at); if (at.startsWith('h:')) continue;
       if (kindOf(at) === 'dt' || kindOf(at) === 'ov') continue; // 回転台・オーブンは設備側で扱う
+      if (it.t === 'crate' && it.ar > g) continue; // トラックがまだ来ていない
       const p = W.slotPos(at); if (!p) continue;
       const big = it.t === 'crate' ? 0.28 : 0.16;
       add([p[0], p[1] + (it.t === 'crate' ? 0.17 : 0.06), p[2]], big, { item: id, name: itemName(it, s), pri: !held ? { label: '持つ', a: { t: 'pick', id } } : null });

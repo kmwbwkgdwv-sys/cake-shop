@@ -141,9 +141,10 @@
       render(body, tab) {
         if (tab === 'play') {
           body.innerHTML = `
-          <div class="card"><h3>視点の感度</h3><p class="muted small" style="margin:0">マウス・スワイプで見回す速さ。</p>
+          <div class="card"><h3>視点の感度</h3><p class="muted small" style="margin:0">マウス・スワイプで見回す速さ。PC はマウスを動かすだけで見回せます（画面の端に寄せると回り続けます）。</p>
             <div class="row"><input type="range" id="set-cam" min="0.3" max="2.5" step="0.05" value="${ST.camSens}"><b class="num" id="set-cam-v" style="min-width:48px;text-align:right">${ST.camSens.toFixed(2)}</b></div>
-            <div class="row between"><span class="small">上下を反転</span><label class="switch"><input type="checkbox" id="set-inv" ${ST.invertY ? 'checked' : ''} aria-label="上下反転"><i></i></label></div></div>
+            <div class="row between"><span class="small">上下を反転</span><label class="switch"><input type="checkbox" id="set-inv" ${ST.invertY ? 'checked' : ''} aria-label="上下反転"><i></i></label></div>
+            <div class="row between"><span class="small">PC：マウスを画面に固定する（FPS 方式・Esc で解除）</span><label class="switch"><input type="checkbox" id="set-lock" ${ST.lockMouse ? 'checked' : ''} aria-label="マウスを固定"><i></i></label></div></div>
           <div class="card"><h3>視野角（FOV）</h3><p class="muted small" style="margin:0">広くすると周りがよく見え、狭くすると手元が大きく見えます。</p>
             <div class="row"><input type="range" id="set-fov" min="55" max="95" step="1" value="${ST.fov}"><b class="num" id="set-fov-v" style="min-width:48px;text-align:right">${ST.fov}°</b></div>
             <div class="row between"><span class="small">歩くときの画面の揺れ</span><label class="switch"><input type="checkbox" id="set-bob" ${ST.bob ? 'checked' : ''} aria-label="画面の揺れ"><i></i></label></div></div>
@@ -156,6 +157,7 @@
           const fov = $('#set-fov', body), btn = $('#set-btn', body), cam = $('#set-cam', body);
           cam.oninput = () => { ST.camSens = +cam.value; $('#set-cam-v', body).textContent = ST.camSens.toFixed(2); ST.save(); };
           $('#set-inv', body).onchange = (e) => { ST.invertY = e.target.checked; ST.save(); };
+          $('#set-lock', body).onchange = (e) => { ST.lockMouse = e.target.checked; ST.save(); if (!ST.lockMouse && document.pointerLockElement) document.exitPointerLock(); };
           fov.oninput = () => { ST.fov = +fov.value; $('#set-fov-v', body).textContent = ST.fov + '°'; ST.save(); };
           $('#set-bob', body).onchange = (e) => { ST.bob = e.target.checked; ST.save(); };
           btn.oninput = () => { ST.btnScale = +btn.value; $('#set-btn-v', body).textContent = Math.round(ST.btnScale * 100) + '%'; ST.save(); };

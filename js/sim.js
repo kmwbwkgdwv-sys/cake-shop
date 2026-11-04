@@ -295,7 +295,7 @@
     next(S, a, now) { if (S.phase !== 'report') return { ok: false }; nextDay(S, now); return { ok: true }; },
     endDay(S, a, now) { if (S.phase !== 'prep' || !(S.dayT > 0)) return { ok: false, msg: 'OPEN してから閉店できます' }; closeDay(S, now); return { ok: true }; },
 
-    buy(S, a) {
+    buy(S, a, now) {
       const ing = D.ING[a.id]; const n = Math.floor(a.n);
       if (!ing || !(n > 0 && n <= 99)) return { ok: false, msg: '数量が不正です' };
       const unit = S.market[a.id] * (n >= 10 ? 0.95 : 1);
@@ -303,8 +303,9 @@
       if (S.funds < cost) return { ok: false, msg: '資金が足りません' };
       if (CS.kitchen.deliveryFree(S) < Math.ceil(n / 10)) return { ok: false, msg: '配達置き場がいっぱいです（段ボールを棚にしまおう）' };
       S.funds -= cost; S.today.buy += cost;
-      CS.kitchen.deliver(S, a.id, n, Math.round(unit));
-      return { ok: true, msg: ing.name + '×' + n + ' を注文。裏口に段ボールが届きました（¥' + cost.toLocaleString() + '）' };
+      const d = CS.kitchen.deliver(S, a.id, n, Math.round(unit), now);
+      const sec = d.ar && now ? Math.max(1, Math.round((d.ar - now) / 1000)) : 0;
+      return { ok: true, msg: ing.name + '×' + n + ' を注文（¥' + cost.toLocaleString() + '）。' + (sec ? '約' + sec + '秒でトラックが裏口に届けます' : '裏口に届きました') };
     },
     buyEq(S, a) {
       const E = D.EQUIP[a.kind]; if (!E) return { ok: false };

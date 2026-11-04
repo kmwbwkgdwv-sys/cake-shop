@@ -4,7 +4,7 @@
   const CS = (G.CS = G.CS || {});
 
   // ---------- 設定（端末ごとに保存。スマホとPCで別々にできる） ----------
-  const DEF = { light: false, camSens: 1, invertY: false, fov: 72, bob: true, btnScale: 1, hand: 'right', fab: null, sound: true, vol: 0.6, tips: true };
+  const DEF = { light: false, camSens: 1, invertY: false, fov: 72, bob: true, lockMouse: false, btnScale: 1, hand: 'right', fab: null, sound: true, vol: 0.6, tips: true };
   const settings = Object.assign({}, DEF, (CS.LS && CS.LS.get('cs.settings', {})) || {});
   settings.save = function () { const o = {}; for (const k in DEF) o[k] = settings[k]; CS.LS.set('cs.settings', o); CS.applySettings && CS.applySettings(); };
   settings.reset = function (keys) { (keys || Object.keys(DEF)).forEach((k) => (settings[k] = DEF[k])); settings.save(); };
@@ -53,6 +53,7 @@
     whisk: () => tone(1800 + Math.random() * 600, 0.04, 'triangle', 0.06),
     fanfare: () => { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.22, 'triangle', 0.2, i * 0.11)); tone(1319, 0.5, 'triangle', 0.18, 0.46); },
     open: () => { tone(880, 0.12, 'sine', 0.2); tone(1175, 0.3, 'sine', 0.2, 0.12); },
+    beep: () => { tone(1046, 0.14, 'square', 0.07); tone(1046, 0.14, 'square', 0.07, 0.32); tone(1046, 0.14, 'square', 0.07, 0.64); },
     chime: () => { tone(1319, 0.5, 'sine', 0.14); tone(1047, 0.7, 'sine', 0.12, 0.18); },
     put: () => tone(220, 0.06, 'triangle', 0.16, 0, 160),
   };

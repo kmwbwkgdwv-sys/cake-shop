@@ -11,7 +11,7 @@ A({ t: 'start' });
 A({ t: 'buy', id: 'strawberry', n: 12 });
 let crates = Object.keys(S.k.items).filter((id) => S.k.items[id].t === 'crate');
 console.log('crates', crates.map((id) => S.k.items[id].at + ':' + S.k.items[id].n));
-A({ t: 'pick', id: crates[0] }); A({ t: 'stock' });
+console.log('pick before truck:', A({ t: 'pick', id: crates[0] }).msg); now += 9500; console.log('trucks', JSON.stringify(S.k.trucks)); A({ t: 'pick', id: crates[0] }); A({ t: 'stock' });
 console.log('strawberry inv', sim.invCount(S, 'strawberry'));
 // 生地：卵→砂糖→小麦粉→バター（plain: egg3 sugar2 flour2 butter1）
 ['egg', 'egg', 'egg', 'sugar', 'sugar', 'flour', 'flour', 'butter'].forEach((ing) => A({ t: 'addIng', st: 'mix', i: 0, ing }));

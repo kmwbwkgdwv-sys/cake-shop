@@ -25,6 +25,7 @@
     k.deco = _.toArr(k.deco).map((b) => (b && typeof b === 'object' ? b : { st: 'idle' })); while (k.deco.length < K.count(S, 'deco')) k.deco.push({ st: 'idle' });
     S.ovens.forEach((o) => { if (o.temp == null) o.temp = 170; });
     if (S.dayT == null) S.dayT = 0;
+    k.trucks = _.toArr(k.trucks).filter((t) => t > 0);
   };
 
   // ---------- 物 ----------
@@ -124,6 +125,7 @@
   A.pick = function (S, a, now) {
     if (needHand(S, a)) return needHand(S, a);
     const it = S.k.items[a.id]; if (!it || String(it.at).startsWith('h:')) return ng('もうありません');
+    if (!K.arrived(it, now)) return ng('トラックがまだ到着していません');
     if (it.res) return ng('アルバイトが使っています');
     const from = it.at;
     if (kindOf(from) === 'ov') takeFromOven(S, it, now);
@@ -478,12 +480,23 @@
   // =====================================================================
   //  仕入れ（段ボールで届く）
   // =====================================================================
-  K.deliver = function (S, ing, n, unit) {
+  // 仕入れはトラックで裏口の外に届く（到着までは持てない）
+  K.TRUCK = { IN: 9000, STAY: 7000, OUT: 8000 };
+  K.truckFor = function (S, now) {
+    const TT = K.TRUCK, T = (S.k.trucks = _.toArr(S.k.trucks).filter((t) => t > 0 && now < t + TT.STAY + TT.OUT));
+    const inc = T.find((t) => t > now + 1500); if (inc) return inc;
+    const last = T.length ? Math.max(...T) : -1e15;
+    const at = Math.max(now + TT.IN, last + TT.STAY + TT.OUT + 1000);
+    T.push(at); return at;
+  };
+  K.deliver = function (S, ing, n, unit, now) {
     const free = []; for (let j = 0; j < KD.deliv; j++) if (!K.at(S, 'dl:' + j)) free.push(j);
     let left = n, made = 0;
-    while (left > 0 && free.length) { const m = Math.min(10, left); add(S, { t: 'crate', ing, n: m, u: unit, at: 'dl:' + free.shift() }); left -= m; made++; }
-    return { made, left };
+    const ar = now ? K.truckFor(S, now) : 0;
+    while (left > 0 && free.length) { const m = Math.min(10, left); add(S, { t: 'crate', ing, n: m, u: unit, ar, at: 'dl:' + free.shift() }); left -= m; made++; }
+    return { made, left, ar };
   };
+  K.arrived = (it, now) => !it || it.t !== 'crate' || !(it.ar > now);
   K.deliveryFree = (S) => { let n = 0; for (let j = 0; j < KD.deliv; j++) if (!K.at(S, 'dl:' + j)) n++; return n; };
 
   // =====================================================================
@@ -595,7 +608,7 @@
           return job({ k: 'deco', di, ci, r: rid, b: { q: b.q, df: b.df, c: b.c }, cr, tc, end: now + dur('deco') });
         }
       } else if (st.task === 'stock') {
-        const cid = Object.keys(I).find((id) => free(S, id) && I[id].t === 'crate');
+        const cid = Object.keys(I).find((id) => free(S, id) && I[id].t === 'crate' && K.arrived(I[id], now));
         if (cid) { I[cid].res = 'staff' + slot; return job({ k: 'stock', id: cid, end: now + dur('stock') }); }
         if (S.funds < 8000 || K.deliveryFree(S) < 2) return;
         const need = {};

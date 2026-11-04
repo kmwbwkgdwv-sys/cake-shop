@@ -87,7 +87,7 @@
         <div class="chat-float" id="chatFloat" aria-live="polite"></div>
         <div class="prompt" id="prompt" aria-live="polite"></div>
         <div class="held" id="held" hidden></div>
-        <button class="lockhint" id="lockhint" ${T ? 'hidden' : ''}>${ic('hand')} クリックで操作開始（マウス＝視点／WASD＝移動／Esc＝カーソル）</button>
+        <div class="lockhint" id="lockhint" ${T || CS.LS.get('cs.mh', false) ? 'hidden' : ''}>${ic('hand')} マウスを動かすと見回せます（ボタンは押さなくてOK）・WASD＝移動・クリック＝つかむ／置く・右クリック＝使う</div>
         <div class="fabs" id="fabs">
           <div class="mv joy" data-id="joy" id="joy" ${T ? '' : 'hidden'}><i></i></div>
           <button class="mv act-btn" data-id="act" id="b-act" aria-label="つかむ・置く"><span class="ab-ic">${ic('hand')}</span><span class="ab-t">つかむ</span></button>
@@ -116,10 +116,9 @@
     press('#b-act', () => W.primary()); press('#b-sec', () => W.secondary()); press('#b-del', () => W.discard());
     W.onTarget = (t, held) => game.renderPrompt(t, held);
     W.onUI = (k) => { if (k === 'pc') game.openPC(); else if (k === 'menu') game.openMenu('sell'); };
-    $('#lockhint').onclick = () => { const c = $('#world canvas'); if (c && c.requestPointerLock) { try { const r = c.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* noop */ } } };
+    { const used = {}; W.onMouseUsed = (k) => { used[k] = 1; if (used.move && used.click) { const h = $('#lockhint'); if (h && !h.hidden) { h.hidden = true; CS.LS.set('cs.mh', true); } } }; }
     if (!game._plBound) {
       game._plBound = true;
-      document.addEventListener('pointerlockchange', () => { const h = $('#lockhint'); if (h && !touch()) h.hidden = !!document.pointerLockElement; });
       document.addEventListener('keydown', (e) => {
         if (!game.room || UI.scr !== 'game' || /INPUT|TEXTAREA|SELECT/.test((e.target && e.target.tagName) || '')) return;
         if (UI.sheet || !$('#modal').hidden) return;
@@ -417,7 +416,7 @@
     const ev = s.mEvent && s.mEvent.id ? `<div class="banner ${s.mEvent.up ? 'pink' : 'mint'}">${D.ING[s.mEvent.id].icon} 今日は${esc(D.ING[s.mEvent.id].name)}が${s.mEvent.up ? '高騰中！' : '特売中！'}</div>` : '';
     const free = CS.kitchen.deliveryFree(s);
     body.innerHTML = `${ev}<div class="row between wrap"><span class="small">資金 <b class="num">${yen(s.funds)}</b>・裏口の置き場 あと<b>${free}</b>箱</span><button class="btn sm mint" id="mk-bulk">${ic('cart')} 販売中メニュー2台分をまとめて注文</button></div>
-      <div class="banner sky">${ic('box')}<span>注文した材料は<b>裏口（左奥）に段ボール</b>で届きます（1箱10個まで）。持って<b>在庫の棚</b>にしまうと使えるようになります。</span></div>
+      <div class="banner sky">${ic('box')}<span>注文した材料は<b>トラック</b>で届きます。到着したら<b>裏口（左奥）から外に出て</b>、段ボール（1箱10個まで）を持って店の中の<b>在庫の棚</b>にしまうと使えるようになります。</span></div>
       <div class="list">${Object.keys(D.ING).map((id) => {
         const ing = D.ING[id]; const p = s.market[id]; const n = game.mq[id] || 5; const have = sim.invCount(s, id);
         const ch = Math.round((p / ing.price - 1) * 100);
@@ -747,7 +746,7 @@
   // ---------- チュートリアル（最初に1回。画面右上のチェックリスト） ----------
   const TUT = [
     { id: 'order', t: 'パソコンで材料を注文', d: '右の壁ぎわのパソコンをねらって使う。卵・砂糖・小麦粉・バター・生クリーム・いちごを注文しよう（「まとめて注文」が便利）', ok: (s) => (s.today.buy || 0) > 0 || s.history.length > 0 },
-    { id: 'stock', t: '段ボールを在庫の棚へ', d: '裏口（左奥）に届いた段ボールを持って、左の壁の「在庫の棚」をねらってしまう', ok: (s) => ((s.today.buy || 0) > 0 || s.history.length > 0) && !Object.values(s.k.items).some((it) => it.t === 'crate') },
+    { id: 'stock', t: 'トラックの段ボールを運び入れる', d: 'トラックが来たら裏口（左奥）から外に出て、段ボールを持って店の中の「在庫の棚」にしまう', ok: (s) => ((s.today.buy || 0) > 0 || s.history.length > 0) && !Object.values(s.k.items).some((it) => it.t === 'crate') },
     { id: 'mix', t: 'ミキサーで生地を作る', d: '奥のミキサーの上の材料を順番に入れる（卵→砂糖→小麦粉→バター）→ 回して緑で止める', ok: (s) => s.k.mix.some((b) => b.st === 'done' && b.k) || Object.values(s.k.items).some((it) => it.t === 'pan' && it.st !== 'empty') },
     { id: 'bake', t: '型に流してオーブンへ', d: '左奥の棚で型を取り、ミキサーをねらって「型に流す」→ オーブンに入れて電源を入れる', ok: (s) => Object.values(s.k.items).some((it) => it.t === 'pan' && (it.st === 'baking' || it.st === 'baked')) || Object.values(s.k.items).some((it) => it.t === 'deco' || it.t === 'cake') },
     { id: 'cool', t: '焼けたら取り出して冷ます', d: 'ゲージが緑のうちに取り出し、右の冷却ラックに置く', ok: (s) => Object.values(s.k.items).some((it) => (it.t === 'pan' && it.st === 'baked' && !String(it.at).startsWith('ov:')) || it.t === 'deco' || it.t === 'cake') },
@@ -775,7 +774,7 @@
     const T = touch();
     const ctl = T
       ? [['移動', '左下のスティック'], ['見回す', '画面の右側をスワイプ'], ['つかむ・置く', '大きいボタン（照準の先の物）'], ['使う', '小さいボタン（ミキサーを回す・電源など）'], ['捨てる', 'ゴミ箱のボタン']]
-      : [['移動', 'W A S D（Shift で小走り）'], ['見回す', 'マウス（画面をクリックで開始・Esc で解除）'], ['つかむ・置く', 'E / 左クリック'], ['使う', 'F / 右クリック'], ['捨てる', 'Q'], ['パソコン・レシピ', 'Tab / R']];
+      : [['移動', 'W A S D（Shift で小走り）'], ['見回す', 'マウスを動かすだけ（ボタンを押さなくてOK）'], ['つかむ・置く', 'E / 左クリック'], ['使う', 'F / 右クリック'], ['捨てる', 'Q'], ['パソコン・レシピ', 'Tab / R']];
     UI.modal({
       title: 'ようこそ！ケーキ屋さんへ',
       html: `<div style="display:grid;gap:10px"><p style="margin:0">一人称でお店の中を歩いて、<b>材料を注文 → 生地 → 焼く → クリーム → デコ → 並べる → 接客</b>を自分の手でやります。みんなで分担すると早い！</p>

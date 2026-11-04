@@ -45,13 +45,14 @@ async def main():
     print('phase A/B', await ev(A, "CS.ui.room.S.phase"), await ev(B, "CS.ui.room.S.phase"))
     # B が注文 → 段ボールが両方に見える
     await ev(B, "CS.ui.room.act({t:'buy',id:'egg',n:10})"); await B.wait_for_timeout(1800)
+    await ev(A, "(()=>{const S=CS.ui.room.S,n=CS.ui.room.now(); S.k.trucks=[n-500]; Object.values(S.k.items).forEach(i=>{ if(i.t==='crate') i.ar=n-500; }); CS.ui.room.pushState(false); CS.ui.room.emit('state', S);})()"); await B.wait_for_timeout(1500)
     print('crates A', await ev(A, "Object.values(CS.ui.room.S.k.items).filter(i=>i.t==='crate').length"), 'B', await ev(B, "Object.values(CS.ui.room.S.k.items).filter(i=>i.t==='crate').length"))
     # B が照準で段ボールを持つ
-    r = await ev(B, """(()=>{const {W,S,aim,go}=T; const c=Object.entries(S().k.items).find(([id,i])=>i.t==='crate'); const p=W.slotPos(c[1].at); const a=aim(p[0]+1.3,p[2]+0.3,[p[0],p[1]+0.17,p[2]]); return a+' -> '+go('p');})()""")
+    r = await ev(B, """(()=>{const {W,S,aim,go}=T; const c=Object.entries(S().k.items).find(([id,i])=>i.t==='crate'); const p=W.slotPos(c[1].at); const a=aim(p[0]-1.0,p[2]+0.2,[p[0],p[1]+0.17,p[2]]); return a+' -> '+go('p');})()""")
     print('B pick', r, 'applied on A after', await until(A, "Object.values(CS.ui.room.S.k.items).some(i=>i.t==='crate'&&String(i.at).startsWith('h:'))"), 's')
     print('A sees crate at', await ev(A, "Object.values(CS.ui.room.S.k.items).filter(i=>i.t==='crate').map(i=>i.at).join(',')"), 'B pid', await ev(B, "CS.ui.room.pid"))
     # A から B が見えて、手に段ボールが見える
-    await ev(A, "(()=>{const W=CS.world; W.me.x=-W.dims.RX+3.5; W.me.z=-W.dims.RZ+3.0; W.me.yaw=Math.PI/2; W.me.pitch=-0.15;})()")
+    await ev(A, "(()=>{const W=CS.world; W.me.x=-W.dims.RX-4.6; W.me.z=W.L.backDoor[1]+5.0; W.me.yaw=-0.5; W.me.pitch=-0.15;})()")
     await A.wait_for_timeout(2500)
     print('A others', await ev(A, "Object.keys(CS.world.others).length"), 'A item vis', await ev(A, "(()=>{const W=CS.world;const e=Object.entries(W.items).find(([id,o])=>o.it.t==='crate');return e?JSON.stringify([e[1].n.vis, e[1].n.p.map(v=>+v.toFixed(2))]):'none'})()"))
     await A.screenshot(path=f'{OUT}/mp2_A_sees_B.png')

@@ -573,6 +573,39 @@
       g.fillText(name, w / 2, h / 2 - 8);
       g.font = '500 28px "Zen Kaku Gothic New",sans-serif'; g.fillStyle = '#C9A96E'; g.fillText('PÂTISSERIE', w / 2, h - 46);
     }),
+    // 厨房の壁のサブウェイタイル（u=1m で 8×16 枚）
+    subway: () => canvas(512, 512, (g, w, h) => {
+      g.fillStyle = '#CFC9C0'; g.fillRect(0, 0, w, h);
+      const tw = 64, th = 32;
+      for (let y = 0; y < h; y += th) for (let x = -((y / th) % 2) * tw / 2; x < w; x += tw) {
+        const gr = g.createLinearGradient(0, y, 0, y + th); const base = mix2('#F7F5F1', '#ECE8E1', rnd());
+        gr.addColorStop(0, '#FFFFFF'); gr.addColorStop(0.18, base); gr.addColorStop(0.85, base); gr.addColorStop(1, '#DCD7CF');
+        g.fillStyle = gr; g.fillRect(x + 2, y + 2, tw - 4, th - 4);
+      }
+      noise(g, w, h, 1200, 0.05, ['#BDB6AB', '#FFFFFF']);
+    }),
+    // 作業場の黒いゴムマット
+    mat: () => canvas(128, 128, (g, w, h) => {
+      g.fillStyle = '#26282A'; g.fillRect(0, 0, w, h);
+      for (let y = 8; y < h; y += 16) for (let x = (y / 16) % 2 ? 16 : 8; x < w; x += 16) { g.fillStyle = '#121314'; g.beginPath(); g.arc(x, y, 4.2, 0, Math.PI * 2); g.fill(); }
+      noise(g, w, h, 400, 0.12, ['#3A3D40']);
+    }),
+    // 壁の絵（抽象画）
+    art: (k) => canvas(256, 256, (g, w, h) => {
+      const P = [['#E9DCC9', '#C9826B', '#6E8B74', '#2F3E4E'], ['#EFE6D8', '#D9A441', '#8FA9B8', '#7A3B3B'], ['#F2EBDD', '#B7695C', '#E3C08D', '#3C4A3A']][k % 3];
+      g.fillStyle = P[0]; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 7; i++) { g.fillStyle = P[1 + (i % 3)]; g.globalAlpha = 0.55 + rnd() * 0.4; g.beginPath(); g.arc(rnd() * w, rnd() * h, 20 + rnd() * 70, 0, Math.PI * 2); g.fill(); }
+      g.globalAlpha = 1; g.strokeStyle = P[3]; g.lineWidth = 3; g.beginPath(); g.moveTo(20, h * 0.7); g.bezierCurveTo(w * 0.3, h * 0.2, w * 0.7, h * 0.9, w - 20, h * 0.35); g.stroke();
+    }),
+    // 時計の文字盤
+    clock: () => canvas(256, 256, (g, w) => {
+      g.fillStyle = '#F7F3EC'; g.beginPath(); g.arc(w / 2, w / 2, w / 2 - 4, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#2A2624'; g.lineWidth = 10; g.stroke();
+      g.fillStyle = '#2A2624'; for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; g.save(); g.translate(w / 2, w / 2); g.rotate(a); g.fillRect(-3, -w / 2 + 18, 6, i % 3 ? 14 : 26); g.restore(); }
+      g.font = 'italic 600 26px "Shippori Mincho B1",serif'; g.textAlign = 'center'; g.fillText('Pâtisserie', w / 2, w * 0.68);
+    }),
+    // ショーケースのプライスカード列
+    cards: () => canvas(512, 64, (g, w, h) => { g.fillStyle = '#2A2624'; g.fillRect(0, 0, w, h); g.fillStyle = '#C9A35E'; g.fillRect(0, h - 4, w, 4); }),
   };
   function mix2(a, b, t) { const A = rgb(a), B2 = rgb(b); const c = A.map((v, i) => Math.round((v + (B2[i] - v) * Math.max(0, Math.min(1, t))) * 255)); return 'rgb(' + c.join(',') + ')'; }
 

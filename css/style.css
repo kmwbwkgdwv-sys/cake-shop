@@ -473,8 +473,8 @@ body.light *, body.light *::before, body.light *::after { animation-duration: 0s
 /* =====================================================================
    一人称視点の HUD（横画面）
    ===================================================================== */
-.world canvas { cursor: crosshair; }
-.world canvas:active { cursor: crosshair; }
+.world canvas { cursor: none; }
+.world canvas:active { cursor: none; }
 .xhair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(255, 255, 255, .85); box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .55); z-index: 3; pointer-events: none; transition: transform .12s, background .12s; }
 .xhair.on { transform: scale(1.9); background: #fff; box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .6), 0 0 0 5px rgba(255, 255, 255, .18); }
 .xhair.aim { width: 14px; height: 14px; margin: -7px 0 0 -7px; background: transparent; border: 2px solid #F19C8C; transform: none; }
@@ -490,7 +490,7 @@ body.light *, body.light *::before, body.light *::after { animation-duration: 0s
 kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 5px; background: #F2EBE1; color: #1B1714; font: 700 12px/1 var(--body); box-shadow: 0 2px 0 #9E9184; }
 .held { position: absolute; z-index: 5; left: 50%; bottom: calc(10px + var(--safe-b)); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 4px 14px 4px 10px; border-radius: 999px; background: rgba(20, 16, 13, .78); border: 1px solid rgba(201, 163, 94, .45); font-size: 13px; font-weight: 700; white-space: nowrap; pointer-events: none; max-width: 60%; }
 .held .ic { width: 18px; height: 18px; color: var(--gold-2); }
-.lockhint { position: absolute; z-index: 5; left: 50%; bottom: calc(52px + var(--safe-b)); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-radius: 999px; background: rgba(20, 16, 13, .82); border: 1px solid var(--line-2); color: var(--fg); font: 700 13px var(--body); cursor: pointer; white-space: nowrap; }
+.lockhint { position: absolute; z-index: 5; left: 50%; bottom: calc(52px + var(--safe-b)); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-radius: 999px; background: rgba(20, 16, 13, .82); border: 1px solid var(--line-2); color: var(--fg); font: 700 13px var(--body); white-space: nowrap; pointer-events: none; max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis; }
 .lockhint .ic { width: 18px; height: 18px; color: var(--gold-2); }
 /* 注文票 */
 .orders { position: absolute; z-index: 5; left: var(--safe-l); top: calc(58px + var(--safe-t)); display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; pointer-events: none; max-width: 52vw; }
@@ -564,4 +564,4 @@ kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; 
 .bin-lb { background: rgba(250, 246, 240, .92); color: #2A221D; border-radius: 5px; padding: 0 5px; font-size: 10px; font-weight: 700; line-height: 1.5; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
 .bin-lb.out { background: rgba(224, 106, 106, .92); color: #fff; }
 .bin-lb.tg { background: var(--gold-2); }
-#scr-game:not(.touch) .lockhint { bottom: calc(100px + var(--safe-b)); }
+#scr-game:not(.touch) .lockhint { bottom: calc(118px + var(--safe-b)); }

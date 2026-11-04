@@ -38,11 +38,18 @@ async def main():
     for ing, n in [('egg', 10), ('sugar', 10), ('flour', 10), ('butter', 5), ('cream', 10), ('strawberry', 10)]:
       await js(f"CS.ui.room.act({{t:'buy', id:'{ing}', n:{n}}})")
     print('crates', await step("return Object.values(S().k.items).filter(i=>i.t==='crate').map(i=>i.ing+':'+i.at).join(' ')"))
+    print('truck', await step("return JSON.stringify([S().k.trucks, R().now()])"))
+    await pg.wait_for_timeout(2500)
+    await pg.screenshot(path=f'{OUT}/fp2_truck_coming.png')
+    # 到着まで早送り（トラックの到着時刻を今に）
+    await step("const n=R().now(); S().k.trucks=[n-500]; Object.values(S().k.items).forEach(i=>{ if(i.t==='crate') i.ar=n-500; }); R().emit('state', S()); W.me.x=-W.dims.RX-1.6; W.me.z=W.L.backDoor[1]+0.2; W.me.yaw=Math.PI*0.95; W.me.pitch=-0.25;")
+    await pg.wait_for_timeout(2500)
+    await pg.screenshot(path=f'{OUT}/fp2_truck_parked.png')
     await pg.wait_for_timeout(600)
     # 段ボールを棚へ
     for k in range(8):
       r = await step("""const L=W.L; const c=Object.entries(S().k.items).find(([id,i])=>i.t==='crate'&&String(i.at).startsWith('dl:')); if(!c) return 'done';
-        const p=W.slotPos(c[1].at); const a1=aim(p[0]+1.3, p[2]+0.3, [p[0],p[1]+0.17,p[2]]); const r1=go('p');
+        const p=W.slotPos(c[1].at); const a1=aim(p[0]-1.0, p[2]+0.2, [p[0],p[1]+0.17,p[2]]); const r1=go('p');
         const a2=aim(L.shelf[0]+1.5, L.shelf[1], [L.shelf[0]+0.3,1.0,L.shelf[1]]); const r2=go('p'); return [a1, r1, a2, r2].join(' / ');""")
       print('crate', r)
       if r == 'done': break

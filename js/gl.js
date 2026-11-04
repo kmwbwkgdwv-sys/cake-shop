@@ -161,6 +161,11 @@
         grid.push(row);
       }
       for (let x = 0; x < seg; x++) { const a = grid[0][x], b = grid[1][x], c = grid[1][x + 1], d = grid[0][x + 1]; g.i.push(a, b, d, b, c, d); }
+      if (open) {
+        // ふたの無い筒（ボウル・型・カップ）は内側の面も作る（中をのぞいても向こうが透けない）
+        const inner = grid.map((row) => row.map((k) => vert(g, g.p[k * 3], g.p[k * 3 + 1], g.p[k * 3 + 2], -g.n[k * 3], -g.n[k * 3 + 1], -g.n[k * 3 + 2], g.uv[k * 2], g.uv[k * 2 + 1], 0, 0, 0)));
+        for (let x = 0; x < seg; x++) { const a = inner[0][x], b = inner[1][x], c = inner[1][x + 1], d = inner[0][x + 1]; g.i.push(a, d, b, b, d, c); }
+      }
       if (!open) {
         [1, -1].forEach((sg) => {
           const rad = sg > 0 ? rt : rb; if (rad <= 0) return;
@@ -324,14 +329,21 @@ precision highp float;
 #else
 precision mediump float;
 #endif
-uniform vec3 uColor, uLight, uSky, uGround, uSun, uCam, uFog, uInk; uniform vec2 uFogR;
-uniform float uOp, uEm, uOut, uUseTex, uShadow, uRecv, uRK, uMK, uAO, uExpo, uSMs;
+uniform vec3 uColor, uLight, uSky, uGround, uSun, uCam, uFog, uInk, uWall; uniform vec2 uFogR;
+uniform float uOp, uEm, uOut, uUseTex, uShadow, uRecv, uRK, uMK, uAO, uExpo, uSMs, uSQ, uLampR;
 uniform sampler2D uTex, uSM;
 uniform vec4 uPL[4]; uniform vec3 uPC[4]; uniform int uNPL;
 varying vec3 vN; varying vec3 vW; varying vec3 vC; varying vec2 vUV; varying vec4 vL; varying vec2 vM;
 const float PI = 3.14159265;
 float unpack(vec4 c){ return dot(c, vec4(1.0/16777216.0, 1.0/65536.0, 1.0/256.0, 1.0)); }
-float sAt(vec3 sc, vec2 o){ return step(sc.z - 0.0012, unpack(texture2D(uSM, sc.xy + o * uSMs))); }
+float sAt(vec3 sc, vec2 o){ return step(sc.z, unpack(texture2D(uSM, sc.xy + o * uSMs))); }
+// 影の縁をなめらかに（4点の補間）
+float sBil(vec2 uv, float z){
+  vec2 p = uv / uSMs - 0.5; vec2 f = fract(p); vec2 b = (floor(p) + 0.5) * uSMs;
+  float a = step(z, unpack(texture2D(uSM, b))), c = step(z, unpack(texture2D(uSM, b + vec2(uSMs, 0.0))));
+  float d = step(z, unpack(texture2D(uSM, b + vec2(0.0, uSMs)))), e = step(z, unpack(texture2D(uSM, b + vec2(uSMs))));
+  return mix(mix(a, c, f.x), mix(d, e, f.x), f.y);
+}
 float ggx(float nh, float a){ float a2 = a * a; float d = nh * nh * (a2 - 1.0) + 1.0; return a2 / (PI * d * d + 1e-5); }
 vec3 aces(vec3 x){ return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 void main(){
@@ -351,9 +363,16 @@ void main(){
   if (uShadow > 0.5 && uRecv > 0.5) {
     vec3 sc = vL.xyz / vL.w * 0.5 + 0.5;
     if (sc.x > 0.0 && sc.x < 1.0 && sc.y > 0.0 && sc.y < 1.0 && sc.z < 1.0) {
+      sc.z -= 0.0007 + 0.0022 * (1.0 - max(dot(N, uLight), 0.0));
       sh = 0.0;
-      for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) sh += sAt(sc, vec2(float(x), float(y)));
-      sh /= 9.0;
+      if (uSQ > 0.5) {
+        sh = sBil(sc.xy + vec2(-0.9, -0.9) * uSMs, sc.z) + sBil(sc.xy + vec2(0.9, -0.9) * uSMs, sc.z) + sBil(sc.xy + vec2(-0.9, 0.9) * uSMs, sc.z) + sBil(sc.xy + vec2(0.9, 0.9) * uSMs, sc.z);
+        sh *= 0.25;
+      } else {
+        for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) sh += sAt(sc, vec2(float(x), float(y)));
+        sh /= 9.0;
+      }
+      vec2 eg = abs(sc.xy - 0.5) * 2.0; sh = mix(sh, 1.0, smoothstep(0.82, 1.0, max(eg.x, eg.y)));
     }
   }
   // 太陽（窓からの光）
@@ -371,13 +390,15 @@ void main(){
     float fall = clamp(1.0 - pow(d / uPL[i].w, 4.0), 0.0, 1.0); float att = fall * fall / (d * d + 1.0);
     float nl = max(dot(N, l), 0.0); vec3 h = normalize(l + V);
     vec3 f = F0 + (1.0 - F0) * pow(1.0 - max(dot(V, h), 0.0), 5.0);
-    col += (dif * (1.0 - f) / PI + f * ggx(max(dot(N, h), 0.0), a) * 0.25) * uPC[i] * nl * att;
+    col += (dif * (1.0 - f) / PI + f * ggx(max(dot(N, h), 0.0), max(a, 0.02)) * 0.3) * uPC[i] * nl * att;
   }
   // 環境光と映り込み
   vec3 amb = mix(uGround, uSky, N.y * 0.5 + 0.5);
   vec3 Fr = F0 + (max(vec3(1.0 - rough), F0) - F0) * pow(1.0 - NdV, 5.0);
   vec3 R = reflect(-V, N);
-  vec3 env = mix(uGround * 0.8, uSky * 1.25, smoothstep(-0.25, 0.75, R.y));
+  // 映り込み：床・壁・天井（店内）と、天井の照明のきらめき
+  vec3 env = R.y > 0.0 ? mix(uWall, uSky * 1.2, smoothstep(0.05, 0.75, R.y)) : mix(uWall, uGround * 0.85, smoothstep(-0.05, -0.6, R.y));
+  env += uSky * pow(max(R.y, 0.0), 10.0) * uLampR * (1.0 - rough);
   float ao = mix(1.0, mix(0.6, 1.0, smoothstep(0.0, 0.5, vW.y)), uAO);
   col += (dif * (1.0 - Fr) * amb + Fr * env * (1.0 - rough * 0.75)) * ao;
   col += alb * uEm * 3.0;
@@ -397,6 +418,56 @@ precision mediump float;
 #endif
 void main(){ vec4 b = vec4(16777216.0, 65536.0, 256.0, 1.0); vec4 m = vec4(0.0, 1.0/256.0, 1.0/256.0, 1.0/256.0); vec4 r = fract(gl_FragCoord.z * b); r -= r.xxyz * m; gl_FragColor = r; }`;
 
+  // =============== 仕上げ（ブルーム・FXAA・周辺減光・色味） ===============
+  const PVS = `attribute vec2 aQ; varying vec2 vU; void main(){ vU = aQ * 0.5 + 0.5; gl_Position = vec4(aQ, 0.0, 1.0); }`;
+  const PHEAD = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec2 vU; uniform sampler2D uT; uniform vec2 uPx;
+`;
+  const PBRIGHT = PHEAD + `uniform float uThr;
+void main(){
+  vec3 c = (texture2D(uT, vU + uPx * vec2(-1.0, -1.0)).rgb + texture2D(uT, vU + uPx * vec2(1.0, -1.0)).rgb + texture2D(uT, vU + uPx * vec2(-1.0, 1.0)).rgb + texture2D(uT, vU + uPx * vec2(1.0, 1.0)).rgb) * 0.25;
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  gl_FragColor = vec4(c * smoothstep(uThr, 1.0, l), 1.0);
+}`;
+  const PBLUR = PHEAD + `uniform vec2 uDir;
+void main(){
+  vec3 c = texture2D(uT, vU).rgb * 0.227027;
+  c += (texture2D(uT, vU + uDir * 1.3846).rgb + texture2D(uT, vU - uDir * 1.3846).rgb) * 0.316216;
+  c += (texture2D(uT, vU + uDir * 3.2308).rgb + texture2D(uT, vU - uDir * 3.2308).rgb) * 0.070270;
+  gl_FragColor = vec4(c, 1.0);
+}`;
+  const PCOMP = PHEAD + `uniform sampler2D uB; uniform float uBloom, uVig;
+vec3 fxaa(vec2 uv){
+  vec3 nw = texture2D(uT, uv + vec2(-1.0, -1.0) * uPx).rgb, ne = texture2D(uT, uv + vec2(1.0, -1.0) * uPx).rgb;
+  vec3 sw = texture2D(uT, uv + vec2(-1.0, 1.0) * uPx).rgb, se = texture2D(uT, uv + vec2(1.0, 1.0) * uPx).rgb, m = texture2D(uT, uv).rgb;
+  vec3 W = vec3(0.299, 0.587, 0.114);
+  float lnw = dot(nw, W), lne = dot(ne, W), lsw = dot(sw, W), lse = dot(se, W), lm = dot(m, W);
+  float lmin = min(lm, min(min(lnw, lne), min(lsw, lse))), lmax = max(lm, max(max(lnw, lne), max(lsw, lse)));
+  vec2 dir = vec2(-((lnw + lne) - (lsw + lse)), ((lnw + lsw) - (lne + lse)));
+  float red = max((lnw + lne + lsw + lse) * 0.03125, 0.0078125);
+  float rcp = 1.0 / (min(abs(dir.x), abs(dir.y)) + red);
+  dir = clamp(dir * rcp, -8.0, 8.0) * uPx;
+  vec3 a = 0.5 * (texture2D(uT, uv + dir * (1.0 / 3.0 - 0.5)).rgb + texture2D(uT, uv + dir * (2.0 / 3.0 - 0.5)).rgb);
+  vec3 b = a * 0.5 + 0.25 * (texture2D(uT, uv - dir * 0.5).rgb + texture2D(uT, uv + dir * 0.5).rgb);
+  float lb = dot(b, W);
+  return (lb < lmin || lb > lmax) ? a : b;
+}
+void main(){
+  vec3 c = fxaa(vU);
+  vec3 bl = texture2D(uB, vU).rgb * uBloom;
+  c = 1.0 - (1.0 - c) * (1.0 - bl);
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c = mix(vec3(l), c, 1.07);
+  c *= vec3(1.015, 1.0, 0.975);
+  vec2 d = vU - 0.5; float v = 1.0 - uVig * smoothstep(0.25, 0.85, dot(d, d) * 2.2);
+  gl_FragColor = vec4(clamp(c * v, 0.0, 1.0), 1.0);
+}`;
+
   // =============== レンダラー ===============
   class Engine {
     constructor(canvas, opt) {
@@ -406,12 +477,13 @@ void main(){ vec4 b = vec4(16777216.0, 65536.0, 256.0, 1.0); vec4 m = vec4(0.0, 
       if (!gl) throw new Error('WebGL が使えません');
       this.prog = this.program(VS, FS);
       this.dprog = this.program(DVS, DFS);
-      this.loc = this.locations(this.prog, ['uM', 'uVP', 'uLVP', 'uNM', 'uOut', 'uCam', 'uColor', 'uLight', 'uSky', 'uGround', 'uSun', 'uFog', 'uInk', 'uFogR', 'uOp', 'uEm', 'uUseTex', 'uShadow', 'uRecv', 'uTex', 'uSM', 'uSMs', 'uRK', 'uMK', 'uAO', 'uExpo', 'uPL', 'uPC', 'uNPL']);
+      this.loc = this.locations(this.prog, ['uM', 'uVP', 'uLVP', 'uNM', 'uOut', 'uCam', 'uColor', 'uLight', 'uSky', 'uGround', 'uSun', 'uFog', 'uInk', 'uFogR', 'uOp', 'uEm', 'uUseTex', 'uShadow', 'uRecv', 'uTex', 'uSM', 'uSMs', 'uRK', 'uMK', 'uAO', 'uExpo', 'uPL', 'uPC', 'uNPL', 'uWall', 'uSQ', 'uLampR']);
       this.dloc = this.locations(this.dprog, ['uM', 'uLVP']);
       this.attr = { aP: gl.getAttribLocation(this.prog, 'aP'), aN: gl.getAttribLocation(this.prog, 'aN'), aO: gl.getAttribLocation(this.prog, 'aO'), aC: gl.getAttribLocation(this.prog, 'aC'), aUV: gl.getAttribLocation(this.prog, 'aUV'), aM: gl.getAttribLocation(this.prog, 'aM') };
       this.dattr = gl.getAttribLocation(this.dprog, 'aP');
       this.env = { light: norm([0.35, 0.8, 0.5]), sky: [0.42, 0.45, 0.5], ground: [0.2, 0.17, 0.15], sun: [2.6, 2.45, 2.2], fog: rgb('#DCE3EA'), fogR: [30, 80], ink: rgb('#2A211C'), clear: rgb('#CFE0EE'), expo: 1.0 };
       this.lights = []; this.outline = 0; this.shadows = true; this.smSize = 2048; this.scale = 1;
+      this.post = false; this.bloom = 0.55; this.vignette = 0.22; this.bloomThr = 0.8; this.softShadow = true;
       this.view = M.ident(); this.proj = M.ident(); this.vp = M.ident(); this.lvp = M.ident();
       this.white = this.texFromPixels(new Uint8Array([255, 255, 255, 255]), 1, 1);
       this.cam = { pos: [0, 5, 8], target: [0, 0, 0], fov: 0.9, near: 0.1, far: 120 };
@@ -460,6 +532,59 @@ void main(){ vec4 b = vec4(16777216.0, 65536.0, 256.0, 1.0); vec4 m = vec4(0.0, 
       gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       return (this.sm = { tex, fb, size });
+    }
+    // 仕上げ用のフレームバッファ（作れない端末では自動でオフ）
+    ensurePost() {
+      const gl = this.gl, w = this.canvas.width, h = this.canvas.height;
+      try {
+        if (!this.pprog) {
+          const mk = (fs) => { const p = this.program(PVS, fs); return { p, aQ: gl.getAttribLocation(p, 'aQ'), L: this.locations(p, ['uT', 'uB', 'uPx', 'uThr', 'uDir', 'uBloom', 'uVig']) }; };
+          this.pprog = { bright: mk(PBRIGHT), blur: mk(PBLUR), comp: mk(PCOMP) };
+          this.quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.quad); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+        }
+        if (this.pp && this.pp.w === w && this.pp.h === h) return true;
+        const fbo = (fw, fh, depth) => {
+          const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, fw, fh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+          [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach((k) => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR));
+          [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach((k) => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
+          const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+          let rb = null;
+          if (depth) { rb = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, rb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, fw, fh); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb); }
+          const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          if (!ok) throw new Error('fbo');
+          return { tex, fb, rb, w: fw, h: fh };
+        };
+        if (this.pp) [this.pp.scene, this.pp.a, this.pp.b].forEach((f) => { gl.deleteTexture(f.tex); gl.deleteFramebuffer(f.fb); if (f.rb) gl.deleteRenderbuffer(f.rb); });
+        const bw = Math.max(1, Math.ceil(w / 4)), bh = Math.max(1, Math.ceil(h / 4));
+        this.pp = { w, h, scene: fbo(w, h, true), a: fbo(bw, bh), b: fbo(bw, bh) };
+        return true;
+      } catch (e) { this.post = false; this.pp = null; return false; }
+    }
+    postProcess() {
+      const gl = this.gl, P = this.pprog, pp = this.pp;
+      gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.depthMask(false);
+      Object.values(this.attr).forEach((l) => { if (l >= 0) gl.disableVertexAttribArray(l); });
+      const pass = (pr, target, src, setup) => {
+        gl.useProgram(pr.p);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, target ? target.fb : null);
+        gl.viewport(0, 0, target ? target.w : this.canvas.width, target ? target.h : this.canvas.height);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.quad); gl.enableVertexAttribArray(pr.aQ); gl.vertexAttribPointer(pr.aQ, 2, gl.FLOAT, false, 0, 0);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex); gl.uniform1i(pr.L.uT, 0);
+        gl.uniform2f(pr.L.uPx, 1 / src.w, 1 / src.h);
+        if (setup) setup(pr.L);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.disableVertexAttribArray(pr.aQ);
+      };
+      pass(P.bright, pp.a, pp.scene, (L) => gl.uniform1f(L.uThr, this.bloomThr));
+      for (let k = 0; k < 2; k++) {
+        pass(P.blur, pp.b, pp.a, (L) => gl.uniform2f(L.uDir, (1 + k) / pp.a.w, 0));
+        pass(P.blur, pp.a, pp.b, (L) => gl.uniform2f(L.uDir, 0, (1 + k) / pp.a.h));
+      }
+      pass(P.comp, null, pp.scene, (L) => { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, pp.a.tex); gl.uniform1i(L.uB, 1); gl.activeTexture(gl.TEXTURE0); gl.uniform1f(L.uBloom, this.bloom); gl.uniform1f(L.uVig, this.vignette); });
+      gl.depthMask(true); gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE);
     }
     resize() {
       const c = this.canvas, dpr = Math.min(2, G.devicePixelRatio || 1) * this.scale;
@@ -510,6 +635,8 @@ void main(){ vec4 b = vec4(16777216.0, 65536.0, 256.0, 1.0); vec4 m = vec4(0.0, 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       }
       // ---- 本描画 ----
+      const usePost = this.post && this.ensurePost();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, usePost ? this.pp.scene.fb : null);
       gl.viewport(0, 0, this.canvas.width, this.canvas.height);
       gl.clearColor(E.clear[0], E.clear[1], E.clear[2], E.clearA === undefined ? 1 : E.clearA); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       gl.useProgram(this.prog);
@@ -517,6 +644,7 @@ void main(){ vec4 b = vec4(16777216.0, 65536.0, 256.0, 1.0); vec4 m = vec4(0.0, 
       gl.uniformMatrix4fv(L.uVP, false, this.vp); gl.uniformMatrix4fv(L.uLVP, false, this.lvp);
       gl.uniform3fv(L.uCam, cam.pos); gl.uniform3fv(L.uLight, E.light); gl.uniform3fv(L.uSky, E.sky); gl.uniform3fv(L.uGround, E.ground); gl.uniform3fv(L.uSun, E.sun);
       gl.uniform3fv(L.uFog, E.fog); gl.uniform2fv(L.uFogR, E.fogR); gl.uniform3fv(L.uInk, E.ink);
+      gl.uniform3fv(L.uWall, E.wall || [(E.sky[0] + E.ground[0]) / 2, (E.sky[1] + E.ground[1]) / 2, (E.sky[2] + E.ground[2]) / 2]); gl.uniform1f(L.uSQ, this.softShadow ? 1 : 0); gl.uniform1f(L.uLampR, E.lampR || 0);
       gl.uniform1f(L.uShadow, useSM ? 1 : 0);
       gl.uniform1f(L.uSMs, 1.0 / (this.smSize || 2048)); gl.uniform1f(L.uExpo, E.expo || 1);
       const nl = Math.min(4, this.lights.length); gl.uniform1i(L.uNPL, nl);
@@ -543,6 +671,7 @@ void main(){ vec4 b = vec4(16777216.0, 65536.0, 256.0, 1.0); vec4 m = vec4(0.0, 
         for (const n of out.tr) { if (n.twoSide) gl.disable(gl.CULL_FACE); draw(n, false); if (n.twoSide) gl.enable(gl.CULL_FACE); }
         gl.depthMask(true); gl.disable(gl.BLEND);
       }
+      if (usePost) this.postProcess();
     }
     // ワールド座標 → 画面座標（CSS px）
     project(p) {
