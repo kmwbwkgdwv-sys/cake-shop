@@ -8,7 +8,11 @@ window.T = (() => {
   const aim = (sx, sz, p) => { W.me.x = sx; W.me.z = sz; const dx = p[0] - sx, dz = p[2] - sz; W.me.yaw = Math.atan2(-dx, -dz); W.me.pitch = Math.atan2(p[1] - 1.58, Math.hypot(dx, dz)); W.updateCamera(); W.updateTarget(S()); return W.target ? [W.target.name, W.target.pri && W.target.pri.label, W.target.sec && W.target.sec.label] : null; };
   const go = (fn) => { const t = W.target; const r = fn === 'p' ? (t && t.pri && t.pri.a) : (t && t.sec && t.sec.a); if (fn === 'p') W.primary(); else W.secondary(); return r ? r.t : 'NONE'; };
   const held = () => { const id = K.held(S(), R().pid); return id ? S().k.items[id] : null; };
-  return { W, K, aim, go, held, S, R };
+  const P = CS.plan, fr = (k, i) => P.list(S(), k)[i || 0];
+  // 家具の前に立って、置く所／設備をねらう
+  const aimF = (fid, lp) => { const f = S().fu[fid]; const st = P.stand(f, 0.75); return aim(st[0], st[1], P.local(f, lp[0], lp[1], lp[2])); };
+  const aimSlot = (at) => { const sd = P.slotDef(S(), at); const st = P.stand(sd.f, 0.75); const p = P.slotPos(S(), at); return aim(st[0], st[1], [p[0], p[1] + 0.07, p[2]]); };
+  return { W, K, P, aim, aimF, aimSlot, fr, go, held, S, R };
 })();
 """
 async def newdev(b, name, w, h, touch=False):
@@ -61,13 +65,25 @@ async def main():
     await A.screenshot(path=f'{OUT}/mp2_A_sees_B.png')
     e0 = await ev(A, "CS.sim.invCount(CS.ui.room.S,'egg')")
     await ev(B, "CS.ui.room.act({t:'openCrate'})"); await ev(A, "CS.ui.room.act({t:'openCrate'})"); await B.wait_for_timeout(1500)
-    await asyncio.gather(ev(A, "CS.ui.room.act({t:'shelve',ing:'egg',all:1})"), ev(B, "CS.ui.room.act({t:'shelve',ing:CS.ui.room.S.k.items[CS.kitchen.held(CS.ui.room.S,CS.ui.room.pid)].ing,all:1})"))
+    # 2人とも冷蔵棚の同じ所（空き）に「全部置く」→ 同じ材料なら重なる・違えば片方は断られる
+    await asyncio.gather(ev(A, "CS.ui.room.act({t:'shelve',slot:'f:'+T.fr('cshelf')+':5',all:1})"), ev(B, "CS.ui.room.act({t:'shelve',slot:'f:'+T.fr('cshelf')+':5',all:1})"))
+    await B.wait_for_timeout(1500)
+    await ev(B, "(()=>{const R=CS.ui.room,S=R.S,h=CS.kitchen.held(S,R.pid); if(h&&S.k.items[h].n>0) R.act({t:'shelve',slot:'f:'+T.fr('cshelf')+':4',all:1});})()")
+    await ev(A, "(()=>{const R=CS.ui.room,S=R.S,h=CS.kitchen.held(S,R.pid); if(h&&S.k.items[h].n>0) R.act({t:'shelve',slot:'f:'+T.fr('cshelf')+':3',all:1});})()")
     print('B stock applied on A after', await until(A, "Object.values(CS.ui.room.S.k.items).filter(i=>i.t==='crate'&&i.n===0).length===2"), 's')
     print('egg before/after (A view)', e0, await ev(A, "CS.sim.invCount(CS.ui.room.S,'egg')"), 'B view', await ev(B, "CS.sim.invCount(CS.ui.room.S,'egg')"))
     # B がミキサーに卵を入れる → A のボウルに反映
-    r = await ev(B, """(()=>{const {W,aim,go}=T; const m=W.L.mix[1]; const bn=m.bins.find(x=>x.ing==='egg'); const a=aim(m.stand[0], m.stand[1], bn.p); return a+' -> '+go('p');})()""")
-    print('B addIng', r, 'applied on A after', await until(A, "CS.ui.room.S.k.mix[1].ings.length>0"), 's')
-    print('mix1 A', await ev(A, "JSON.stringify(CS.ui.room.S.k.mix[1])"))
+    await ev(B, "CS.ui.room.act({t:'trash'})"); await ev(A, "CS.ui.room.act({t:'trash'})"); await B.wait_for_timeout(800)
+    print('A buys a mixer', await ev(A, "CS.ui.room.act({t:'fbuy',k:'mixer'}).then(r=>r.ok)"), 'B sees it after', await until(B, "CS.plan.count(CS.ui.room.S,'mixer')===1"), 's')
+    # B が冷蔵棚から卵を1つ取る（ねらって「1つ取る」）→ ミキサーに入れる → A のボウルに反映
+    r = await ev(B, """(()=>{const S=T.S(); const at=Object.values(S.k.items).find(i=>i.t==='ing'&&i.ing==='egg'&&String(i.at).startsWith('f:')).at; const a=T.aimSlot(at); return a+' -> '+T.go('p');})()""")
+    print('B take egg', r, 'B holds after', await until(B, "!!T.held() && T.held().ing==='egg'"), 's', await ev(B, "JSON.stringify(T.held()&&[T.held().ing,T.held().n])"))
+    r = await ev(B, """(()=>{const a=T.aimF(T.fr('mixer'), [-0.2,1.1,0.05]); return a+' -> '+T.go('p');})()""")
+    print('B addIng', r, 'applied on A after', await until(A, "(CS.ui.room.S.k.st[T.fr('mixer')].ings||[]).length>0"), 's')
+    print('mixer A', await ev(A, "JSON.stringify(CS.ui.room.S.k.st[T.fr('mixer')])"))
+    # B が家具を動かす（配置モード）→ A にも反映
+    mv = await ev(B, """(()=>{const S=T.S(), id=T.fr('table'), f=S.fu[id]; return CS.ui.room.act({t:'fmove',id,x:f.x+0.5,z:f.z,r:f.r}).then(()=>id+':'+f.x);})()""")
+    print('B moves table', mv, 'A sees after', await until(A, f"Math.abs(CS.ui.room.S.fu['{mv.split(':')[0]}'].x - ({mv.split(':')[1]}+0.5))<0.01"), 's')
     # B が看板を OPEN → A の時計が進む
     r = await ev(B, """(()=>{const {W,aim,go}=T; const L=W.L; const a=aim(L.sign[0]-0.2, L.sign[1]+1.4, [L.sign[0],0.55,L.sign[1]]); return a+' -> '+go('p');})()""")
     print('B sign', r, 'applied on A after', await until(A, "CS.ui.room.S.phase==='open'"), 's', 'B sees open after', await until(B, "CS.ui.room.S.phase==='open'"))

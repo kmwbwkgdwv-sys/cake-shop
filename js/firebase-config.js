@@ -9,11 +9,11 @@
  * ===================================================================== */
 window.FIREBASE_CONFIG = {
   apiKey: "AIzaSyD8CK3jDMzfD2AkeEKq-ndRZsxjSIuzxJ0",
-  // ↓ ここから下は Firebase コンソールの firebaseConfig の値を入れてください
-  authDomain: "",        // 例: "your-project.firebaseapp.com"
-  databaseURL: "",       // 例: "https://your-project-default-rtdb.asia-southeast1.firebasedatabase.app"
-  projectId: "",         // 例: "your-project"
-  storageBucket: "",     // 例: "your-project.appspot.com"
-  messagingSenderId: "", // 例: "000000000000"
-  appId: "",             // 例: "1:000000000000:web:0000000000000000"
+  authDomain: "cake-shop-fd414.firebaseapp.com",
+  databaseURL: "https://cake-shop-fd414-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "cake-shop-fd414",
+  // ↓ なくても動きます（Firebase コンソールの firebaseConfig にある値を入れても OK）
+  // storageBucket: "",
+  // messagingSenderId: "",
+  // appId: "",
 };

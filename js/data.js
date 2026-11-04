@@ -20,6 +20,7 @@
     matcha:     { name: '抹茶',         icon: '🍵', price: 160, life: 0 },
     cheese:     { name: 'クリームチーズ', icon: '🧀', price: 150, life: 8, cold: 1, warm: 240 },
     chestnut:   { name: '栗',           icon: '🌰', price: 180, life: 15 },
+    box:        { name: 'ケーキの箱',   icon: '📦', price: 60,  life: 0, supply: 1 },
   };
 
   // ---- 生地 (ミキサー台 → オーブン) / order = 正しい投入順 ----
@@ -100,9 +101,9 @@
   // ---- 店舗拡張 ----
   // req = その段階を導入できる「店舗レベル」
   const UPGRADES = [
-    { id: 'floor', name: '店舗の増床', desc: 'お店と厨房がひと回り広くなる。ミキサー・デコ台などの台数が増え、来店数 +8%・席も増える（家賃 +¥1,500/日）', icon: 'home', levels: [90000, 200000, 380000], req: [3, 5, 7] },
-    { id: 'showcase', name: '商品棚（冷蔵ショーケース）', desc: 'ケーキを並べる冷蔵の商品棚が1台増える。並べたケーキは賞味期限まで傷まない', icon: 'case', levels: [18000, 42000, 80000, 140000], req: [1, 2, 4, 6], vals: [4, 5, 6, 7, 8] },
-    { id: 'oven', name: 'オーブン追加', desc: '同時に焼ける数が増える', icon: 'oven', levels: [30000, 70000, 130000], req: [1, 3, 5], vals: [3, 4, 5, 6] },
+    { id: 'floor', name: '店舗の増床', desc: 'お店と厨房がひと回り広くなり、家具を置ける場所が増える。来店数 +8%・席も増える（家賃 +¥1,500/日）', icon: 'home', levels: [90000, 200000, 380000], req: [3, 5, 7] },
+    { id: 'showcase', hide: 1, name: '商品棚（冷蔵ショーケース）', desc: 'ケーキを並べる冷蔵の商品棚が1台増える。並べたケーキは賞味期限まで傷まない', icon: 'case', levels: [18000, 42000, 80000, 140000], req: [1, 2, 4, 6], vals: [4, 5, 6, 7, 8] },
+    { id: 'oven', hide: 1, name: 'オーブン追加', desc: '同時に焼ける数が増える', icon: 'oven', levels: [30000, 70000, 130000], req: [1, 3, 5], vals: [3, 4, 5, 6] },
     { id: 'coldcase', name: '冷蔵ショーケース', desc: '（商品棚はすべて冷蔵になりました）', icon: 'case', levels: [45000], req: [3], hide: 1 },
     { id: 'sign', name: '看板', desc: '来店数 +10%', icon: 'sign', levels: [12000], req: [1] },
     { id: 'interior', name: '内装リフォーム', desc: '来店数 +12% / お客さんの払える額 +3%（段階ごと）', icon: 'home', levels: [40000, 90000, 180000], req: [1, 3, 5] },
@@ -132,10 +133,10 @@
       { name: '急速冷却ラック', desc: '冷ます時間 -50%', price: 25000, lv: 3, cool: 0.5 },
       { name: 'ブラストチラー', desc: '冷ます時間 -80%', price: 150000, lv: 7, cool: 0.2 },
     ] },
-    fridge: { name: '冷蔵庫', icon: 'fridge', tiers: [
-      { name: '家庭用冷蔵庫', desc: '厨房の冷蔵庫に6個入る・材料の日持ちは標準', price: 0, lv: 1, life: 1, slots: 6 },
-      { name: '業務用冷蔵庫', desc: '厨房の冷蔵庫に9個入る・材料の日持ち ×1.5', price: 35000, lv: 2, life: 1.5, slots: 9 },
-      { name: 'ウォークイン冷蔵庫', desc: '厨房の冷蔵庫に12個入る・材料の日持ち ×2', price: 140000, lv: 6, life: 2, slots: 12 },
+    fridge: { name: '冷蔵の性能', icon: 'fridge', tiers: [
+      { name: 'ふつうの冷却', desc: '材料の日持ちは標準', price: 0, lv: 1, life: 1 },
+      { name: '業務用の冷却', desc: '冷蔵棚・冷蔵庫の材料の日持ち ×1.5', price: 35000, lv: 2, life: 1.5 },
+      { name: 'ウォークイン並みの冷却', desc: '材料の日持ち ×2', price: 140000, lv: 6, life: 2 },
     ] },
   };
   // ---- 家具（パソコンで購入。テーブルは増床すると多く置ける） ----
@@ -158,14 +159,15 @@
       bake: { name: 'オーブン係', desc: '予熱・焼成・取り出し', opt: null },
       whip: { name: 'クリーム係', desc: 'クリームを泡立てる', opt: 'cream' },
       deco: { name: '仕上げ係', desc: 'デコ台でケーキを仕上げる', opt: 'recipe' },
-      stock: { name: '仕入れ係', desc: '少なくなった材料を買い足す', opt: null },
-      cashier: { name: 'レジ・接客', desc: '満足度アップ・席のお客さんにドリンクをすすめる', opt: null },
+      stock: { name: '仕入れ係', desc: '届いた段ボールを棚にしまい、少なくなった材料・箱を買い足す', opt: null },
+      wash: { name: '洗い場係', desc: '汚れたお皿・ケーキ型を洗って棚にしまう', opt: null },
+      cashier: { name: 'レジ・接客', desc: '注文・箱詰め・お皿出し・お会計。席のお客さんにドリンクをすすめる', opt: null },
     },
     // 仕事の速さ（1.0 ＝ 慣れた人）。Lv1 はとても遅い
     speed: [0.3, 0.38, 0.48, 0.6, 0.74, 0.9, 1.08, 1.3, 1.6, 2.0],
     xp: [0, 5, 12, 22, 35, 52, 74, 100, 132, 170],
     wage: (lv) => 1200 + 450 * (lv - 1),
-    jobSec: { mix: 20, whip: 14, deco: 24, in: 5, out: 4, stock: 8, order: 5, serve: 4 },
+    jobSec: { mix: 20, whip: 14, deco: 24, in: 5, out: 4, stock: 8, order: 5, serve: 4, wash: 10 },
   };
   // 店舗レベル（売った数・お客さんの満足・評判で経験値がたまる）
   const SHOP_XP = [0, 150, 400, 800, 1400, 2200, 3300, 4800, 6800, 9500];
@@ -256,9 +258,12 @@
     MAKE_MS: 180000,     // 注文の品が商品棚に無いとき、作るのを待ってくれる時間（2種類目からは＋45秒ずつ）
     CAKE_DAYS: 2,        // ケーキの賞味期限：作った日を入れて2日（3日目になると消える）
     ORDER_MAX: 6,        // お客さん1人が注文する最大の個数（箱に入る数）
+    EAT_MAX: 3,          // 店内で食べるお客さんの最大の個数（お皿1枚にのる数）
+    PAY_MS: 60000,       // 商品を受け取ってからお会計を待てる時間
+    DRY_MS: 30000,       // 洗ったお皿・型が乾くまで（置いてから）
     SIT_MS: 20000,       // イートインで座っている時間
     PIECES: 6,           // 1ホール = 6ピース
-    START_FUNDS: 30000,
+    START_FUNDS: 60000,  // オーブン・ミキサー・デコ台・材料・箱を買えるくらい
     RENT: 2500,
     RENT_PER_FLOOR: 1500,
     UTIL_PER_EQUIP: 250,

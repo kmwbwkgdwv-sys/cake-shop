@@ -1,13 +1,22 @@
-# 一人称視点：入店してあちこちを撮影・エラー確認
+# 一人称視点：入店して家具・部屋をあちこち撮影・エラー確認（家具を自由に置ける版）
 import asyncio, sys, json
 from playwright.async_api import async_playwright
 OUT = sys.argv[1]
 VW = int(sys.argv[2]) if len(sys.argv) > 2 else 1280
 VH = int(sys.argv[3]) if len(sys.argv) > 3 else 720
+HELP = """
+window.T = window.T || {};
+T.S = () => CS.ui.room.S;
+T.fr = (k, i) => { const S = T.S(), id = CS.plan.list(S, k)[i || 0]; return [id, S.fu[id]]; };
+T.face = (k, d, pitch, side) => { const W = CS.world, [id, f] = T.fr(k); const o = CS.plan.dirs(f.r); const st = CS.plan.stand(f, d || 0.9); W.me.x = st[0] + o.rx * (side || 0); W.me.z = st[1] + o.rz * (side || 0); const dx = f.x - W.me.x, dz = f.z - W.me.z; W.me.yaw = Math.atan2(-dx, -dz); W.me.pitch = pitch == null ? -0.35 : pitch; return id; };
+T.aim = (p) => { const W = CS.world; const dx = p[0] - W.me.x, dz = p[2] - W.me.z; W.me.yaw = Math.atan2(-dx, -dz); W.me.pitch = Math.atan2(p[1] - 1.58, Math.hypot(dx, dz)); };
+T.slot = (k, i, n) => { const [id] = T.fr(k, i); return 'f:' + id + ':' + (n || 0); };
+T.emit = () => CS.ui.room.emit('state', T.S());
+"""
 async def main():
   async with async_playwright() as p:
     b = await p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'])
-    ctx = await b.new_context(viewport={'width': VW, 'height': VH})
+    ctx = await b.new_context(viewport={'width': VW, 'height': VH}, has_touch=VW < 900, is_mobile=VW < 900)
     await ctx.add_init_script("if(!localStorage.getItem('cs.settings'))localStorage.setItem('cs.settings',JSON.stringify({autoQ:false}))")
     pg = await ctx.new_page(); logs = []; pg.set_default_timeout(40000)
     pg.on('pageerror', lambda e: logs.append('PAGEERROR: ' + str(e)))
@@ -20,39 +29,108 @@ async def main():
     await js("document.querySelector('#modal .btn.pink').click()"); await pg.wait_for_timeout(3000)
     for _ in range(3): await js(click); await pg.wait_for_timeout(300)
     await js("document.querySelector('#ov-start').click()"); await pg.wait_for_timeout(1500)
-    await pg.screenshot(path=f'{OUT}/fp_tutmodal.png')
     for _ in range(3): await js(click); await pg.wait_for_timeout(300)
-    await pg.wait_for_timeout(1500)
+    await pg.wait_for_timeout(1200)
+    await js(HELP)
     await pg.screenshot(path=f'{OUT}/fp_start.png')
+    print('start target', await js("(()=>{const t=CS.world.target;return t?t.name:null})()"))
+    # 道具を買う（オーブン・ミキサー・デコ台）
+    r = await js("(async()=>{const a=CS.ui.room; const out=[]; for (const k of ['oven','mixer','deco']) out.push((await a.act({t:'fbuy',k})).ok); return out})()")
+    print('fbuy', r, await js("Object.values(T.S().fu).map(f=>f.k+'@'+f.x.toFixed(1)+','+f.z.toFixed(1)+'r'+f.r).join(' ')"))
+    # 物を置いてみる（材料・箱・ケーキ・お皿）
+    await js("""(()=>{const S=T.S(), K=CS.kitchen; ['egg','butter','milk','cream','strawberry'].forEach(i=>K.invAdd(S,i,12,50)); ['flour','sugar'].forEach(i=>K.invAdd(S,i,14,40)); K.invAdd(S,'box',20,60);
+      S.k.items.t1={t:'tray',r:'short',q:0.9,df:[],p:4,n:6,c:900,d:S.day,at:T.slot('pcase',0,0),pl:1};
+      S.k.items.t2={t:'tray',r:'chocolate',q:0.9,df:[],p:6,n:6,c:900,d:S.day,at:T.slot('pcase',0,2),pl:1};
+      S.k.items.c1={t:'cake',r:'short',q:0.9,df:[],p:6,n:6,c:900,d:S.day,at:T.slot('fridge',0,1),pl:1};
+      S.k.items.c2={t:'cream',k:'whip',q:1,df:[],n:3,c:100,at:T.slot('fridge',0,3),pl:1};
+      S.k.items.p2={t:'plate',s:[],dirty:1,at:T.slot('sink',0,0),pl:1};
+      S.k.items.p3={t:'plate',s:[],wet:1,at:T.slot('sink',0,1),pl:1};
+      S.k.items.pn={t:'pan',st:'baked',b:'plain',q:0.9,df:[],c:200,cool:0,at:T.slot('table',0,1),pl:1};
+      T.emit();})()""")
     views = [
-      ('kitchen_back', "W.me.x=-3; W.me.z=W.dims.CASE_Z-1.0; W.me.yaw=0; W.me.pitch=-0.12"),
-      ('mixers', "const m=W.L.mix[0]; W.me.x=m.x+0.3; W.me.z=m.stand[1]+0.4; W.me.yaw=0.1; W.me.pitch=-0.45"),
-      ('ovens', "const o=W.L.ovens[1]; W.me.x=o.x; W.me.z=o.stand[1]+0.5; W.me.yaw=0; W.me.pitch=-0.3"),
-      ('deco', "const d=W.L.deco[0]; W.me.x=d.x; W.me.z=d.stand[1]; W.me.yaw=0; W.me.pitch=-0.7"),
-      ('pc', "W.me.x=W.L.desk[0]-1.4; W.me.z=W.L.desk[1]; W.me.yaw=-Math.PI/2; W.me.pitch=-0.25"),
-      ('backdoor', "W.me.x=-W.dims.RX+2.4; W.me.z=-W.dims.RZ+4.5; W.me.yaw=Math.PI/2+0.5; W.me.pitch=-0.35"),
-      ('front', "W.me.x=-1; W.me.z=W.dims.CASE_Z-0.9; W.me.yaw=Math.PI; W.me.pitch=-0.1"),
-      ('salesfloor', "W.me.x=6; W.me.z=W.dims.RZ-1.2; W.me.yaw=Math.PI*0.25+Math.PI*0.75; W.me.pitch=-0.05"),
-      ('outside', "W.me.x=0.3; W.me.z=W.dims.RZ+2.6; W.me.yaw=0.3; W.me.pitch=-0.15"),
-      ('store_in', "const S2=W.L.store; W.me.x=S2.x1-0.5; W.me.z=S2.z0+2.0; W.me.yaw=Math.PI/2+0.55; W.me.pitch=-0.15"),
-      ('store_fridge', "const S2=W.L.store; W.me.x=S2.x0+2.2; W.me.z=S2.z0+1.4; W.me.yaw=Math.PI; W.me.pitch=-0.1"),
-      ('store_door', "const S2=W.L.store; W.me.x=S2.x1+2.4; W.me.z=S2.door+0.6; W.me.yaw=Math.PI/2-0.2; W.me.pitch=-0.05"),
-      ('office', "const O=W.L.office; W.me.x=O.x0+1.0; W.me.z=O.door+0.2; W.me.yaw=-Math.PI/2+0.3; W.me.pitch=-0.12"),
-      ('fridge', "const F=W.L.fridge, S=CS.ui.room.S; S.k.items.f1={t:'cream',k:'whip',q:1,df:[],n:3,c:100,at:'fr:0'}; S.k.items.f2={t:'cake',r:'short',q:0.9,df:[],p:6,n:6,c:900,at:'fr:4'}; S.k.items.f3={t:'pan',st:'baked',b:'plain',q:0.9,df:[],c:200,at:'fr:2'}; CS.ui.room.emit('state',S); W.me.x=F.x-0.15; W.me.z=-W.dims.RZ+1.8; W.me.yaw=0.04; W.me.pitch=-0.22"),
-      ('warm', "const S=CS.ui.room.S, n=CS.ui.room.now(), sp=W.L.spots[1]; S.k.items.f4={t:'cream',k:'whip',q:1,df:['soft'],n:3,c:100,at:'sp:1',w0:n-150000,sp:1}; S.k.items.f5={t:'crate',ing:'strawberry',n:10,u:130,ar:0,at:'sp:3',w0:n-200000,sp:2,open:1}; CS.ui.room.emit('state',S); W.me.x=sp[0]+0.3; W.me.z=sp[2]+1.3; W.me.yaw=0.15; W.me.pitch=-0.45"),
-      ('fridge_aim', "const F=W.L.fridge, p=F.slots[4]; W.me.x=F.x+0.1; W.me.z=-W.dims.RZ+1.5; const dx=p[0]-W.me.x, dz=p[2]-W.me.z; W.me.yaw=Math.atan2(-dx,-dz); W.me.pitch=Math.atan2(p[1]+0.08-1.58, Math.hypot(dx,dz))"),
-      ('alley', "W.me.x=-W.dims.RX-1.2; W.me.z=W.L.backDoor[1]-2.6; W.me.yaw=Math.PI+0.5; W.me.pitch=-0.05"),
+      ('kitchen', "const W=CS.world; W.me.x=2.5; W.me.z=W.dims.CZ-1.0; W.me.yaw=0.5; W.me.pitch=-0.1"),
+      ('kitchen2', "const W=CS.world; W.me.x=6.5; W.me.z=W.dims.CZ-1.2; W.me.yaw=0.9; W.me.pitch=-0.12"),
+      ('store', "T.face('cshelf', 1.6, -0.2, 0.9)"),
+      ('shelf', "T.face('shelf', 1.0, -0.35)"),
+      ('pcroom', "const W=CS.world, L=W.L; W.me.x=L.desk[0]; W.me.z=L.desk[1]+1.5; W.me.yaw=0; W.me.pitch=-0.3"),
+      ('pcdoor', "const W=CS.world, g=W.L.g; W.me.x=g.pc.door-0.3; W.me.z=g.pc.z1+2.6; W.me.yaw=0.1; W.me.pitch=-0.05"),
+      ('fridge', "T.face('fridge', 1.0, -0.15)"),
+      ('mixer', "T.face('mixer', 0.6, -0.55)"),
+      ('oven', "T.face('oven', 0.9, -0.3)"),
+      ('deco', "T.face('deco', 0.55, -0.7)"),
+      ('whip', "T.face('whip', 0.6, -0.6)"),
+      ('sink', "T.face('sink', 0.55, -0.6)"),
+      ('table', "T.face('table', 0.6, -0.6)"),
+      ('pcase', "T.face('pcase', 0.7, -0.45)"),
+      ('pcase_aim', "const W=CS.world; T.face('pcase', 0.7, -0.45); const sl=T.slot('pcase',0,0); T.aim(CS.plan.slotPos(T.S(), sl).map((v,i)=>i===1?v+0.12:v))"),
+      ('reg_front', "const W=CS.world, [id,f]=T.fr('reg'); W.me.x=f.x-0.3; W.me.z=W.dims.CZ+2.4; W.me.yaw=0; W.me.pitch=-0.25"),
+      ('reg_back', "const W=CS.world, [id,f]=T.fr('reg'); W.me.x=f.x-0.4; W.me.z=W.dims.CZ-0.8; W.me.yaw=Math.PI; W.me.pitch=-0.45"),
+      ('salesfloor', "const W=CS.world; W.me.x=6; W.me.z=W.dims.RZ-1.2; W.me.yaw=Math.PI*0.25+Math.PI*0.75; W.me.pitch=-0.05"),
+      ('backdoor', "const W=CS.world; W.me.x=-W.dims.RX+2.6; W.me.z=W.L.backDoor[1]+0.4; W.me.yaw=Math.PI/2; W.me.pitch=-0.1"),
+      ('outside', "const W=CS.world; W.me.x=0.3; W.me.z=W.dims.RZ+2.6; W.me.yaw=0.3; W.me.pitch=-0.15"),
     ]
+    MODE = sys.argv[4] if len(sys.argv) > 4 else 'all'
+    if MODE == 'act': views = []
+    if MODE == 'mobile': views = [v for v in views if v[0] in ('kitchen', 'store', 'pcase_aim', 'sink')]
+    if MODE == 'fix': views = [v for v in views if v[0] in ('sink', 'pcase', 'shelf')]
     for name, code in views:
-      await js("(()=>{const W=CS.world;" + code + "})()")
-      await pg.wait_for_timeout(1600)
+      await js("(()=>{" + code + "})()")
+      await pg.wait_for_timeout(1300)
       await pg.screenshot(path=f'{OUT}/fp_{name}.png')
       t = await js("(()=>{const t=CS.world.target;return t?t.name+' | '+(t.pri&&t.pri.label)+' | '+(t.sec&&t.sec.label):null})()")
       print(name, t)
-    await js("CS.game.openPC('ing')"); await pg.wait_for_timeout(1200); await pg.screenshot(path=f'{OUT}/fp_pcsheet.png')
-    await js("CS.ui.closeSheet(); CS.ui.openSettings(true)"); await pg.wait_for_timeout(1000); await pg.screenshot(path=f'{OUT}/fp_settings.png')
-    await js("CS.ui.closeSheet(); CS.game.openRecipeBook()"); await pg.wait_for_timeout(1000); await pg.screenshot(path=f'{OUT}/fp_book.png')
-    await js("CS.ui.closeSheet(); CS.settings.light=true; CS.settings.save(); (()=>{const W=CS.world; W.me.x=-3; W.me.z=W.dims.CASE_Z-1.0; W.me.yaw=0.4; W.me.pitch=-0.12})()"); await pg.wait_for_timeout(2500); await pg.screenshot(path=f'{OUT}/fp_light.png')
+    if MODE == 'fix': await b.close(); return
+    if MODE == 'mobile':
+      await js("(()=>{T.face('table', 1.4, -0.4); CS.world.setBuild(true)})()"); await pg.wait_for_timeout(900); await js("CS.world.primary()"); await pg.wait_for_timeout(900)
+      await pg.screenshot(path=f'{OUT}/fpm_build.png'); await js("CS.world.setBuild(false)")
+      await js("""(()=>{const S=T.S(), [rid]=T.fr('reg'); S.phase='open'; S.k.items.bx={t:'box',s:[['short',0.9,[],150]],at:'c:u99'}; S.cust.u99={ty:(CS.data.CUSTOMERS[0]||{}).id,v:0,st:'pay',t0:0,tq:0,reg:rid,seat:-1,ord:{short:1},price:{short:480},pm:'cash',due:480,tend:1000,tPay:CS.ui.room.now(),pt:CS.ui.room.now()+60000,tOrd:CS.ui.room.now()-10000,pw:CS.ui.room.now()+60000,no:1}; T.emit(); CS.game.openChange('u99');})()"""); await pg.wait_for_timeout(900)
+      await pg.screenshot(path=f'{OUT}/fpm_change.png'); await js("document.querySelector('#cg-x').click()")
+      await js("(()=>{const [id]=T.fr('sink'); CS.game.openWash(id)})()"); await pg.wait_for_timeout(1200); await pg.screenshot(path=f'{OUT}/fpm_wash.png')
+      print('\n'.join(logs[:20])); await b.close(); return
+    # 配置モード
+    await js("(()=>{T.face('table', 1.4, -0.4); CS.world.setBuild(true)})()"); await pg.wait_for_timeout(900)
+    print('build target', await js("(()=>{const t=CS.world.target;return t?t.name+' | '+(t.pri&&t.pri.label):null})()"))
+    await js("CS.world.primary()"); await pg.wait_for_timeout(300)
+    await js("(()=>{CS.world.me.pitch=-0.55; CS.world.me.yaw+=0.4})()"); await pg.wait_for_timeout(900)
+    await pg.screenshot(path=f'{OUT}/fp_build.png')
+    print('ghost', await js("JSON.stringify(CS.world.mv)"), await js("(()=>{const t=CS.world.target;return t?t.name:null})()"))
+    await js("CS.world.discard()"); await js("CS.world.setBuild(false)")
+    # パソコン：家具・道具
+    await js("CS.game.openPC('furn')"); await pg.wait_for_timeout(1200); await pg.screenshot(path=f'{OUT}/fp_pcfurn.png')
+    await js("CS.ui.closeSheet()"); await pg.wait_for_timeout(300)
+    # 洗い物
+    await js("(()=>{const [id]=T.fr('sink'); CS.game.openWash(id)})()"); await pg.wait_for_timeout(900)
+    print('wash open', await js("JSON.stringify([document.getElementById('mg').hidden, !!document.querySelector('#ws-cv'), T.S().k.st[T.fr('sink')[0]], T.S().phase, CS.kitchen.at(T.S(), T.slot('sink',0,0))])"))
+    box = await pg.locator('#ws-cv').bounding_box()
+    if box:
+      cx, cy = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
+      await pg.mouse.move(cx, cy); await pg.mouse.down()
+      import math
+      for k in range(90):
+        a = k * 0.9; r = (k % 15) / 15 * box['width'] * 0.38
+        await pg.mouse.move(cx + math.cos(a) * r, cy + math.sin(a) * r)
+      await pg.mouse.up()
+    await pg.wait_for_timeout(300); await pg.screenshot(path=f'{OUT}/fp_wash.png')
+    print('wash btn disabled', await js("document.querySelector('#ws-rinse') && document.querySelector('#ws-rinse').disabled"))
+    await js("document.querySelector('#ws-rinse') && document.querySelector('#ws-rinse').click()"); await pg.wait_for_timeout(2000)
+    print('after wash', await js("JSON.stringify(Object.values(T.S().k.items).filter(i=>i.t==='plate').map(i=>[i.at,i.dirty||0,i.wet||0]))"))
+    # お会計（現金）
+    await js("""(()=>{const S=T.S(), [rid]=T.fr('reg'); S.phase='open'; S.k.items.bx={t:'box',s:[['short',0.9,[],150]],at:'c:u99'}; S.cust.u99={ty:(CS.data.CUSTOMERS[0]||{}).id,v:0,st:'pay',t0:0,tq:0,reg:rid,seat:-1,ord:{short:1},price:{short:480},pm:'cash',due:480,tend:1000,tPay:CS.ui.room.now(),pt:CS.ui.room.now()+60000,tOrd:CS.ui.room.now()-10000,pw:CS.ui.room.now()+60000,no:1}; T.emit();})()""")
+    await pg.wait_for_timeout(2500)
+    await js("(()=>{const W=CS.world, [id,f]=T.fr('reg'); W.me.x=f.x-0.2; W.me.z=W.dims.CZ-0.75; T.aim([f.x-0.1,1.05,f.z])})()"); await pg.wait_for_timeout(700)
+    print('reg target', await js("(()=>{const t=CS.world.target;return t?t.name+' | '+(t.pri&&t.pri.label):null})()"))
+    await pg.screenshot(path=f'{OUT}/fp_payreg.png')
+    await js("CS.game.openChange('u99')"); await pg.wait_for_timeout(500)
+    for v in [500]: await js(f"document.querySelector('[data-m=\"{v}\"]').click()")
+    await pg.wait_for_timeout(300); await pg.screenshot(path=f'{OUT}/fp_change.png')
+    print('ok disabled (500>=520?)', await js("document.querySelector('#cg-ok').disabled"))
+    await js("document.querySelector('#cg-undo').click()")
+    for v in [100, 100, 100, 100, 100, 10, 10]: await js(f"document.querySelector('[data-m=\"{v}\"]').click()")
+    print('ok disabled (520)', await js("document.querySelector('#cg-ok').disabled"))
+    await js("document.querySelector('#cg-ok').click()"); await pg.wait_for_timeout(700)
+    print('cust after pay', await js("JSON.stringify(T.S().cust.u99 && [T.S().cust.u99.st, T.S().cust.u99.paid])"), 'funds', await js("T.S().funds"))
+    await js("CS.game.openRecipeBook()"); await pg.wait_for_timeout(800); await pg.screenshot(path=f'{OUT}/fp_book.png')
+    await js("CS.ui.closeSheet()")
     print('\n'.join(logs[:20]))
     await b.close()
 asyncio.run(main())

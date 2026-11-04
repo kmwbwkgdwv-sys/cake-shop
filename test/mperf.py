@@ -50,21 +50,21 @@ async def main():
     await js(PROBE)
     await pg.wait_for_timeout(3000); print('idle', await js(STATS))
     # 在庫を増やして、棚に1つずつ置く（長押し）のと同じ頻度で状態が変わる
-    await js("""(()=>{const r=CS.ui.room,S=r.S; S.funds=999999; Object.keys(CS.data.ING).forEach(k=>CS.sim._.invAdd(S,k,30,50)); r.emit('state',S);
+    await js("""(()=>{const r=CS.ui.room,S=r.S; S.funds=999999; ['shelf','cshelf','table'].forEach(k=>r.act({t:'fbuy',k})); Object.keys(CS.data.ING).forEach(k=>CS.kitchen.invAdd(S,k,30,50)); r.emit('state',S);
       const W=CS.world, st=W.L.store; W.me.x=st.x0+2.2; W.me.z=st.z0+2.6; W.me.yaw=Math.PI*0.5; W.me.pitch=-0.15; })()""")
     await pg.wait_for_timeout(1500); await js(STATS)
-    await js("""window.__iv=setInterval(()=>{const r=CS.ui.room,S=r.S; const ks=Object.keys(CS.data.ING); const k=ks[Math.floor(Math.random()*ks.length)]; CS.sim._.invAdd(S,k,1,50); r.emit('state',S);},170)""")
+    await js("""window.__iv=setInterval(()=>{const r=CS.ui.room,S=r.S; const ks=Object.keys(CS.data.ING); const k=ks[Math.floor(Math.random()*ks.length)]; CS.kitchen.invAdd(S,k,1,50); r.emit('state',S);},170)""")
     await pg.wait_for_timeout(8000); await js("clearInterval(window.__iv)")
     print('shelving', await js(STATS))
     # ショーケースのケーキが1切れずつ売れていく
-    await js("""(()=>{const r=CS.ui.room,S=r.S; const ids=['short','choco','cheese','tart'].filter(x=>CS.sim.recipe(S,x)); for(let i=0;i<S.showcase.length;i++) S.showcase[i]={r:ids[i%ids.length]||'short',q:0.9,p:6,n:6,c:900,d:1,o:0,df:i%3?[]:['messy']}; r.emit('state',S);
-      const W=CS.world; W.me.x=0.5; W.me.z=W.dims.CASE_Z-1.0; W.me.yaw=Math.PI; W.me.pitch=-0.25; })()""")
+    await js("""(()=>{const r=CS.ui.room,S=r.S; const ids=['short','chocolate','baked_cheese','lemon_tart'].filter(x=>CS.sim.recipe(S,x)); r.act({t:'fbuy',k:'pcase'}); r.act({t:'fbuy',k:'pcaseN'}); const P=CS.plan; let i=0; ['pcase','pcaseN'].forEach(k=>P.list(S,k).forEach(f=>P.slots(S,f).forEach(sl=>{ if(!CS.kitchen.inSlot(S,sl).length) CS.kitchen.add(S,{t:'tray',r:ids[i++%ids.length]||'short',q:0.9,p:6,n:6,c:900,d:1,o:0,df:i%3?[]:['messy'],at:sl,pl:0}); }))); r.emit('state',S);
+      const W=CS.world, f=S.fu[P.list(S,'pcase')[0]], st=P.stand(f,1.0); W.me.x=st[0]; W.me.z=st[1]; W.me.yaw=Math.atan2(-(f.x-st[0]),-(f.z-st[1])); W.me.pitch=-0.35; })()""")
     await pg.wait_for_timeout(1500); await js(STATS)
-    await js("""window.__iv=setInterval(()=>{const r=CS.ui.room,S=r.S; const i=Math.floor(Math.random()*S.showcase.length); const c=S.showcase[i]; if(c){ c.p-=1; if(c.p<=0) S.showcase[i]={r:c.r,q:0.9,p:6,n:6,c:900,d:1,o:0,df:[]}; } r.emit('state',S);},400)""")
+    await js("""window.__iv=setInterval(()=>{const r=CS.ui.room,S=r.S; const ts=CS.kitchen.trays(S); const c=S.k.items[ts[Math.floor(Math.random()*ts.length)]]; if(c){ c.p-=1; if(c.p<=0) c.p=6; } r.emit('state',S);},400)""")
     await pg.wait_for_timeout(8000); await js("clearInterval(window.__iv)")
     print('selling', await js(STATS))
     # デコ台でトッピングを置き続ける
-    await js("""(()=>{const r=CS.ui.room,S=r.S; S.k.items.dz={t:'deco',b:'plain',q:1,df:[],c:300,cr:'whip',crq:1,sq:1,tops:{},tp:[],warm:0,at:'dt:0'}; r.emit('state',S); const W=CS.world,d=W.L.deco[0]; W.me.x=d.x; W.me.z=d.stand[1]; W.me.yaw=0; W.me.pitch=-0.7;})()""")
+    await js("""(()=>{const r=CS.ui.room,S=r.S; r.act({t:'fbuy',k:'deco'}); const P=CS.plan, fid=P.list(S,'deco')[0], f=S.fu[fid]; S.k.items.dz={t:'deco',b:'plain',q:1,df:[],c:300,cr:'whip',crq:1,sq:1,tops:{},tp:[],warm:0,at:'f:'+fid+':0'}; r.emit('state',S); const W=CS.world, st=P.stand(f,0.5); W.me.x=st[0]; W.me.z=st[1]; W.me.yaw=Math.atan2(-(f.x-st[0]),-(f.z-st[1])); W.me.pitch=-0.7;})()""")
     await js("""window.__iv=setInterval(()=>{const r=CS.ui.room,S=r.S,it=S.k.items.dz; if(!it) return; it.tp.push([Math.random()-0.5,Math.random()-0.5,'strawberry']); if(it.tp.length>8) it.tp=[]; r.emit('state',S);},300)""")
     await pg.wait_for_timeout(6000); await js("clearInterval(window.__iv)")
     print('topping', await js(STATS))
