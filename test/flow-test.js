@@ -21,7 +21,24 @@ ok(Object.values(S.k.items).filter((i) => i.t === 'pan').length === 1 && Object.
 console.log('funds', S.funds);
 A({ t: 'start' });
 // ---- オーブン・ミキサー・デコ台を買う ----
-['oven', 'mixer', 'deco'].forEach((k) => { const r = A({ t: 'fbuy', k }); const f = S.fu[r.id]; ok(r.ok && f && !P.valid(S, r.id, f.k, f.x, f.z, f.r), 'bought ' + k + ' at ' + (f && [f.x, f.z, f.r].join(','))); });
+// 家具はトラックで大きな段ボールとして届く → 持って、置きたい床で展開する
+['oven', 'mixer', 'deco'].forEach((k) => { const r = A({ t: 'fbuy', k }); ok(r.ok && P.count(S, k) === 0, 'bought ' + k + ' (not placed yet)'); });
+const big = () => Object.keys(S.k.items).filter((id) => S.k.items[id].t === 'fcrate');
+ok(big().length === 3 && big().every((id) => String(S.k.items[id].at).startsWith('dl:')), 'three big crates are on the truck');
+// 材料の注文も、まだ来ていないトラックに一緒に積まれる
+const r0 = A({ t: 'order', items: ['egg', 'sugar', 'flour', 'butter', 'cream', 'strawberry', 'box'] }); ok(r0.ok, 'order rides on the same truck: ' + r0.msg);
+ok(!A({ t: 'pick', id: big()[0], quiet: 1 }).ok, 'cannot take before the truck arrives');
+tick(9500);
+const g0 = P.geomOf(S);
+const spots = { oven: [g0.pc.x1 + 3.6, -g0.RZ + 0.5, 0], mixer: [g0.pc.x1 + 5.0, -g0.RZ + 0.4, 0], deco: [g0.pc.x1 + 2.4, -g0.RZ + 3.5, 0] };
+big().forEach((id) => {
+  const k = S.k.items[id].k;
+  A({ t: 'pick', id });
+  ok(!A({ t: 'put', slot: slot('table', 0), quiet: 1 }).ok && !A({ t: 'trash', quiet: 1 }).ok, k + ': big crate cannot go on a table or in the trash');
+  ok(!A({ t: 'unpack', x: S.fu[furn('fridge')].x, z: S.fu[furn('fridge')].z, r: 0, quiet: 1 }).ok, k + ': cannot unpack on top of the fridge');
+  const f0 = P.findSpot(S, k, [spots[k][0], spots[k][1]]); const r = A({ t: 'unpack', x: f0.x, z: f0.z, r: f0.r });
+  const f = S.fu[r.id]; ok(r.ok && f && f.k === k && !K.held(S, 'p1'), 'unpacked ' + k + ' at ' + (f && [f.x, f.z, f.r].join(',')));
+});
 console.log('funds after furniture', S.funds);
 // 家具を動かす（壁・ドア・ほかの家具は不可）
 const tb = furn('table'); const t0 = Object.assign({}, S.fu[tb]);
@@ -32,8 +49,6 @@ ok(!A({ t: 'fmove', id: tb, x: g.pc.door, z: g.pc.z1 + 0.5, r: 0, quiet: 1 }).ok
 ok(!A({ t: 'fmove', id: tb, x: (g.pc.x0 + g.pc.x1) / 2, z: g.pc.z0 + 1.5, r: 0, quiet: 1 }).ok, 'cannot put furniture in the PC room');
 A({ t: 'fmove', id: tb, x: t0.x, z: t0.z, r: 0 });
 // ---- 仕入れ（材料と箱）----
-const r0 = A({ t: 'order', items: ['egg', 'sugar', 'flour', 'butter', 'cream', 'strawberry', 'box'] }); ok(r0.ok, 'order with boxes: ' + r0.msg);
-tick(9500);
 const crate = (ing) => findIt((i) => i.t === 'crate' && i.ing === ing);
 // 卵 → 冷蔵棚の1枠目、小麦粉 → 冷蔵棚の同じ枠はダメ（卵専用になっている）→ 棚へ
 A({ t: 'pick', id: crate('egg') }); A({ t: 'openCrate' }); A({ t: 'shelve', slot: slot('cshelf', 0), all: 1 }); A({ t: 'trash' });
@@ -88,9 +103,17 @@ A({ t: 'topTake', fid: deco }); ok(held().n === nS - 3, 'took one strawberry bac
 A({ t: 'put', slot: slot('cshelf', 3) }); ok(!held() && K.invCount(S, 'strawberry') === 7, 'and put the rest back on the cold shelf');
 A({ t: 'finish', fid: deco });
 const cake = K.at(S, 'f:' + deco + ':0'); ok(S.k.items[cake].t === 'cake', 'cake finished');
-// 商品棚に置く → 切って並べる
-A({ t: 'pick', id: cake }); A({ t: 'put', slot: slot('pcase', 0) });
-const tray = K.at(S, slot('pcase', 0)); ok(S.k.items[tray].t === 'tray' && S.k.items[tray].p === 6, 'cut into 6 on the product shelf');
+ok(S.k.items[cake].w === 1, 'finished cake is a whole (uncut) cake');
+// ショーケースに置く → ホールのまま並ぶ → ケーキナイフで6等分
+A({ t: 'pick', id: cake }); A({ t: 'put', slot: slot('scase', 0) });
+const tray = K.at(S, slot('scase', 0)); ok(S.k.items[tray].t === 'tray' && S.k.items[tray].w === 1, 'whole cake displayed uncut in the showcase');
+const knife = findIt((i) => i.t === 'knife'); ok(knife && String(S.k.items[knife].at).startsWith('f:'), 'one cake knife in the start kit: ' + (knife && S.k.items[knife].at));
+ok(!A({ t: 'cut', id: tray, quiet: 1 }).ok, 'cannot cut without the knife');
+A({ t: 'take', id: stackAt(slot('shelf', 4)) }); ok(!A({ t: 'slice', id: tray, quiet: 1 }).ok, 'cannot take a slice from an uncut cake'); A({ t: 'put', slot: slot('shelf', 4) });
+A({ t: 'pick', id: knife }); ok(A({ t: 'cut', id: tray }).ok && !S.k.items[tray].w && S.k.items[tray].p === 6, 'cut into 6 with the knife (in the showcase)');
+ok(!A({ t: 'cut', id: tray, quiet: 1 }).ok, 'already cut');
+A({ t: 'put', slot: slot('table', 3) }); ok(!held(), 'knife back on the table');
+D.CUSTOMERS.forEach((c) => { c._h = c.hole; c.hole = 0; });
 // ---- 接客：持ち帰り（箱）→ レジで現金のお会計 ----
 for (const r in S.menu) A({ t: 'menuOn', r, on: r === 'short' });
 A({ t: 'sign' });
@@ -113,12 +136,12 @@ S.furn.table = 1;
 const c3 = custFor(1, 'card'); const C3 = S.cust[c3]; ok(C3 && C3.dine && C3.seat >= 0, 'eat-in customer with a seat');
 A({ t: 'takeOrder', c: c3 });
 const plate = findIt((i) => i.t === 'plate'); A({ t: 'pick', id: plate });
-for (let k = 0; k < C3.ord.short; k++) A({ t: 'slice', id: K.at(S, slot('pcase', 0)) || tray });
+for (let k = 0; k < C3.ord.short; k++) A({ t: 'slice', id: K.at(S, slot('scase', 0)) || tray });
 ok(!A({ t: 'serve', c: c1 === c3 ? 'x' : 'nobody', quiet: 1 }).ok, '');
 A({ t: 'serve', c: c3 }); A({ t: 'pay', c: c3 }); ok(C3.st === 'eat', 'eating at the table');
 tick(R.SIT_MS + 5000); const atSeat = K.at(S, 'seat:' + 0);
 ok(atSeat === plate && S.k.items[plate].dirty, 'dirty plate left on the table');
-A({ t: 'pick', id: plate }); ok(!A({ t: 'slice', id: K.at(S, slot('pcase', 0)), quiet: 1 }).ok, 'cannot serve on a dirty plate');
+A({ t: 'pick', id: plate }); ok(!A({ t: 'slice', id: K.at(S, slot('scase', 0)), quiet: 1 }).ok, 'cannot serve on a dirty plate');
 // 落とすと割れる
 A({ t: 'drop' }); ok(!S.k.items[plate] && S.today.broken === 1, 'dropped plate breaks');
 const f2 = S.funds; A({ t: 'tbuy', k: 'plate' }); ok(S.funds === f2 - P.TOOLS.plate.price && Object.values(S.k.items).some((i) => i.t === 'plate'), 'bought one plate');
@@ -127,6 +150,27 @@ A({ t: 'sign' }); A({ t: 'endDay' });
 ok(S.k.items[tray] && S.k.items[tray].t === 'tray', 'tray stays in the cold product shelf overnight');
 A({ t: 'next' }); A({ t: 'sign' }); tick(2000); A({ t: 'sign' }); A({ t: 'endDay' });
 ok(!S.k.items[tray], 'expired after 2 days');
+// ---- ホール売り：お祝いのお客さん → 切らずに箱へ → ホールの値段 ----
+D.CUSTOMERS.forEach((c) => { c.hole = c._h; });
+A({ t: 'next' }); const ck2 = K.add(S, { t: 'tray', r: 'short', q: 0.9, p: 6, n: 6, c: 900, d: S.day, df: [], w: 1, at: slot('scase', 1) });
+ A({ t: 'sign' }); S.cust = {};
+let hc = null; for (let k = 0; k < 200 && !hc; k++) { K.spawn(S, now); now += R.WALK_MS + 50; K.tickCustomers(S, now); hc = Object.keys(S.cust).find((x) => S.cust[x].st === 'q' && Object.keys(S.cust[x].wh || {}).length); Object.keys(S.cust).forEach((x) => { if (x !== hc) delete S.cust[x]; }); }
+ok(hc && S.cust[hc].wh.short === 1 && !Object.keys(S.cust[hc].ord).length && !S.cust[hc].dine, 'a customer orders a whole cake (take-out): ' + (hc && S.cust[hc].ty));
+A({ t: 'takeOrder', c: hc }); ok(K.ordText(S, S.cust[hc].ord, S.cust[hc].wh).includes('ホール'), 'order text says whole: ' + K.ordText(S, S.cust[hc].ord, S.cust[hc].wh));
+A({ t: 'take', id: stackAt(slot('shelf', 4)) }); ok(A({ t: 'hole', id: ck2 }).ok && held().s.length === 1 && held().s[0][4] === 1 && !S.k.items[ck2], 'whole cake into an empty box');
+ok(!A({ t: 'slice', id: ck2, quiet: 1 }).ok, 'box with a whole cake is full');
+A({ t: 'serve', c: hc }); ok(S.cust[hc].st === 'pay' && S.cust[hc].due === S.menu.short.hp, 'whole price ¥' + S.cust[hc].due + ' (piece ¥' + S.menu.short.price + ', market whole ¥' + sim.holeMarket(S, 'short') + ')');
+const so0 = S.today.sold; A({ t: 'pay', c: hc, ch: K.change(S.cust[hc]) }); ok(S.today.sold === so0 + 6 && S.today.hole === 1, 'counted as 6 pieces / 1 whole');
+// ---- お皿の上でも切れる：お皿を机に置く → ケーキをのせる → 切る → 1切れずつ取ると最後にお皿が残る ----
+const pl2 = findIt((i) => i.t === 'plate' && !i.dirty);
+const ck3 = K.add(S, { t: 'cake', r: 'short', q: 0.9, p: 6, n: 6, c: 900, d: S.day, df: [], w: 1, at: slot('table', 0) });
+A({ t: 'pick', id: pl2 }); A({ t: 'put', slot: slot('table', 1) }); A({ t: 'pick', id: ck3 }); ok(A({ t: 'put', slot: slot('table', 1) }).ok && S.k.items[ck3].dish === 1 && !S.k.items[pl2], 'cake put on a plate');
+A({ t: 'pick', id: findIt((i) => i.t === 'knife') }); ok(A({ t: 'cut', id: ck3 }).ok, 'cut on the plate (on the table)'); A({ t: 'put', slot: slot('table', 3) });
+A({ t: 'take', id: stackAt(slot('shelf', 4)) }); for (let k = 0; k < 6; k++) A({ t: 'slice', id: ck3 });
+const left = K.at(S, slot('table', 1)); ok(held().s.length === 6 && left && S.k.items[left].t === 'plate' && S.k.items[left].dirty, 'took 6 slices; a dirty plate is left');
+// ---- 追加のケーキナイフ ----
+A({ t: 'put', slot: slot('shelf', 5) }); const f3 = S.funds; A({ t: 'tbuy', k: 'knife' });
+ok(S.funds === f3 - P.TOOLS.knife.price && Object.values(S.k.items).filter((i) => i.t === 'knife').length === 2, 'bought another knife');
 console.log('history', JSON.stringify(S.history[S.history.length - 1]).slice(0, 200));
 console.log('JSON size', JSON.stringify(S).length);
 console.log(fail ? fail + ' FAILED' : 'ALL OK');

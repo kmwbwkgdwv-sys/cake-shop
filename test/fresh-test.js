@@ -4,6 +4,8 @@ require('../js/data.js'); require('../js/sim.js'); require('../js/plan.js'); req
 const sim = CS.sim, K = CS.kitchen, D = CS.data, P = CS.plan;
 let now = 1000;
 const S = sim.newState({}); S.funds = 300000; sim.normalize(S);
+for (const id in S.k.items) if (S.k.items[id].t === 'knife') delete S.k.items[id]; // 机の空きを使うので
+D.CUSTOMERS.forEach((c) => (c.hole = 0));
 const A = (a, pid) => { const r = sim.apply(S, Object.assign({ pid: pid || 'p1' }, a), now); if (!r.ok && !a.quiet) console.log('  NG', a.t, r.msg); return r; };
 const tick = (ms, step) => { for (let t = 0; t < ms; t += step || 1000) { now += step || 1000; sim.tick(S, now); } };
 const fxs = () => S.fx.slice(-3).map((f) => f.x).join(' / ');
@@ -13,7 +15,7 @@ const fid = (k, i) => P.list(S, k)[i || 0];
 const held = () => S.k.items[K.held(S, 'p1')];
 const stackOf = (ing, at) => Object.keys(S.k.items).find((id) => { const it = S.k.items[id]; return it.t === 'ing' && it.ing === ing && !String(it.at).startsWith('h:') && (!at || it.at === at); });
 A({ t: 'start' });
-['oven', 'mixer', 'deco', 'pcaseN'].forEach((k) => A({ t: 'fbuy', k }));
+['oven', 'mixer', 'deco', 'pcaseN'].forEach((k) => K.placeNew(S, k));
 // 1) 段ボール：荷台の中では傷まない → 持ち出すと常温
 A({ t: 'order', items: ['strawberry', 'strawberry', 'flour'] });
 tick(9500);
@@ -73,9 +75,10 @@ for (let k = 0; k < 3; k++) { A({ t: 'take', id: stackOf('strawberry') }); const
 A({ t: 'finish', fid: DF });
 const cake = S.k.items[K.at(S, K.slot0(DF))];
 ok(cake && cake.t === 'cake' && cake.df.includes('spoil'), 'cake keeps spoil defect');
-A({ t: 'pick', id: K.at(S, K.slot0(DF)) }); A({ t: 'put', slot: sl('pcase', 0) });
-const tr = S.k.items[K.at(S, sl('pcase', 0))];
+A({ t: 'pick', id: K.at(S, K.slot0(DF)) }); A({ t: 'put', slot: sl('scase', 0) });
+const tr = S.k.items[K.at(S, sl('scase', 0))];
 ok(tr && tr.t === 'tray' && tr.df.includes('spoil') && tr.sp === 2, 'product shelf tray carries freshness');
+K.add(S, { t: 'knife', at: sl('table', 3) }); A({ t: 'pick', id: K.at(S, sl('table', 3)) }); ok(A({ t: 'cut', id: K.at(S, sl('scase', 0)) }).ok, 'cut with the knife'); for (const id in S.k.items) if (S.k.items[id].t === 'knife') delete S.k.items[id];
 for (const r in S.menu) A({ t: 'menuOn', r, on: r === 'short' });
 K.invAdd(S, 'box', 10, 60);
 S.furn.table = 0;
@@ -84,7 +87,7 @@ const rep0 = S.rep; K.spawn(S, now); const cid = Object.keys(S.cust)[0]; for (le
 if (S.cust[cid].st === 'q') {
   const c = S.cust[cid]; A({ t: 'takeOrder', c: cid });
   if (c.dine) { console.log('  (dine-in; skipping)'); } else {
-    A({ t: 'take', id: stackOf('box') }); for (let n = 0; n < c.ord.short; n++) A({ t: 'slice', id: K.at(S, sl('pcase', 0)) });
+    A({ t: 'take', id: stackOf('box') }); for (let n = 0; n < c.ord.short; n++) A({ t: 'slice', id: K.at(S, sl('scase', 0)) });
     A({ t: 'serve', c: cid }); A({ t: 'pay', c: cid, ch: K.change(c) });
     ok(S.today.issues.spoil >= 1 && S.rep < rep0, 'customer complains about spoiled cake: "' + c.say + '" rep ' + rep0.toFixed(2) + '→' + S.rep.toFixed(2));
   }

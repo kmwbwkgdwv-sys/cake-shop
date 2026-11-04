@@ -13,7 +13,7 @@ const ings = Object.keys(D.ING);
 for (const k of ings) K.invAdd(S, k, 20, D.ING[k].price);
 const fids = () => Object.keys(S.fu);
 const allSlots = () => fids().reduce((a, f) => a.concat(P.slots(S, f)), []).concat(['f:zz:0', 'f:' + fids()[0] + ':99', 'dl:0', 'xx:1']);
-const verbs = ['pick', 'take', 'take', 'put', 'put', 'put', 'trash', 'drop', 'addIng', 'addIng', 'run', 'run', 'pour', 'scoop', 'dump', 'oven', 'spreadDone', 'topPlace', 'topTake', 'finish', 'slice', 'unslice', 'caseTake', 'openCrate', 'shelve', 'shelve', 'washStart', 'wash', 'order', 'sign', 'takeOrder', 'serve', 'pay', 'fmove', 'fbuy', 'tbuy', 'endDay', 'next', 'start', 'price'];
+const verbs = ['pick', 'take', 'take', 'put', 'put', 'put', 'trash', 'drop', 'addIng', 'addIng', 'run', 'run', 'pour', 'scoop', 'dump', 'oven', 'spreadDone', 'topPlace', 'topTake', 'finish', 'slice', 'unslice', 'caseTake', 'cut', 'cut', 'hole', 'unhole', 'openCrate', 'shelve', 'shelve', 'washStart', 'wash', 'order', 'sign', 'takeOrder', 'serve', 'pay', 'fmove', 'fbuy', 'unpack', 'unpack', 'tbuy', 'endDay', 'next', 'start', 'price'];
 function randomAction() {
   const pid = pick(pids), items = Object.keys(S.k.items);
   const t = pick(verbs);
@@ -25,12 +25,14 @@ function randomAction() {
     case 'addIng': case 'run': case 'pour': case 'scoop': case 'dump': case 'spreadDone': case 'topPlace': case 'topTake': case 'finish': case 'washStart': case 'wash':
       a.fid = fid; a.q = rnd(); a.x = rnd() * 2 - 1; a.z = rnd() * 2 - 1; break;
     case 'oven': a.fid = fid; a.op = pick(['set', 'next', 'off']); a.temp = pick([150, 170, 190, 999]); break;
-    case 'slice': case 'unslice': case 'caseTake': a.id = pick(K.trays(S).concat(items).concat(['zz'])); break;
+    case 'slice': case 'unslice': case 'caseTake': case 'cut': case 'hole': a.id = pick(K.trays(S).concat(K.holes(S)).concat(items).concat(['zz'])); break;
+    case 'unhole': a.slot = pick(allSlots()); break;
     case 'shelve': a.slot = pick(allSlots()); a.all = rnd() < 0.5 ? 1 : 0; break;
     case 'order': a.items = Array.from({ length: 1 + Math.floor(rnd() * 12) }, () => pick(ings)); break;
     case 'takeOrder': case 'serve': case 'pay': a.c = pick(Object.keys(S.cust).concat(['zz'])); a.ch = Math.floor(rnd() * 3000); break;
     case 'fmove': { const g = P.geomOf(S); a.id = fid; a.x = -g.RX + rnd() * g.RX * 2; a.z = -g.RZ + rnd() * (g.CZ + g.RZ); a.r = Math.floor(rnd() * 5); break; }
     case 'fbuy': a.k = pick(Object.keys(P.KINDS).concat(['zz'])); break;
+    case 'unpack': { const g = P.geomOf(S); a.x = -g.RX + rnd() * g.RX * 2; a.z = -g.RZ + rnd() * (g.CZ + g.RZ); a.r = Math.floor(rnd() * 4); break; }
     case 'tbuy': a.k = pick(['plate', 'pan', 'zz']); break;
     case 'price': a.r = 'short'; a.price = Math.floor(rnd() * 900); break;
     default: break;
@@ -54,10 +56,12 @@ function check() {
     }
     if (at.startsWith('c:')) { if (!S.cust[at.slice(2)]) err('orphan c: ' + id); continue; }
     if (at.startsWith('seat:') || at.startsWith('dl:')) continue;
+    if (it.t === 'fcrate') { err('fcrate in slot ' + at); continue; }
     err('weird at ' + at);
   }
   for (const id in S.k.items) { const it = S.k.items[id]; if (it.t === 'ing' && !(it.n > 0)) err('empty stack ' + id); if (it.t === 'ing' && it.n > K.STACK_CAP.ing) err('over cap ' + id); }
   for (const ing of ings) if (K.invCount(S, ing) < 0) err('neg inv ' + ing);
+  for (const id in S.k.items) { const it = S.k.items[id]; if ((it.t === 'box' && K.boxUnits(it) > 6) || (it.t === 'plate' && K.boxUnits(it) > 3)) err('overfull ' + it.t); if ((it.t === 'cake' || it.t === 'tray') && (it.w && it.p !== it.n || !(it.p > 0))) err('bad cake ' + JSON.stringify(it)); }
   if (!isFinite(S.funds)) err('funds NaN');
   // 家具が壁・ほかの家具と重なっていない
   const ids = fids(), g = P.geomOf(S);

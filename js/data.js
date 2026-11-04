@@ -172,7 +172,8 @@
   // 店舗レベル（売った数・お客さんの満足・評判で経験値がたまる）
   const SHOP_XP = [0, 150, 400, 800, 1400, 2200, 3300, 4800, 6800, 9500];
   // 増床レベルごとの店の大きさ（半幅 rx・半奥行き rz・厨房の奥行き kd、単位 m）
-  const SHOP_SIZES = [{ rx: 10.5, rz: 8.5, kd: 8.6 }, { rx: 11.5, rz: 9.2, kd: 9.0 }, { rx: 12.5, rz: 9.9, kd: 9.4 }, { rx: 13.5, rz: 10.6, kd: 9.8 }];
+  // 縦長のお店（奥に広い厨房）：rx＝横幅の半分、rz＝奥行きの半分、kd＝奥の壁からカウンターまで
+  const SHOP_SIZES = [{ rx: 8.0, rz: 11.5, kd: 16.0 }, { rx: 8.6, rz: 12.5, kd: 17.4 }, { rx: 9.2, rz: 13.5, kd: 18.8 }, { rx: 9.8, rz: 14.5, kd: 20.2 }];
   // 厨房の設備の数（増床レベルごと）と置き場の数
   const KITCHEN = { mix: [2, 3, 3, 4], whip: [2, 2, 3, 3], deco: [2, 3, 3, 4], reg: [2, 2, 3, 3], rack: 12, deliv: 10, spots: 12, pack: 4 };
 
@@ -186,12 +187,14 @@
 
   // ---- お客さんタイプ ----
   const CUSTOMERS = [
-    { id: 'student', name: '学生',   w: 3,   budget: 0.78, likes: ['berry', 'choco'],          picky: 0.2, color: '#7FB3FF', hair: '#3A2A22' },
-    { id: 'worker',  name: '会社員', w: 3,   budget: 1.0,  likes: ['choco', 'cheese'],         picky: 0.4, color: '#5D6B82', hair: '#1F1A1A' },
-    { id: 'parent',  name: '親子連れ', w: 2, budget: 0.92, likes: ['berry', 'fruit', 'milky'], picky: 0.3, color: '#F5A97F', hair: '#6B3E26', multi: true },
-    { id: 'gourmet', name: 'グルメ', w: 1,   budget: 1.42, likes: ['nutty', 'matcha', 'butter'], picky: 0.9, color: '#8F6BC9', hair: '#C9C2B8' },
-    { id: 'tourist', name: '観光客', w: 1.5, budget: 1.15, likes: ['matcha', 'fruit'],         picky: 0.5, color: '#4FC1A6', hair: '#E2B04A' },
-    { id: 'elder',   name: 'ご年配', w: 1.5, budget: 1.05, likes: ['nutty', 'cheese', 'light'], picky: 0.5, color: '#B59A7A', hair: '#E8E4DE' },
+    // hole = ホール（切っていない1台）を買う確率
+    { id: 'student', name: '学生',   w: 3,   budget: 0.78, likes: ['berry', 'choco'],          picky: 0.2, color: '#7FB3FF', hair: '#3A2A22', hole: 0.02 },
+    { id: 'worker',  name: '会社員', w: 3,   budget: 1.0,  likes: ['choco', 'cheese'],         picky: 0.4, color: '#5D6B82', hair: '#1F1A1A', hole: 0.08 },
+    { id: 'parent',  name: '親子連れ', w: 2, budget: 0.92, likes: ['berry', 'fruit', 'milky'], picky: 0.3, color: '#F5A97F', hair: '#6B3E26', multi: true, hole: 0.3 },
+    { id: 'gourmet', name: 'グルメ', w: 1,   budget: 1.42, likes: ['nutty', 'matcha', 'butter'], picky: 0.9, color: '#8F6BC9', hair: '#C9C2B8', hole: 0.1 },
+    { id: 'tourist', name: '観光客', w: 1.5, budget: 1.15, likes: ['matcha', 'fruit'],         picky: 0.5, color: '#4FC1A6', hair: '#E2B04A', hole: 0.03 },
+    { id: 'elder',   name: 'ご年配', w: 1.5, budget: 1.05, likes: ['nutty', 'cheese', 'light'], picky: 0.5, color: '#B59A7A', hair: '#E8E4DE', hole: 0.18 },
+    { id: 'party',   name: 'お祝いの人', w: 0.8, budget: 1.12, likes: ['berry', 'fruit', 'choco'], picky: 0.4, color: '#F49AC2', hair: '#4A2E22', multi: true, hole: 0.85 },
   ];
 
   const SAY = {
@@ -251,7 +254,8 @@
     SHIP: 500,           // 送料（1回の注文ごと）
     CART_MAX: 10,        // 1回に注文できる箱の数
     PACK: 10,            // 1箱に入っている数
-    PRICE_LIMIT: 1.3,    // 相場のこの倍を超えると、ほぼ誰も買わない（クレームも出る）
+    PRICE_LIMIT: 1.3,
+    HOLE_K: 0.9,         // ホール（切らずに1台）の相場 = 1切れの相場 × 切れ数 × これ    // 相場のこの倍を超えると、ほぼ誰も買わない（クレームも出る）
     WALK_MS: 7000,       // 入口からレジまで歩く時間
     QUEUE_MS: 50000,     // 注文を受けてもらえるまで待てる時間
     WAIT_MS: 45000,      // 注文してから受け取りまで待てる時間（＋1個ごとに9秒）

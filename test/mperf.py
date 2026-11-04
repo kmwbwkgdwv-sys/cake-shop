@@ -57,8 +57,8 @@ async def main():
     await pg.wait_for_timeout(8000); await js("clearInterval(window.__iv)")
     print('shelving', await js(STATS))
     # ショーケースのケーキが1切れずつ売れていく
-    await js("""(()=>{const r=CS.ui.room,S=r.S; const ids=['short','chocolate','baked_cheese','lemon_tart'].filter(x=>CS.sim.recipe(S,x)); r.act({t:'fbuy',k:'pcase'}); r.act({t:'fbuy',k:'pcaseN'}); const P=CS.plan; let i=0; ['pcase','pcaseN'].forEach(k=>P.list(S,k).forEach(f=>P.slots(S,f).forEach(sl=>{ if(!CS.kitchen.inSlot(S,sl).length) CS.kitchen.add(S,{t:'tray',r:ids[i++%ids.length]||'short',q:0.9,p:6,n:6,c:900,d:1,o:0,df:i%3?[]:['messy'],at:sl,pl:0}); }))); r.emit('state',S);
-      const W=CS.world, f=S.fu[P.list(S,'pcase')[0]], st=P.stand(f,1.0); W.me.x=st[0]; W.me.z=st[1]; W.me.yaw=Math.atan2(-(f.x-st[0]),-(f.z-st[1])); W.me.pitch=-0.35; })()""")
+    await js("""(()=>{const r=CS.ui.room,S=r.S; const ids=['short','chocolate','baked_cheese','lemon_tart'].filter(x=>CS.sim.recipe(S,x)); r.act({t:'fbuy',k:'scase'}); r.act({t:'fbuy',k:'pcaseN'}); const P=CS.plan; let i=0; ['scase','pcaseN'].forEach(k=>P.list(S,k).forEach(f=>P.slots(S,f).forEach(sl=>{ if(!CS.kitchen.inSlot(S,sl).length) CS.kitchen.add(S,{t:'tray',r:ids[i++%ids.length]||'short',q:0.9,p:6,n:6,c:900,d:1,o:0,df:i%3?[]:['messy'],at:sl,pl:0}); }))); r.emit('state',S);
+      const W=CS.world, f=S.fu[P.list(S,'scase')[0]], st=P.stand(f,1.0); W.me.x=st[0]; W.me.z=st[1]; W.me.yaw=Math.atan2(-(f.x-st[0]),-(f.z-st[1])); W.me.pitch=-0.35; })()""")
     await pg.wait_for_timeout(1500); await js(STATS)
     await js("""window.__iv=setInterval(()=>{const r=CS.ui.room,S=r.S; const ts=CS.kitchen.trays(S); const c=S.k.items[ts[Math.floor(Math.random()*ts.length)]]; if(c){ c.p-=1; if(c.p<=0) c.p=6; } r.emit('state',S);},400)""")
     await pg.wait_for_timeout(8000); await js("clearInterval(window.__iv)")

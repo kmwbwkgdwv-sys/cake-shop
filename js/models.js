@@ -410,10 +410,15 @@
     }
   }
   function rosette(B, p, col, s) { B.put(Geo.cyl(0.0, 0.011, 0.016, 10), [p[0], p[1] + 0.009 * s, p[2]], 0, s, col, GL.cream); B.put(Geo.torus(0.008, 0.0045, 6, 12), [p[0], p[1] + 0.004 * s, p[2]], [PI / 2, 0, 0], s, col, GL.cream); }
-  function cake(eng, r, pieces, scale, df) {
+  // 切ったケーキの切れ目（中心から6本）
+  function cutLines(B, pieces, R, h, th0, col) {
+    const list = pieces >= 6 ? [0, 1, 2, 3, 4, 5] : Array.from({ length: Math.max(0, pieces - 1) }, (_, k) => k + 1);
+    for (const i of list) { const a = th0 + (i / 6) * PI * 2; B.put(Geo.box(0.0016, h + 0.004, R), [Math.sin(a) * R / 2, h / 2, Math.cos(a) * R / 2], [0, a, 0], 1, shade(col, -0.08), GL.sponge); }
+  }
+  function cake(eng, r, pieces, scale, df, cut) {
     pieces = pieces == null ? 6 : pieces;
     df = df || [];
-    const key = eng.id + '|' + r.base + r.cream + JSON.stringify(r.tops || {}) + '|' + pieces + '|' + df.slice().sort().join(',');
+    const key = eng.id + '|' + r.base + r.cream + JSON.stringify(r.tops || {}) + '|' + pieces + '|' + df.slice().sort().join(',') + (cut ? '|c' : '');
     if (cakeCache[key]) { const n = new Node(cakeCache[key]); if (scale) n.s = [scale, scale, scale]; return n; }
     const B = new Builder();
     const base = D.BASES[r.base] || D.BASES.plain, cr = D.CREAMS[r.cream] || D.CREAMS.none;
@@ -472,7 +477,9 @@
           if (tl.length && pieces === 6) topPiece(B, tl[0], [0, topY, 0], 1.2);
         } else if (tl.length) { for (let i = 0; i < pieces; i++) { const a = th0 + ((i + 0.5) / 6) * PI * 2; topPiece(B, tl[i % tl.length], [Math.sin(a) * R * 0.6 + jit(), y, Math.cos(a) * R * 0.6 + jit()], 1, { a }); } }
         if (base.ring && pieces === 6) B.put(Geo.cyl(0.018, 0.018, 0.002, 16), [0, y + 0.012, 0], 0, 1, rgb('#4A3A2A'), GL.sponge);
+        if (cut) cutLines(B, pieces, R + 0.005, y + 0.002, th0, burnt ? '#24130A' : base.crumb);
       }
+      if (cut && base.tart) cutLines(B, pieces, R + 0.003, 0.03, th0, burnt ? '#24130A' : base.crumb);
     }
     // お皿
     B.put(Geo.cyl(0.115, 0.1, 0.008, 36), [0, -0.004, 0], 0, 1, rgb('#F6F4F0'), GL.plate);
@@ -699,6 +706,7 @@
       parent: { clothes: pick(['knit', 'polo'], v), clothesColor: pick(['#E8D5C4', '#9DB4C0', '#D9A6A0'], v), hair: pick(['bob', 'long', 'pony'], v) },
       gourmet: { clothes: 'shirt', clothesColor: '#1F1F22', hat: 'beret', hatColor: '#2B2523', acc: 'scarf', accColor: '#7A1F2B', beard: v % 2 ? 'mustache' : 'none' },
       tourist: { clothes: 'polo', clothesColor: pick(['#2F8F83', '#F2C14E', '#E86A5A'], v), hat: 'cap', hatColor: pick(['#F7F5F0', '#2F4858'], v), acc: 'watch' },
+      party: { clothes: 'polo', clothesColor: pick(['#F49AC2', '#FFD166', '#A0C4FF', '#F7F5F0'], v), acc: 'watch', hair: pick(['bob', 'wavy', 'short'], v) },
       elder: { clothes: 'knit', clothesColor: pick(['#8C8F94', '#6B5A4A', '#4F6B4A'], v), hairColor: pick(['#D8D4CE', '#8A8580'], v), acc: 'glasses', hair: pick(['crew', 'short', 'bun'], v), body: 'normal' },
     };
     return Object.assign(base, T[type] || {});

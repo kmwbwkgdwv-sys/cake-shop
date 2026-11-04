@@ -57,6 +57,7 @@
     S.history = toArr(S.history);
     S.fx = toArr(S.fx);
     for (const id in S.originals) { const o = S.originals[id]; if (!o.tops) o.tops = {}; }
+    for (const id in S.menu) holeDefault(S, id);
     // 旧データの設備を新しい「設備・家具」に移す
     const U = S.up;
     if (U.proOven && !S.eq.oven) S.eq.oven = 2; if (U.mixer && !S.eq.mixer) S.eq.mixer = 1; if (U.cooler && !S.eq.cooler) S.eq.cooler = 1; if (U.fridge && !S.eq.fridge) S.eq.fridge = 1;
@@ -83,6 +84,11 @@
     const cur = T[lv - 1], next = lv < T.length ? T[lv] : null;
     return { lv, xp, cur, next, f: next ? (xp - cur) / (next - cur) : 1, max: lv >= T.length };
   }
+  // お店のレベルが上がるほど、お客さんが来るペースと1人あたりの注文が増える
+  function rush(S) {
+    const lv = shopLevel(S).lv;
+    return { lv, rate: 0.8 + 0.12 * (lv - 1), size: lv >= 7 ? 2 : lv >= 4 ? 1 : 0, cap: Math.floor((lv - 1) / 2) };
+  }
   function addXp(S, n) {
     const before = shopLevel(S).lv;
     S.xp = (S.xp || 0) + n;
@@ -97,9 +103,10 @@
       if (items.length) parts.push('新商品「' + items.join('」「') + '」');
       if (ups.length) parts.push('「' + ups.join('」「') + '」');
       if (st) parts.push('アルバイト枠 +1');
-      fx(S, 'up', 'お店のレベルが Lv' + after + ' に上がった！' + (parts.length ? ' ' + parts.join('・') + ' が解放' : ''));
+      fx(S, 'up', 'お店のレベルが Lv' + after + ' に上がった！' + (parts.length ? ' ' + parts.join('・') + ' が解放。' : '') + ' お客さんの数 ×' + rush(S).rate.toFixed(2) + (rush(S).size > rush({ xp: T_XP(after - 1) }).size ? '・まとめ買いが増えます' : ''));
     }
   }
+  const T_XP = (lv) => D.SHOP_XP[Math.max(0, lv - 1)] || 0;
   function upReq(u, lv) { return (u.req || [])[lv] || 1; }
   // 店舗レベルで解放される商品
   function unlockByLevel(S) {
@@ -205,7 +212,13 @@
   function addKnown(S, rid) {
     S.known[rid] = 1;
     if (!S.menu[rid]) { const r = recipe(S, rid); S.menu[rid] = { price: round10(recipeValue(r) * 0.9), on: true }; }
+    holeDefault(S, rid);
   }
+  // ホール売り：切っていない1台。焼き菓子（袋・個で売る物）はホールなし
+  function wholeable(r) { return !!r && !r.pieces && !(D.BASES[r.base] || {}).cookie; }
+  function holeMarket(S, rid, r) { r = r || recipe(S, rid); return round10(cakeMarket(S, rid, r) * pieceCount(r) * (R.HOLE_K || 0.9)); }
+  function holeWtp(S, r, q, ct, noise, rid) { return wtp(S, r, q, ct, noise, rid) * pieceCount(r) * (R.HOLE_K || 0.9) * ((ct.hole || 0) >= 0.3 ? 1.06 : 1); }
+  function holeDefault(S, rid) { const m = S.menu[rid], r = recipe(S, rid); if (m && wholeable(r) && !(m.hp > 0)) m.hp = round10((m.price || recipeValue(r)) * pieceCount(r) * (R.HOLE_K || 0.9)); }
   function costEstimate(S, r) {
     const m = S.market; let c = 0;
     const b = D.BASES[r.base]; for (const id in b.ing) c += b.ing[id] * m[id];
@@ -226,10 +239,11 @@
     return v * (noise || 1);
   }
   // 価格に対して、お客さんのうち何割が買ってくれそうか (メニュー画面の予想表示用)
-  function demandEstimate(S, rid, price, q) {
+  function demandEstimate(S, rid, price, q, hole) {
     const r = recipe(S, rid); if (!r) return 0;
     let tot = 0, ok = 0;
-    for (const ct of D.CUSTOMERS) for (let i = -2; i <= 2; i++) { const n = Math.exp(i * 0.15); tot += ct.w; if (wtp(S, r, q, ct, n, rid) >= price && price <= cakeMarket(S, rid, r) * R.PRICE_LIMIT) ok += ct.w; }
+    const lim = (hole ? holeMarket(S, rid, r) : cakeMarket(S, rid, r)) * R.PRICE_LIMIT;
+    for (const ct of D.CUSTOMERS) for (let i = -2; i <= 2; i++) { const n = Math.exp(i * 0.15); tot += ct.w; if ((hole ? holeWtp(S, r, q, ct, n, rid) : wtp(S, r, q, ct, n, rid)) >= price && price <= lim) ok += ct.w; }
     return ok / tot;
   }
   function arrivalRate(S, hourIdx) {
@@ -242,7 +256,7 @@
     const ad = (D.ADS[S.ad] || D.ADS.none).mult;
     const kinds = Object.keys(CS.kitchen.shelfStock(S)).length;
     const variety = 1 + Math.min(0.2, Math.max(0, kinds - 1) * 0.05);
-    return 6.2 * players * rep * attract * w * dow * ad * variety * D.HOUR_CURVE[clamp(hourIdx, 0, 9)];
+    return 6.2 * players * rep * attract * w * dow * ad * variety * rush(S).rate * D.HOUR_CURVE[clamp(hourIdx, 0, 9)];
   }
 
   // ===================== 演出イベント =====================
@@ -296,13 +310,13 @@
       const items = toArr(a.items).filter((id) => D.ING[id]);
       if (!items.length) return { ok: false, msg: 'カートが空です' };
       if (items.length > R.CART_MAX) return { ok: false, msg: '一度に注文できるのは' + R.CART_MAX + '箱までです' };
-      if (S.k && S.k.truck) return { ok: false, msg: 'トラックが配達中です。荷おろしが終わったら次を注文できます' };
+      if (S.k && S.k.truck && !(now < S.k.truck.at)) return { ok: false, msg: 'トラックが来ています。荷おろしが終わって帰ったら次を注文できます' };
       const P = R.PACK;
       let cost = R.SHIP; const list = items.map((id) => { const u = S.market[id]; cost += u * P; return { ing: id, n: P, u }; });
       cost = Math.round(cost);
       if (S.funds < cost) return { ok: false, msg: '資金が足りません（合計 ¥' + cost.toLocaleString() + '）' };
       const at = CS.kitchen.deliver(S, list, now);
-      if (!at) return { ok: false, msg: 'トラックが配達中です' };
+      if (!at) return { ok: false, msg: 'トラックの荷台がいっぱいです（次の便で注文しよう）' };
       S.funds -= cost; S.today.buy += cost; S.today.ship = (S.today.ship || 0) + R.SHIP;
       // 仕入れ値は注文のたびに動く（たくさん買った物は少し上がる）
       for (const id in D.ING) {
@@ -351,8 +365,9 @@
     },
     price(S, a) {
       if (!S.menu[a.r]) return { ok: false };
-      const p = clamp(round10(+a.price || 0), 100, 3000);
-      S.menu[a.r].price = p; return { ok: true };
+      if (a.hp != null) { if (!wholeable(recipe(S, a.r))) return { ok: false, msg: 'これはホールで売れません' }; S.menu[a.r].hp = clamp(round10(+a.hp || 0), 500, 20000); }
+      if (a.price != null) S.menu[a.r].price = clamp(round10(+a.price || 0), 100, 3000);
+      return { ok: true };
     },
     menuOn(S, a) { if (!S.menu[a.r]) return { ok: false }; S.menu[a.r].on = !!a.on; return { ok: true }; },
     upgrade(S, a) {
@@ -448,7 +463,7 @@
         const hourIdx = Math.floor((S.dayT / R.OPEN_MS) * 10);
         const expect = arrivalRate(S, hourIdx) * (sdt / (R.OPEN_MS / 10));
         let n = 0; let p = Math.exp(-expect), cum = p, u = Math.random();
-        while (u > cum && n < 4) { n++; p *= expect / n; cum += p; }
+        while (u > cum && n < 6) { n++; p *= expect / n; cum += p; }
         for (let i = 0; i < n; i++) CS.kitchen.spawn(S, now + i * 400);
       }
     }
@@ -484,7 +499,7 @@
     const profit = revenue - T.cogs - T.waste - fixed - T.ads - (T.lab || 0) - (T.ship || 0);
     const satAvg = T.cust - T.miss > 0 ? T.sat / Math.max(1, T.cust - T.miss) : 0;
     let bestR = null, bestN = 0; for (const r in T.best) if (T.best[r] > bestN) { bestN = T.best[r]; bestR = r; }
-    S.history.push({ brk: T.broken || 0, ovr: T.over || 0, wsh: T.washed || 0, exp: T.expired || 0, slow: T.slow || 0, spl: T.spoiled || 0, pc: T.pcomp || 0, ship: T.ship || 0, cmp: T.complaints || 0, iss: Object.assign({}, T.issues || {}), d: S.day, sales: revenue, cogs: T.cogs, waste: T.waste, fixed, ads: T.ads + (T.lab || 0), profit, cust: T.cust, sold: T.sold, miss: T.miss, rep: Math.round(S.rep * 100) / 100, sat: Math.round(satAvg * 100) / 100, funds: S.funds, best: bestR || '', buy: T.buy || 0, capex: T.capex || 0, wages });
+    S.history.push({ brk: T.broken || 0, ovr: T.over || 0, wsh: T.washed || 0, exp: T.expired || 0, slow: T.slow || 0, spl: T.spoiled || 0, pc: T.pcomp || 0, ship: T.ship || 0, cmp: T.complaints || 0, iss: Object.assign({}, T.issues || {}), d: S.day, sales: revenue, cogs: T.cogs, waste: T.waste, fixed, ads: T.ads + (T.lab || 0), profit, cust: T.cust, sold: T.sold, hole: T.hole || 0, miss: T.miss, rep: Math.round(S.rep * 100) / 100, sat: Math.round(satAvg * 100) / 100, funds: S.funds, best: bestR || '', buy: T.buy || 0, capex: T.capex || 0, wages });
     while (S.history.length > 30) S.history.shift();
     S.cust = {};
     addXp(S, Math.round(Math.max(0, S.rep - 2) * 12));
@@ -502,7 +517,7 @@
   }
 
   CS.sim = {
-    shopLevel, addXp, upReq, eqv, pieceCount, furnMax, unlockByLevel, newState, normalize, gt, phaseInfo, clockStr, tick, apply, recipe, recipeTags, stars, recipeValue, comboKey, findRecipeByCombo,
+    shopLevel, rush, wholeable, holeMarket, holeWtp, addXp, upReq, eqv, pieceCount, furnMax, unlockByLevel, newState, normalize, gt, phaseInfo, clockStr, tick, apply, recipe, recipeTags, stars, recipeValue, comboKey, findRecipeByCombo,
     costEstimate, demandEstimate, wtp, cakeMarket, arrivalRate, invCount, hasAll, missing, expSoon, bakeQuality, bakeWindow, ovenDur, coolMs, upVal,
     DECIDE_MS, LEAVE_MS, clamp, fx, appearance, cleanDf, ACT, working, cakeExpDay, cakeExpired, cakeExpText, HOST_ONLY: ['menuOn'],
     _: { cakeExpired, toArr, uid, union, cleanDf, fx, invCount, invTake, invAdd, hasAll, takeAll, eqv, ovenDur, bakeQuality, bakeWindow, coolMs, findRecipeByCombo, wtp, cakeMarket, appearance, addXp, rate, pick, wpick, gauss, menuRecipes },

@@ -51,11 +51,22 @@ async def main():
     for k in ['oven', 'mixer', 'deco']:
       await js(f"document.querySelector('[data-fbuy=\"{k}\"]').click()"); await pg.wait_for_timeout(500); await js(click); await pg.wait_for_timeout(600)
     await js("(()=>{const b=[...document.querySelectorAll('[data-tbuy=\"pan\"]')][0]; if(b) b.click();})()"); await pg.wait_for_timeout(500)
-    chk(await js("['oven','mixer','deco'].every(k=>CS.plan.count(T.S(),k)===1)"), 'bought oven, mixer, deco from the PC')
+    chk(await js("['oven','mixer','deco'].every(k=>CS.plan.count(T.S(),k)===0) && Object.values(T.S().k.items).filter(i=>i.t==='fcrate').length===3"), 'bought oven, mixer, deco from the PC → 3 big boxes on the truck')
     await js("CS.ui.closeSheet()"); await pg.wait_for_timeout(400)
-    # 2) 注文 → トラック → 段ボールを運んで棚へ
-    await js("CS.ui.room.act({t:'order',items:['egg','sugar','flour','butter','cream','strawberry','box']})"); await pg.wait_for_timeout(300)
-    await js("(()=>{const S=T.S(),n=T.R().now(); S.k.truck.at=n-500; Object.values(S.k.items).forEach(i=>{ if(i.t==='crate') i.ar=n-500; }); T.R().emit('state',S);})()"); await pg.wait_for_timeout(1500)
+    print('tutorial', await js("document.querySelector('#tut') && !document.querySelector('#tut').hidden ? document.querySelector('#tut').innerText.replace(/\\n/g,' / ').slice(0,140) : 'hidden'"))
+    # 2) 注文（同じトラックに積む）→ トラック到着 → 大きな段ボールを展開 → 段ボールを運んで棚へ
+    r = await js("CS.ui.room.act({t:'order',items:['egg','sugar','flour','butter','cream','strawberry','box']})"); await pg.wait_for_timeout(300)
+    chk(await js("Object.values(T.S().k.items).filter(i=>i.t==='crate').length===7"), 'ingredients go on the same truck while it is on the way')
+    await js("(()=>{const S=T.S(),n=T.R().now(); S.k.truck.at=n-500; Object.values(S.k.items).forEach(i=>{ if(i.t==='crate'||i.t==='fcrate') i.ar=n-500; }); T.R().emit('state',S);})()"); await pg.wait_for_timeout(1500)
+    await pg.screenshot(path=f'{OUT}/fp2_truck.png')
+    for k in ['oven', 'mixer', 'deco']:
+      r = await step(f"const L=W.L; const it=Object.entries(S().k.items).find(([id,i])=>i.t==='fcrate'&&i.k==='{k}'); const p=W.truckSlot(+it[1].at.split(':')[1]); return aim(p[0]+0.95, p[2]+0.1, [p[0],p[1]+0.35,p[2]])+' -> '+go('p')", 200)
+      print('big box', k, r[:80], 'held', await js("T.held() && T.held().t+':'+T.held().k"))
+      # 置く場所：空いている所を 0.05 刻みで探して、床をねらう
+      r2 = await step(f"const sp=P.findSpot(S(),'{k}'); let best=null; for (let dx=-0.1; dx<=0.1 && !best; dx+=0.05) for (let dz=-0.1; dz<=0.1 && !best; dz+=0.05) {{ const x=Math.round((sp.x+dx)*20)/20, z=Math.round((sp.z+dz)*20)/20; if(!P.valid(S(),null,'{k}',x,z,sp.r)) best=[x,z]; }} W.upR=sp.r; const o=P.dirs(sp.r); const sx=best[0]+o.fx*1.7, sz=best[1]+o.fz*1.7; return aim(sx, sz, [best[0],0,best[1]])+' ghost='+JSON.stringify(W.up)+' -> '+go('p')", 400)
+      print('unpack', k, r2[:160])
+    chk(await js("['oven','mixer','deco'].every(k=>CS.plan.count(T.S(),k)===1) && !Object.values(T.S().k.items).some(i=>i.t==='fcrate')"), 'unpacked oven, mixer, deco where I aimed')
+    await pg.screenshot(path=f'{OUT}/fp2_unpacked.png')
     n_crates = await js("Object.values(T.S().k.items).filter(i=>i.t==='crate').length"); print('crates', n_crates)
     for j in range(n_crates):
       r = await step(f"const L=W.L; const it=Object.entries(S().k.items).find(([k,i])=>i.t==='crate'&&String(i.at).startsWith('dl:')); if(!it) return 'none'; const p=W.truckSlot(+it[1].at.split(':')[1]); return aim(L.truck.x+0.2, L.truck.z-3.6, [p[0],p[1]+0.17,p[2]])+' -> '+go('p')")
@@ -137,29 +148,37 @@ async def main():
     chk(await js("!T.held()"), 'extra strawberry returned to the shelf')
     print('finish', await step("return aimF(fr('deco'), [0,1.02,0.04], 0.55)+' -> '+go('s')", 300))
     chk(await js("Object.values(T.S().k.items).some(i=>i.t==='cake')"), 'cake finished: ' + str(await js("(()=>{const c=Object.values(T.S().k.items).find(i=>i.t==='cake'); return c && c.r+' q'+c.q.toFixed(2);})()")))
-    # 7) 商品棚に置く → 切って並ぶ
+    # 7) ショーケースに置く（ホールのまま）→ ケーキナイフで6等分
     print('pick cake', await step("return aimF(fr('deco'), [0,1.02,0.04], 0.55)+' -> '+go('p')", 200))
-    print('to pcase', await step("const sl=P.slots(S(), fr('pcase'))[0]; return aimSlot(sl, 0.12)+' -> '+go('p')", 300))
-    chk(await js("Object.values(T.S().k.items).some(i=>i.t==='tray'&&i.p>0)"), 'cake cut and placed on the product shelf')
+    print('to showcase', await step("const sl=P.slots(S(), fr('scase'))[0]; return aimSlot(sl, 0.12)+' -> '+go('p')", 300))
+    chk(await js("Object.values(T.S().k.items).some(i=>i.t==='tray'&&i.w===1)"), 'whole cake placed in the showcase')
+    print('knife', await step("const sl=Object.values(S().k.items).find(i=>i.t==='knife').at; return aimSlot(sl, 0.02)+' -> '+go('p')", 200))
+    print('cut', await step("const sl=P.slots(S(), fr('scase'))[0]; return aimSlot(sl, 0.12)+' -> '+go('p')", 300))
+    chk(await js("Object.values(T.S().k.items).some(i=>i.t==='tray'&&!i.w&&i.p===6)"), 'cut into 6 with the cake knife')
+    print('knife back', await step("const sl=emptySlot('table'); return aimSlot(sl)+' -> '+go('p')", 200))
     await pg.screenshot(path=f'{OUT}/fp2_tray.png')
     # 8) OPEN → お客さん → 注文 → 箱に入れて渡す → お会計
     for r in await js("Object.keys(T.S().menu)"): await js(f"T.S().menu['{r}'].on = ('{r}'==='short')")
-    await js("T.S().furn.table=0")
+    await js("T.S().furn.table=0; CS.data.CUSTOMERS.forEach(c=>c.hole=0)")
     print('open', await step("const L=W.L; return aim(L.sign[0]-0.2, L.sign[1]+1.4, [L.sign[0],0.55,L.sign[1]])+' -> '+go('p')", 400))
     chk(await js("T.S().phase==='open'"), 'shop is open')
     cid = None
+    print('tray', await js("JSON.stringify(Object.values(T.S().k.items).filter(i=>i.t==='tray').map(i=>[i.q.toFixed(2),i.df]))"))
+    await js("Object.values(T.S().k.items).forEach(i=>{ if(i.t==='tray'){ i.df=[]; i.q=Math.max(i.q,0.8); } })")  # 塗りムラで売れないことがあるので（スワイプの点数は環境しだい）
+    print('tut', await js("(()=>{try{CS.game.tutCheck(T.S()); return document.querySelector('#tut').innerText.slice(0,80)}catch(e){return 'ERR '+e.stack}})()"))
     for tries in range(12):
       await js("(()=>{const S=T.S(); S.cust={}; CS.kitchen.spawn(S, T.R().now()); const id=Object.keys(S.cust)[0]; S.cust[id].tq=T.R().now()-10; T.R().emit('state',S);})()")
       await pg.wait_for_timeout(700)
       cid = await js("Object.keys(T.S().cust).find(k=>T.S().cust[k].st==='q')")
       if cid: break
+      print('no q', await js("JSON.stringify(Object.values(T.S().cust).map(c=>[c.st,c.say,c.ty]))"), logs[-3:])
     print('cust', await js(f"JSON.stringify([T.S().cust['{cid}'].st, T.S().cust['{cid}'].ord, T.S().cust['{cid}'].pm])"))
     await js(f"(()=>{{const c=T.S().cust['{cid}'], o=T.W.custs['{cid}']; const q=T.W.queueAt(T.S(), c.reg, 0); o.x=q[0]; o.z=q[1];}})()"); await pg.wait_for_timeout(500)
     print('takeOrder', await step("const f=S().fu[fr('reg')]; return aim(f.x-0.2, W.dims.CZ-0.75, P.local(f,-0.1,1.05,0))+' -> '+go('p')", 300))
     chk(await js(f"T.S().cust['{cid}'].st==='w'"), 'order taken at the register')
     need_n = await js(f"Object.values(T.S().cust['{cid}'].ord).reduce((a,b)=>a+b,0)")
     print('box', await step("return aimSlot(stackAt('box'))+' -> '+go('p')", 200))
-    for k in range(need_n): await step("const sl=P.slots(S(), fr('pcase'))[0]; return aimSlot(sl, 0.12)+' -> '+go('p')", 120)
+    for k in range(need_n): await step("const sl=P.slots(S(), fr('scase'))[0]; return aimSlot(sl, 0.12)+' -> '+go('p')", 120)
     chk(await js("T.held() && T.held().t==='box' && T.held().s.length") == need_n, f'put {need_n} slices in the box')
     await js(f"(()=>{{const o=T.W.custs['{cid}'], q=T.W.waitSpot(T.S(),0); o.x=q[0]; o.z=q[1];}})()"); await pg.wait_for_timeout(300)
     print('serve', await step(f"const o=W.custs['{cid}']; return aim(o.x, W.dims.CZ-0.75, [o.x,1.25,o.z])+' -> '+go('p')", 400))

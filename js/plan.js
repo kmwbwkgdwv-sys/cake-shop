@@ -23,7 +23,8 @@
     shelf:  { name: '棚', desc: '何でも置ける棚（6か所）。置いた物と同じ物だけ重ねられる', icon: 'box', w: 1.2, d: 0.5, h: 1.85, price: 12000, slots: shelf6([0.33, 0.93, 1.53], [-0.3, 0.3]) },
     cshelf: { name: '冷蔵棚', desc: '冷えている棚（6か所）。卵・乳製品・果物はここに置かないと傷む', icon: 'snow', w: 1.25, d: 0.62, h: 1.95, price: 26000, cold: 1, slots: shelf6([0.5, 0.97, 1.44], [-0.3, 0.3], -0.02) },
     fridge: { name: '冷蔵庫', desc: 'ケーキが6ホール入る（作りかけ・クリーム・焼いたスポンジも）', icon: 'fridge', w: 1.42, d: 0.74, h: 2.08, price: 32000, cold: 1, slots: shelf6([0.92, 1.34], [-0.43, 0, 0.43], 0.02, 'fridge') },
-    pcase:  { name: '商品棚（冷蔵）', desc: '切ったケーキを並べて売る。冷えているのでクリームのケーキも傷まない（3種類）', icon: 'case', w: 1.5, d: 0.8, h: 1.35, price: 30000, cold: 1, slots: shelf6([0.94], [-0.46, 0, 0.46], 0, 'tray') },
+    scase:  { name: 'ショーケース', desc: 'カウンターに置くガラスのショーケース（冷蔵）。3段×3ホールのケーキを切って並べられ、お客さんからよく見える', icon: 'case', w: 2.3, d: 1.0, h: 1.8, price: 48000, counter: 1, cold: 1, slots: [[-0.72, 0.95, 0.3, 'tray'], [0, 0.95, 0.3, 'tray'], [0.72, 0.95, 0.3, 'tray'], [-0.72, 1.17, 0.02, 'tray'], [0, 1.17, 0.02, 'tray'], [0.72, 1.17, 0.02, 'tray'], [-0.72, 1.39, -0.25, 'tray'], [0, 1.39, -0.25, 'tray'], [0.72, 1.39, -0.25, 'tray']] },
+    pcase:  { name: '商品棚（冷蔵）', hide: 1, desc: '切ったケーキを並べて売る。冷えているのでクリームのケーキも傷まない（3種類）', icon: 'case', w: 1.5, d: 0.8, h: 1.35, price: 30000, cold: 1, slots: shelf6([0.94], [-0.46, 0, 0.46], 0, 'tray') },
     pcaseN: { name: '商品棚（常温）', desc: 'クッキーなど焼き菓子向けの常温の商品棚（3種類）。クリームのケーキは傷む', icon: 'case', w: 1.5, d: 0.62, h: 1.25, price: 16000, slots: shelf6([0.9], [-0.46, 0, 0.46], 0, 'tray') },
     mixer:  { name: 'ミキサー台', desc: '生地を作る。横に型を置いて流し込む', icon: 'mixer', w: 1.4, d: 0.75, h: 0.9, price: 12000, station: 'mix', slots: [[0.42, 0.905, 0.08, 'mixpan']] },
     oven:   { name: 'オーブン', desc: '型に入れた生地を焼く', icon: 'oven', w: 1.15, d: 0.95, h: 1.4, price: 18000, station: 'oven', slots: [[0, 0.8, 0.12, 'oven']] },
@@ -38,9 +39,10 @@
   P.TOOLS = {
     plate: { name: 'お皿', desc: '店内で食べるお客さんに出す。落とすと割れる', icon: 'cup', price: 1200 },
     pan: { name: 'ケーキの型', desc: '生地を流して焼く。使ったら洗う', icon: 'oven', price: 3000 },
+    knife: { name: 'ケーキナイフ', desc: 'ホールケーキを6等分に切る。台の上やお皿の上で使える（最初に1本もらえる）', icon: 'knife', price: 1800 },
   };
-  // 最初にある物（机1・棚1・クリーム台1・商品棚1・洗い場1・冷蔵棚1・冷蔵庫1・レジ1・ゴミ箱1、型1・お皿1）
-  P.START = ['table', 'shelf', 'whip', 'pcase', 'sink', 'cshelf', 'fridge', 'reg', 'trash'];
+  // 最初にある物（机1・棚1・クリーム台1・ショーケース1・洗い場1・冷蔵棚1・冷蔵庫1・レジ1・ゴミ箱1、型1・お皿1・ケーキナイフ1）
+  P.START = ['table', 'shelf', 'whip', 'scase', 'sink', 'cshelf', 'fridge', 'reg', 'trash'];
 
   // ---------------------------------------------------------------------
   //  間取り（増床レベルで大きさが変わる。倉庫とパソコン室は裏に並ぶ）
@@ -48,31 +50,34 @@
   P.geom = function (lv) {
     const sz = D.SHOP_SIZES[clamp(lv || 0, 0, D.SHOP_SIZES.length - 1)];
     const RX = sz.rx, RZ = sz.rz, CZ = -RZ + sz.kd;
-    const rd = 3.4, bz1 = -RZ + rd;
     const g = { RX, RZ, CZ, lv: lv || 0 };
-    g.store = { x0: -RX, x1: -RX + 5.0, z0: -RZ, z1: bz1, door: -RX + 3.4, dw: 1.4 };
-    g.pc = { x0: -RX + 5.0, x1: -RX + 8.4, z0: -RZ, z1: bz1, door: -RX + 6.7, dw: 1.2 };
-    g.backDoor = { x: -RX, z: -RZ + 1.75, w: 1.2 };
-    g.counter = { z: CZ, d: 0.78, x0: -RX, x1: RX - 1.8 };   // 右の端は通路（売り場へ出られる）
+    // 倉庫（左奥・広め）とパソコン室（そのとなり）
+    g.store = { x0: -RX, x1: -RX + 6.2, z0: -RZ, z1: -RZ + 4.6, door: -RX + 4.9, dw: 1.4 };
+    g.pc = { x0: -RX + 6.2, x1: -RX + 9.4, z0: -RZ, z1: -RZ + 3.4, door: -RX + 7.8, dw: 1.2 };
+    g.backDoor = { x: -RX, z: -RZ + 2.3, w: 1.2 };
+    // カウンターは売り場の右寄りだけ。左は壁で仕切る（右の端は通路で売り場へ出られる）
+    g.counter = { z: CZ, d: 0.78, x0: Math.max(-RX + 4, RX - 9.6), x1: RX - 1.8 };
     g.kitchen = { x0: -RX, x1: RX, z0: -RZ, z1: CZ - g.counter.d / 2 };
-    const th = 0.14;
+    g.hall = [-RX, CZ - g.counter.d / 2, g.counter.x0, CZ - g.counter.d / 2 + 0.16]; // 厨房と売り場の仕切りの壁
+    const th = 0.14, sd = g.store, pc = g.pc;
     // 壁（家具はここにかからない）
     g.walls = [
-      [g.store.x0, g.store.z1 - th / 2, g.store.door - g.store.dw / 2, g.store.z1 + th / 2],
-      [g.store.door + g.store.dw / 2, g.store.z1 - th / 2, g.pc.door - g.pc.dw / 2, g.pc.z1 + th / 2],
-      [g.pc.door + g.pc.dw / 2, g.pc.z1 - th / 2, g.pc.x1 + th / 2, g.pc.z1 + th / 2],
-      [g.store.x1 - th / 2, -RZ, g.store.x1 + th / 2, g.store.z1],
-      [g.pc.x1 - th / 2, -RZ, g.pc.x1 + th / 2, g.pc.z1],
+      [sd.x0, sd.z1 - th / 2, sd.door - sd.dw / 2, sd.z1 + th / 2],
+      [sd.door + sd.dw / 2, sd.z1 - th / 2, sd.x1 + th / 2, sd.z1 + th / 2],
+      [pc.x0, pc.z1 - th / 2, pc.door - pc.dw / 2, pc.z1 + th / 2],
+      [pc.door + pc.dw / 2, pc.z1 - th / 2, pc.x1 + th / 2, pc.z1 + th / 2],
+      [sd.x1 - th / 2, -RZ, sd.x1 + th / 2, sd.z1],
+      [pc.x1 - th / 2, -RZ, pc.x1 + th / 2, pc.z1],
     ];
     // 家具を置けない所：パソコン室の中、ドアの前、裏口の前、カウンターの通路
     g.noBuild = [
-      [g.pc.x0, -RZ, g.pc.x1 + th / 2, g.pc.z1 + th / 2],
-      [g.store.door - g.store.dw / 2 - 0.15, g.store.z1 - 1.15, g.store.door + g.store.dw / 2 + 0.15, g.store.z1 + 1.25],
-      [g.pc.door - g.pc.dw / 2 - 0.15, g.pc.z1 - 0.1, g.pc.door + g.pc.dw / 2 + 0.15, g.pc.z1 + 1.25],
+      [pc.x0, -RZ, pc.x1 + th / 2, pc.z1 + th / 2],
+      [sd.door - sd.dw / 2 - 0.15, sd.z1 - 1.15, sd.door + sd.dw / 2 + 0.15, sd.z1 + 1.25],
+      [pc.door - pc.dw / 2 - 0.15, pc.z1 - 0.1, pc.door + pc.dw / 2 + 0.15, pc.z1 + 1.25],
       [-RX, g.backDoor.z - g.backDoor.w / 2 - 0.2, -RX + 1.25, g.backDoor.z + g.backDoor.w / 2 + 0.2],
       [g.counter.x1 - 0.1, g.counter.z - 1.5, RX, g.counter.z + 0.5],
     ];
-    g.key = [lv, RX, RZ, CZ].join(',');
+    g.key = [lv, RX, RZ, CZ, 2].join(',');
     return g;
   };
   P.geomOf = (S) => P.geom(S && S.up ? S.up.floor || 0 : 0);
@@ -145,15 +150,15 @@
   P.startLayout = function (lv) {
     const g = P.geom(lv), RX = g.RX, RZ = g.RZ, CZ = g.CZ;
     return [
-      ['cshelf', g.store.x0 + 2.25, -RZ + 0.33, 0],
-      ['shelf', g.store.x0 + 3.9, -RZ + 0.27, 0],
-      ['fridge', g.pc.x1 + 0.95, -RZ + 0.39, 0],
-      ['whip', g.pc.x1 + 2.6, -RZ + 0.4, 0],
+      ['cshelf', g.store.x0 + 0.72, -RZ + 0.34, 0],
+      ['fridge', g.store.x0 + 2.25, -RZ + 0.4, 0],
+      ['shelf', g.store.x0 + 3.7, -RZ + 0.28, 0],
+      ['whip', g.pc.x1 + 1.4, -RZ + 0.4, 0],
       ['sink', RX - 1.1, -RZ + 0.37, 0],
       ['trash', RX - 0.3, -RZ + 1.4, 3],
-      ['table', -0.8, -RZ + 4.9, 0],
-      ['pcase', -3.2, CZ - 0.42 - 0.4 - 0.06, 2],
-      ['reg', 4.3, CZ, 0],
+      ['table', g.pc.x1 + 2.4, -RZ + 7.0, 0],
+      ['scase', g.counter.x0 + 1.35, CZ, 0],
+      ['reg', g.counter.x0 + 3.6, CZ, 0],
     ];
   };
 })(typeof window !== 'undefined' ? window : globalThis);

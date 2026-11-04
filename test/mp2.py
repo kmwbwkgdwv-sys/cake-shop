@@ -74,7 +74,15 @@ async def main():
     print('egg before/after (A view)', e0, await ev(A, "CS.sim.invCount(CS.ui.room.S,'egg')"), 'B view', await ev(B, "CS.sim.invCount(CS.ui.room.S,'egg')"))
     # B がミキサーに卵を入れる → A のボウルに反映
     await ev(B, "CS.ui.room.act({t:'trash'})"); await ev(A, "CS.ui.room.act({t:'trash'})"); await B.wait_for_timeout(800)
-    print('A buys a mixer', await ev(A, "CS.ui.room.act({t:'fbuy',k:'mixer'}).then(r=>r.ok)"), 'B sees it after', await until(B, "CS.plan.count(CS.ui.room.S,'mixer')===1"), 's')
+    print('A buys a mixer', await ev(A, "CS.ui.room.act({t:'fbuy',k:'mixer'}).then(r=>r.ok)"), 'pending (truck is parked) on B after', await until(B, "(CS.ui.room.S.k.pend||[]).includes('mixer')"), 's')
+    # 荷台に残った段ボールを片づけてトラックを帰す → 次の便で大きな段ボールが来る
+    await ev(A, "(()=>{const S=CS.ui.room.S; for (const id of Object.keys(S.k.items)) if (String(S.k.items[id].at).startsWith('dl:') && S.k.items[id].t==='crate') delete S.k.items[id]; S.k.truck=null; CS.ui.room.pushState(false); CS.ui.room.emit('state', S);})()")
+    print('big box on the next truck (B view) after', await until(B, "Object.values(CS.ui.room.S.k.items).some(i=>i.t==='fcrate'&&i.k==='mixer')", 40), 's')
+    await ev(A, "(()=>{const S=CS.ui.room.S,n=CS.ui.room.now(); if(S.k.truck){ S.k.truck.at=n-500; S.k.truck.out=0; } Object.values(S.k.items).forEach(i=>{ if(i.t==='fcrate'||i.t==='crate') i.ar=n-500; }); CS.ui.room.pushState(false); CS.ui.room.emit('state', S);})()"); await B.wait_for_timeout(1500)
+    print('B picks the big box', await ev(B, "(()=>{const R=CS.ui.room,S=R.S; const id=Object.keys(S.k.items).find(k=>S.k.items[k].t==='fcrate'); return R.act({t:'pick',id}).then(r=>JSON.stringify(r));})()"), 'holds after', await until(B, "!!T.held() && T.held().t==='fcrate'"), 's')
+    sp = await ev(B, "(()=>{const sp=CS.plan.findSpot(T.S(),'mixer'); return JSON.stringify(sp);})()")
+    print('B unpacks at', sp, await ev(B, f"CS.ui.room.act(Object.assign({{t:'unpack'}}, {sp})).then(r=>JSON.stringify(r))"), 'A sees the mixer after', await until(A, "CS.plan.count(CS.ui.room.S,'mixer')===1"), 's')
+    print('B sees the mixer / empty hands after', await until(B, "CS.plan.count(CS.ui.room.S,'mixer')===1 && !T.held()"), 's')
     # B が冷蔵棚から卵を1つ取る（ねらって「1つ取る」）→ ミキサーに入れる → A のボウルに反映
     r = await ev(B, """(()=>{const S=T.S(); const at=Object.values(S.k.items).find(i=>i.t==='ing'&&i.ing==='egg'&&String(i.at).startsWith('f:')).at; const a=T.aimSlot(at); return a+' -> '+T.go('p');})()""")
     print('B take egg', r, 'B holds after', await until(B, "!!T.held() && T.held().ing==='egg'"), 's', await ev(B, "JSON.stringify(T.held()&&[T.held().ing,T.held().n])"))

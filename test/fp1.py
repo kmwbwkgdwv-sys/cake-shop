@@ -36,11 +36,15 @@ async def main():
     print('start target', await js("(()=>{const t=CS.world.target;return t?t.name:null})()"))
     # 道具を買う（オーブン・ミキサー・デコ台）
     r = await js("(async()=>{const a=CS.ui.room; const out=[]; for (const k of ['oven','mixer','deco']) out.push((await a.act({t:'fbuy',k})).ok); return out})()")
+    await js("(()=>{const S=T.S(); for (const id of Object.keys(S.k.items)) { const it=S.k.items[id]; if (it.t==='fcrate') { CS.kitchen.placeNew(S, it.k); delete S.k.items[id]; } } S.k.pend=[]; T.emit(); })()")
     print('fbuy', r, await js("Object.values(T.S().fu).map(f=>f.k+'@'+f.x.toFixed(1)+','+f.z.toFixed(1)+'r'+f.r).join(' ')"))
     # 物を置いてみる（材料・箱・ケーキ・お皿）
     await js("""(()=>{const S=T.S(), K=CS.kitchen; ['egg','butter','milk','cream','strawberry'].forEach(i=>K.invAdd(S,i,12,50)); ['flour','sugar'].forEach(i=>K.invAdd(S,i,14,40)); K.invAdd(S,'box',20,60);
-      S.k.items.t1={t:'tray',r:'short',q:0.9,df:[],p:4,n:6,c:900,d:S.day,at:T.slot('pcase',0,0),pl:1};
-      S.k.items.t2={t:'tray',r:'chocolate',q:0.9,df:[],p:6,n:6,c:900,d:S.day,at:T.slot('pcase',0,2),pl:1};
+      S.k.items.t1={t:'tray',r:'short',q:0.9,df:[],p:4,n:6,c:900,d:S.day,at:T.slot('scase',0,0),pl:1};
+      S.k.items.t2={t:'tray',r:'chocolate',q:0.9,df:[],p:6,n:6,c:900,d:S.day,at:T.slot('scase',0,4),pl:1};
+      S.k.items.t3={t:'tray',r:'short',q:0.9,df:[],p:6,n:6,w:1,c:900,d:S.day,at:T.slot('scase',0,1),pl:1};
+      S.k.items.t4={t:'tray',r:'baked_cheese',q:0.9,df:[],p:6,n:6,w:1,c:900,d:S.day,at:T.slot('scase',0,7),pl:1};
+      S.k.items.c3={t:'cake',r:'chocolate',q:0.9,df:[],p:4,n:6,dish:1,c:900,d:S.day,at:T.slot('table',0,0),pl:1};
       S.k.items.c1={t:'cake',r:'short',q:0.9,df:[],p:6,n:6,c:900,d:S.day,at:T.slot('fridge',0,1),pl:1};
       S.k.items.c2={t:'cream',k:'whip',q:1,df:[],n:3,c:100,at:T.slot('fridge',0,3),pl:1};
       S.k.items.p2={t:'plate',s:[],dirty:1,at:T.slot('sink',0,0),pl:1};
@@ -61,18 +65,26 @@ async def main():
       ('whip', "T.face('whip', 0.6, -0.6)"),
       ('sink', "T.face('sink', 0.55, -0.6)"),
       ('table', "T.face('table', 0.6, -0.6)"),
-      ('pcase', "T.face('pcase', 0.7, -0.45)"),
-      ('pcase_aim', "const W=CS.world; T.face('pcase', 0.7, -0.45); const sl=T.slot('pcase',0,0); T.aim(CS.plan.slotPos(T.S(), sl).map((v,i)=>i===1?v+0.12:v))"),
+      ('pcase', "const W=CS.world, [id,f]=T.fr('scase'); W.me.x=f.x; W.me.z=W.dims.CZ-1.2; W.me.yaw=Math.PI; W.me.pitch=-0.4"),
+      ('scase_front', "const W=CS.world, [id,f]=T.fr('scase'); W.me.x=f.x+0.3; W.me.z=W.dims.CZ+2.2; W.me.yaw=0.1; W.me.pitch=-0.3"),
+      ('pcase_aim', "const W=CS.world, [id,f]=T.fr('scase'); W.me.x=f.x-0.72; W.me.z=W.dims.CZ-0.95; const sl=T.slot('scase',0,0); T.aim(CS.plan.slotPos(T.S(), sl).map((v,i)=>i===1?v+0.12:v))"),
       ('reg_front', "const W=CS.world, [id,f]=T.fr('reg'); W.me.x=f.x-0.3; W.me.z=W.dims.CZ+2.4; W.me.yaw=0; W.me.pitch=-0.25"),
       ('reg_back', "const W=CS.world, [id,f]=T.fr('reg'); W.me.x=f.x-0.4; W.me.z=W.dims.CZ-0.8; W.me.yaw=Math.PI; W.me.pitch=-0.45"),
       ('salesfloor', "const W=CS.world; W.me.x=6; W.me.z=W.dims.RZ-1.2; W.me.yaw=Math.PI*0.25+Math.PI*0.75; W.me.pitch=-0.05"),
       ('backdoor', "const W=CS.world; W.me.x=-W.dims.RX+2.6; W.me.z=W.L.backDoor[1]+0.4; W.me.yaw=Math.PI/2; W.me.pitch=-0.1"),
       ('outside', "const W=CS.world; W.me.x=0.3; W.me.z=W.dims.RZ+2.6; W.me.yaw=0.3; W.me.pitch=-0.15"),
+      ('town', "const W=CS.world; W.me.x=-2; W.me.z=W.dims.RZ+3.2; W.me.yaw=Math.PI*0.75; W.me.pitch=0.02"),
+      ('town2', "const W=CS.world; W.me.x=3; W.me.z=W.dims.RZ+3.2; W.me.yaw=-Math.PI*0.7; W.me.pitch=0.05"),
+      ('knife_table', "T.face('table', 0.5, -0.75)"),
+      ('scase_whole', "const W=CS.world, [id,f]=T.fr('scase'); W.me.x=f.x-0.4; W.me.z=W.dims.CZ+1.3; W.me.yaw=-0.1; W.me.pitch=-0.35"),
+      ('guide', "const S=T.S(); localStorage.setItem('cs.tut3:'+CS.ui.room.code, JSON.stringify({i:0,off:false,sk:{}})); CS.game._tutPc=false; CS.game.tutCheck(S); const W=CS.world; W.me.x=2; W.me.z=W.dims.CZ-2; W.me.yaw=0.4; W.me.pitch=-0.05"),
+      ('guide_edge', "const W=CS.world; W.me.yaw=Math.PI; CS.game.tutCheck(T.S())"),
+      ('memo', "CS.game.memoShow('short'); const W=CS.world; W.me.x=2.5; W.me.z=W.dims.CZ-1.0; W.me.yaw=0.5; W.me.pitch=-0.1"),
     ]
     MODE = sys.argv[4] if len(sys.argv) > 4 else 'all'
     if MODE == 'act': views = []
-    if MODE == 'mobile': views = [v for v in views if v[0] in ('kitchen', 'store', 'pcase_aim', 'sink')]
-    if MODE == 'fix': views = [v for v in views if v[0] in ('sink', 'pcase', 'shelf')]
+    if MODE == 'mobile': views = [v for v in views if v[0] in ('kitchen', 'store', 'pcase_aim', 'sink', 'guide', 'memo')]
+    if MODE == 'fix': views = [v for v in views if v[0] in ('sink', 'pcase', 'scase_front', 'kitchen')]
     for name, code in views:
       await js("(()=>{" + code + "})()")
       await pg.wait_for_timeout(1300)
@@ -130,6 +142,8 @@ async def main():
     await js("document.querySelector('#cg-ok').click()"); await pg.wait_for_timeout(700)
     print('cust after pay', await js("JSON.stringify(T.S().cust.u99 && [T.S().cust.u99.st, T.S().cust.u99.paid])"), 'funds', await js("T.S().funds"))
     await js("CS.game.openRecipeBook()"); await pg.wait_for_timeout(800); await pg.screenshot(path=f'{OUT}/fp_book.png')
+    await js("CS.ui.closeSheet()"); await pg.wait_for_timeout(300)
+    await js("CS.game.openMenu('sell')"); await pg.wait_for_timeout(900); await pg.screenshot(path=f'{OUT}/fp_menu.png')
     await js("CS.ui.closeSheet()")
     print('\n'.join(logs[:20]))
     await b.close()

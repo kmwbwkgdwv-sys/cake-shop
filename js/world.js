@@ -55,7 +55,7 @@
     const regs = P.list(s, 'reg').map((id) => regX(s, id)), key = regs.join(',');
     if (W._wsKey !== key) {
       W._wsKey = key; W._ws = [];
-      const x0 = -RX + 0.8, x1 = W.L.g.counter.x1 - 0.4;
+      const x0 = W.L.g.counter.x0 + 0.4, x1 = W.L.g.counter.x1 - 0.4;
       for (let row = 0; row < 3; row++) for (let x = x1; x >= x0; x -= 0.8) if (regs.every((rx) => Math.abs(x - rx) > 1.25)) W._ws.push([x, CZ + 1.1 + row * 0.8]);
       if (!W._ws.length) W._ws.push([0, CZ + 4.5]);
     }
@@ -80,8 +80,10 @@
   W.slotWorld = slotWorld;
   // トラックの荷台の中の段ボールの位置（後ろの扉から近い順に 2列×3段×2層）
   const TRUCK_SLOTS = []; for (let j = 0; j < 12; j++) { const layer = Math.floor(j / 6), k = j % 6; TRUCK_SLOTS.push([(k % 2 ? 0.46 : -0.46), 0.68 + layer * 0.36, -2.42 + Math.floor(k / 2) * 0.56]); }
+  TRUCK_SLOTS.push([-0.55, 0.68, -0.55], [0.55, 0.68, -0.55], [0, 1.5, -0.55]); // 家具の大きな段ボール（12〜14）：走っている間は荷台の奥
+  const TRUCK_GROUND = [[1.95, 0, -2.25], [1.95, 0, -1.15], [1.95, 0, -0.05]]; // 着いたら運転手さんが荷台の横の地面に下ろしてくれる
   W.truckSlot = function (i) {
-    const t = TRUCK_SLOTS[i]; if (!t) return null;
+    const t = i >= 12 && W.truckParked ? TRUCK_GROUND[i - 12] : TRUCK_SLOTS[i]; if (!t) return null;
     const P0 = W.truck && W.truck.node.vis ? W.truck.node.p : [W.L.truck.x, 0, W.L.truck.z];
     return [P0[0] + t[0], t[1], P0[2] + t[2]];
   };
@@ -101,7 +103,7 @@
     // 前のエンジンのテクスチャ・メッシュは使えないので作り直す
     W.T = null; W.boardTex = null; W.signTex = null; W.openTex = null; W.blobTex = null; W.blobMesh = null; W.frTex = null; W.csTex = null; W.dockTex = null; W.truckTex = null; W.trayM = null; W.footM = null;
     for (const k in meshCache) delete meshCache[k];
-    W.fmesh = {}; W.bowlM = null;
+    W.fmesh = {}; W.bowlM = null; W.TT = null;
     W.dying = false;
     if (W.qlv == null) W.qlv = ST.autoQ === false ? 0 : clamp(+CS.LS.get('cs.qlv', 0) || 0, 0, 3);
     let e;
@@ -122,7 +124,7 @@
     W.labels = host.querySelector('#labels');
     W.me = { x: 0, z: 0, yaw: 0, pitch: -0.18, vx: 0, vz: 0, bob: 0, speed: 0 };
     W.items = {}; W.others = {}; W.custs = {}; W.staffN = {}; W.fn = {}; W.kb = {}; W.keys = {}; W.lbl = {}; W.alerted = {};
-    W.bm = false; W.mv = null; W.hold = null;
+    W.bm = false; W.mv = null; W.hold = null; W.ghost = null; W.up = null;
     GK = ''; W.L = layout(null);
     W.buildStatic();
     W.applyQuality();
@@ -289,6 +291,7 @@
 
     W.buildRooms(e, sc, L, Pt, T);
     W.buildCounter(e, sc, L, Pt, T);
+    if (g.hall[2] - g.hall[0] > 0.2) W.rayWalls.push(g.hall);
     // ---------- 売り場 ----------
     const [mbx, mbz] = L.board;
     Pt('walnut', Geo.rbox(0.06, 1.3, 1.9, 0.01), [mbx - 0.04, 1.75, mbz]);
@@ -305,12 +308,9 @@
     });
     W.buildDetails(e, sc, L, Pt, T, LB);
     sc.add(new Node(LB.build(e), { cast: false, em: 1, recv: false }));
-    // ---------- 外：街並み ----------
-    const EB = new Builder();
-    for (let i = 0; i < 16; i++) { const x = -38 + i * 5; EB.put(Geo.box(4.6, 6 + (i % 3), 6), [x, 3 + (i % 3) / 2, RZ + 20], 0, 1, [1, 1, 1], { rough: 0.85 }); }
-    [[-RX - 8.6, -2, 4, 5], [RX + 6, -3, 4, 6]].forEach(([x, z, w, h]) => EB.put(Geo.box(w, h, 8), [x, h / 2, z], 0, 1, [1, 1, 1], { rough: 0.85 }));
-    W.extras = sc.add(new Node(EB.build(e), { tex: T.facade, cast: false }));
-    [[-RX - 7, RZ + 3], [RX + 2, RZ + 3], [-RX / 2 - 0.5, RZ + 3], [RX / 2 + 0.5, RZ + 3]].forEach(([x, z]) => { Pt('walnut', Geo.cyl(0.12, 0.16, 2.2, 8), [x, 1.1, z]); for (let k = 0; k < 5; k++) Pt('plant', Geo.sphere(0.8, 10, 8), [x + Math.sin(k * 1.3) * 0.5, 2.4 + (k % 2) * 0.4, z + Math.cos(k * 1.3) * 0.4], 0, [1, 0.85, 1], shade(C.leaf, (k % 3) * 0.1 - 0.05)); });
+    // ---------- 外：町並み ----------
+    W.buildTown(e, sc, T, Pt);
+    [[-RX - 7, RZ + 3], [RX + 2.6, RZ + 3], [-RX / 2 - 0.5, RZ + 3], [RX / 2 + 0.5, RZ + 3]].forEach(([x, z]) => { Pt('walnut', Geo.cyl(0.12, 0.16, 2.2, 8), [x, 1.1, z]); for (let k = 0; k < 5; k++) Pt('plant', Geo.sphere(0.8, 10, 8), [x + Math.sin(k * 1.3) * 0.5, 2.4 + (k % 2) * 0.4, z + Math.cos(k * 1.3) * 0.4], 0, [1, 0.85, 1], shade(C.leaf, (k % 3) * 0.1 - 0.05)); });
     W.staticNodes = [];
     for (const m in BB) { const n = new Node(BB[m].build(e), { tex: MATS[m].tex ? T[MATS[m].tex] : null }); sc.add(n); W.staticNodes.push(n); }
     sc.add(W.pcScreen);
@@ -405,6 +405,26 @@
     // 厨房側の下の棚
     Pt('steel', Geo.box(w - 0.1, 0.02, 0.3), [cx, 0.32, z - c.d / 2 + 0.12], 0, 1, rgb('#B9BEC4'));
     block(c.x0, z - c.d / 2, c.x1, z + c.d / 2);
+    // 厨房と売り場の仕切りの壁（カウンターの左）。売り場側は腰板と絵、厨房側はタイル
+    const h = L.g.hall, T = W.T; if (h[2] - h[0] < 0.2) return;
+    const hw = h[2] - h[0], hx = (h[0] + h[2]) / 2, hz = (h[1] + h[3]) / 2, hd = h[3] - h[1];
+    const WB = new Builder(); WB.put(Geo.box(hw, WH, hd, 1), [hx, WH / 2, hz], 0, 1, [1, 1, 1], { rough: 0.85 });
+    sc.add(new Node(WB.build(e), { tex: T.plaster, ao: 0, cast: false }));
+    const PB = new Builder(); PB.put(Geo.box(hw, 1.0, 0.03, 1), [hx, 0.5, h[3] + 0.015], 0, 1, [1, 1, 1], { rough: 0.5 });
+    sc.add(new Node(PB.build(e), { tex: T.panel, ao: 0, cast: false }));
+    Pt('paint', Geo.box(hw, 0.05, 0.06), [hx, 1.02, h[3] + 0.03], 0, 1, rgb('#F7F3EC'));
+    Pt('walnut', Geo.box(hw, 0.1, 0.05), [hx, 0.05, h[3] + 0.025]);
+    const TB = new Builder(); TB.put(Geo.box(hw, 1.9, 0.02, 1), [hx, 0.95, h[1] - 0.01], 0, 1, [1, 1, 1], { rough: 0.16 });
+    sc.add(new Node(TB.build(e), { tex: T.subway, ao: 0, cast: false }));
+    Pt('walnut', Geo.box(0.06, WH, hd + 0.04), [h[2], WH / 2, hz]);
+    // 売り場の床（仕切りの前）
+    const FZ = CZ + c.d / 2, pd = FZ - h[3];
+    if (pd > 0.01) { const pf = new Node(e.mesh(Geo.plane(hw, pd, hw / 1.2, pd / 1.2), null, { rough: 0.38 }), { tex: T.parquet, cast: false, ao: 0 }); pf.p = [hx, 0.0015, h[3] + pd / 2]; sc.add(pf); }
+    // 絵（売り場側）
+    const AB = new Builder(), n = Math.max(1, Math.floor(hw / 2.6));
+    for (let i = 0; i < n; i++) { const x = h[0] + (hw / n) * (i + 0.5); Pt('walnut', Geo.rbox(1.02, 0.82, 0.05, 0.01), [x, 1.85, h[3] + 0.025]); AB.put(Geo.card(0.9, 0.7), [x, 1.85, h[3] + 0.052], 0, 1, [1, 1, 1], { rough: 0.8 }); }
+    sc.add(new Node(AB.build(e), { tex: T.art[1], cast: false }));
+    block(h[0], h[1], h[2], h[3]);
   };
   // 雰囲気を出す細部（ペンダント照明・絵・時計・外の街灯など）
   W.buildDetails = function (e, sc, L, Pt, T, LB) {
@@ -462,6 +482,130 @@
       block(x - 0.36, RZ + 0.24, x + 0.36, RZ + 0.6);
     });
     sc.add(new Node(OB.build(e), { em: 1, cast: false, recv: false }));
+  };
+  // =====================================================================
+  //  町の風景（向かいの商店街・道路・電柱・車・歩く人。店の外には出なくても窓から見える）
+  // =====================================================================
+  function cvs(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); return c; }
+  const TOWN_SIGNS = [['ベーカリー こむぎ', '#7A4A2A', '#FBEFD9'], ['花屋 フローラ', '#3F7A4E', '#FFFFFF'], ['本屋 しおり堂', '#2F3E4E', '#F2EBE1'], ['カフェ こもれび', '#C9A35E', '#2A2624'], ['クリーニング', '#3F6F93', '#FFFFFF'], ['ドラッグストア', '#C0392B', '#FFFFFF'], ['ラーメン 一番', '#2A2624', '#F2D16B'], ['八百屋 みどり', '#6E9B3A', '#FFFFFF']];
+  function townTextures(e) {
+    if (W.TT) return W.TT;
+    // 窓（2×2 区画 = 6m 四方。建物ごとに色を掛ける）
+    const win = cvs(512, 512, (g) => {
+      g.fillStyle = '#ECE8E1'; g.fillRect(0, 0, 512, 512);
+      for (let k = 0; k < 1800; k++) { g.fillStyle = 'rgba(0,0,0,' + Math.random() * 0.04 + ')'; g.fillRect(Math.random() * 512, Math.random() * 512, 2, 2); }
+      for (let by = 0; by < 2; by++) for (let bx = 0; bx < 2; bx++) {
+        const x = bx * 256 + 52, y = by * 256 + 50, w = 152, h = 128;
+        g.fillStyle = 'rgba(0,0,0,.12)'; g.fillRect(0, by * 256 + 250, 512, 6);
+        g.fillStyle = '#4A4F55'; g.fillRect(x - 6, y - 6, w + 12, h + 12);
+        const gr = g.createLinearGradient(x, y, x + w, y + h); gr.addColorStop(0, '#5E7C94'); gr.addColorStop(0.5, '#9FBBD0'); gr.addColorStop(1, '#4F6A80'); g.fillStyle = gr; g.fillRect(x, y, w, h);
+        g.fillStyle = 'rgba(255,255,255,.25)'; g.beginPath(); g.moveTo(x + 20, y + h); g.lineTo(x + 70, y); g.lineTo(x + 95, y); g.lineTo(x + 45, y + h); g.fill();
+        if ((bx + by * 2) % 3 === 1) { g.fillStyle = ['#E9D9B5', '#D9B8B0', '#C9D6C0'][(bx + by) % 3]; g.fillRect(x, y, 40, h); g.fillRect(x + w - 40, y, 40, h); }
+        g.fillStyle = '#4A4F55'; g.fillRect(x + w / 2 - 3, y, 6, h);
+        g.fillStyle = '#D8D3CA'; g.fillRect(x - 10, y + h + 6, w + 20, 8);
+        if ((bx + by) % 2 === 0) { g.fillStyle = 'rgba(60,60,60,.6)'; for (let k = 0; k < 9; k++) g.fillRect(x - 14 + k * 21, y + h + 20, 4, 46); g.fillRect(x - 18, y + h + 18, w + 36, 6); }
+      }
+    });
+    // 1階のお店の正面（ガラス・扉・陳列）
+    const front = cvs(512, 256, (g) => {
+      g.fillStyle = '#3A3430'; g.fillRect(0, 0, 512, 256);
+      const gr = g.createLinearGradient(0, 60, 0, 256); gr.addColorStop(0, '#8FA9BC'); gr.addColorStop(1, '#3E4E5A'); g.fillStyle = gr; g.fillRect(12, 60, 488, 184);
+      g.fillStyle = 'rgba(255,240,200,.55)'; g.fillRect(12, 60, 488, 30);
+      for (let k = 0; k < 14; k++) { g.fillStyle = ['#E8C38A', '#D46A7A', '#F2D16B', '#9FC5E8', '#E9DCC9'][k % 5]; g.fillRect(30 + k * 26, 170 + (k % 3) * 8, 18, 40 - (k % 3) * 8); }
+      g.fillStyle = '#2A2624'; g.fillRect(12, 214, 488, 6); g.fillRect(340, 60, 6, 184); g.fillRect(420, 60, 6, 184);
+      g.fillStyle = 'rgba(255,255,255,.18)'; g.beginPath(); g.moveTo(60, 244); g.lineTo(140, 60); g.lineTo(175, 60); g.lineTo(95, 244); g.fill();
+      g.fillStyle = '#C9A35E'; g.fillRect(380, 140, 4, 30);
+    });
+    // 看板（8枚を1枚の画像に）
+    const signs = cvs(512, 1024, (g) => {
+      TOWN_SIGNS.forEach(([t, bg, fg], i) => { const y = i * 128; g.fillStyle = bg; g.fillRect(0, y, 512, 128); g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 6; g.strokeRect(8, y + 8, 496, 112); g.fillStyle = fg; g.textAlign = 'center'; g.font = '700 58px "Zen Kaku Gothic New",sans-serif'; g.fillText(t, 256, y + 84); });
+    });
+    W.TT = { win: e.texFromCanvas(win, true), front: e.texFromCanvas(front, true), signs: e.texFromCanvas(signs, false) };
+    return W.TT;
+  }
+  // 看板の1行ぶんを使う板
+  function signCard(w, h, k) { const v0 = 1 - (k + 1) / 8, v1 = 1 - k / 8; return CS.gl.quad(CS.gl.geo(), [-w / 2, -h / 2, 0], [w / 2, -h / 2, 0], [w / 2, h / 2, 0], [-w / 2, h / 2, 0], [0, 0, 1], [[0, v0], [1, v0], [1, v1], [0, v1]]); }
+  W.buildTown = function (e, sc, T, Pt) {
+    const TT = townTextures(e);
+    let sd = 7; const rnd = () => { sd = (sd * 16807) % 2147483647; return (sd - 1) / 2147483646; };
+    const WB = new Builder(), FB = new Builder(), SB = new Builder(), DB = new Builder(), GB = new Builder(), LB2 = new Builder();
+    const WALL = ['#E8DCC8', '#CFC3B0', '#B9A48C', '#D8D2C8', '#A9B4AE', '#C9B8A6', '#E4D6D0', '#B7AFA5', '#D9C9A8', '#C4CCD2'];
+    const AWN = ['#2F4A3F', '#7A1F2B', '#C9A35E', '#3F6F93', '#B86B4B', '#4E7A43'];
+    const stuff = { rough: 0.8 }, metal = { rough: 0.4, metal: 0.6 };
+    // 建物：front＝通りに面した側の z、dir＝正面の向き（+1 なら +z 向き、-1 なら -z 向き）
+    const building = (x, zf, w, d, floors, dir, shop, k) => {
+      const H = 3.6 + floors * 3, col = rgb(WALL[k % WALL.length]), zc = zf + dir * -d / 2;
+      WB.put(Geo.box(w, H - 3.6, d, 1 / 6), [x, 3.6 + (H - 3.6) / 2, zc], 0, 1, col, stuff);
+      if (shop) {
+        FB.put(Geo.box(w - 0.2, 3.6, d - 0.4, 1 / 6), [x, 1.8, zc - dir * 0.2], 0, 1, [1, 1, 1], { rough: 0.3 });
+        const ac = rgb(AWN[k % AWN.length]);
+        DB.put(Geo.box(Math.min(w - 0.6, 6.5), 0.06, 1.3), [x, 3.25, zf + dir * 0.55], [dir * 0.35, 0, 0], 1, ac, stuff);
+        DB.put(Geo.box(Math.min(w - 0.6, 6.5), 0.3, 0.04), [x, 3.0, zf + dir * 1.15], 0, 1, ac, stuff);
+        SB.put(signCard(Math.min(w - 1, 4.2), 0.75, k % 8), [x, 4.15, zf + dir * 0.03], [0, dir > 0 ? 0 : PI, 0], 1, [1, 1, 1], { rough: 0.6 });
+        DB.put(Geo.box(Math.min(w - 1, 4.2) + 0.12, 0.87, 0.05), [x, 4.15, zf - dir * 0.0], 0, 1, rgb('#2A2624'), stuff);
+      } else WB.put(Geo.box(w, 3.6, d, 1 / 6), [x, 1.8, zc], 0, 1, shade(col, -0.08), stuff);
+      DB.put(Geo.box(w + 0.1, 0.45, d + 0.1), [x, H + 0.22, zc], 0, 1, shade(col, -0.18), stuff);
+      DB.put(Geo.box(w - 0.4, 0.06, d - 0.4), [x, H + 0.03, zc], 0, 1, rgb('#6E6A64'), stuff);
+      if (floors >= 2 && rnd() < 0.7) { DB.put(Geo.box(1.4, 1.0, 1.0), [x - w / 4, H + 0.5, zc], 0, 1, rgb('#9AA0A6'), metal); DB.put(Geo.cyl(0.6, 0.6, 1.4, 12), [x + w / 4, H + 1.2, zc + 1], 0, 1, rgb('#C7CBD0'), metal); DB.put(Geo.box(0.1, 0.8, 0.1), [x + w / 4, H + 0.4, zc + 1], 0, 1, rgb('#6E757C'), metal); }
+    };
+    // ---------- 道路・歩道 ----------
+    const RZ1 = RZ + 5, RZ2 = RZ + 13, RZ3 = RZ + 17;
+    GB.put(Geo.box(200, 0.15, 0.22), [0, 0.075, RZ1], 0, 1, rgb('#BDB8AF'), stuff);
+    GB.put(Geo.box(200, 0.15, 0.22), [0, 0.075, RZ2], 0, 1, rgb('#BDB8AF'), stuff);
+    const fw = new Node(e.mesh(Geo.plane(200, RZ3 - RZ2, 50, (RZ3 - RZ2) / 4), null, { rough: 0.8 }), { tex: T.walk, cast: false, ao: 0 }); fw.p = [0, 0.01, (RZ2 + RZ3) / 2]; sc.add(fw);
+    [RZ1 + 0.35, RZ2 - 0.35].forEach((z) => GB.put(Geo.box(200, 0.004, 0.12), [0, 0.004, z], 0, 1, rgb('#E9E6DF'), stuff));
+    for (let x = -96; x < 96; x += 6) if (Math.abs(x) > 4) GB.put(Geo.box(3, 0.004, 0.12), [x, 0.004, (RZ1 + RZ2) / 2], 0, 1, rgb('#E9E6DF'), stuff);
+    for (let x = -3.15; x <= 3.2; x += 0.9) GB.put(Geo.box(0.45, 0.005, RZ2 - RZ1 - 0.9), [x, 0.005, (RZ1 + RZ2) / 2], 0, 1, rgb('#ECE9E2'), stuff);
+    // ---------- 向かいの商店街 ----------
+    let x = -78, k = 0;
+    while (x < 78) { const w = 7 + Math.floor(rnd() * 6); const floors = 1 + Math.floor(rnd() * 4); building(x + w / 2, RZ3, w, 9, floors, -1, true, k++); x += w + 0.15; }
+    // 遠くのビル（かすんで見える）
+    for (let x2 = -90; x2 < 90; x2 += 14 + rnd() * 8) { const h = 14 + rnd() * 26, w = 9 + rnd() * 8; DB.put(Geo.box(w, h, 10), [x2, h / 2, RZ + 42 + rnd() * 12], 0, 1, mix('#9FB0BE', '#C9D3DA', rnd()), stuff); }
+    for (let x2 = -90; x2 < 90; x2 += 16 + rnd() * 10) { const h = 12 + rnd() * 22, w = 10 + rnd() * 8; DB.put(Geo.box(w, h, 10), [x2, h / 2, -RZ - 45 - rnd() * 10], 0, 1, mix('#9FB0BE', '#C9D3DA', rnd()), stuff); }
+    // ---------- 店のとなりの建物（右・左） ----------
+    building(RX + 0.35 + 3.5, RZ, 7, 2 * RZ + 4, 2, 1, true, 3);
+    building(RX + 7.4 + 4.5, RZ - 1, 9, 2 * RZ + 2, 4, 1, true, 5);
+    const ax = L0().alley[0] - 0.4;
+    building(ax - 4.5, RZ, 9, 2 * RZ + 6, 3, 1, true, 6);
+    building(ax - 13.6, RZ - 0.5, 9, 2 * RZ + 4, 1, 1, true, 1);
+    building(RX + 21, RZ - 0.5, 10, 2 * RZ, 3, 1, true, 7);
+    // 裏（奥の通りの建物）
+    for (let x2 = -RX - 6; x2 < RX + 20; x2 += 9.2) building(x2 + 4.5, -RZ - 7, 9, 8, 1 + Math.floor(rnd() * 3), 1, false, 2 + Math.floor(rnd() * 5));
+    // ---------- 電柱と電線 ----------
+    const poles = [];
+    [RZ1 - 0.4, RZ2 + 0.4].forEach((z, side) => { for (let px = -60 + side * 7; px <= 60; px += 15) { if (Math.abs(px) < 3) continue; poles.push([px, z]); } });
+    poles.forEach(([px, z]) => {
+      DB.put(Geo.cyl(0.13, 0.17, 9.5, 10), [px, 4.75, z], 0, 1, rgb('#A9A59D'), stuff);
+      DB.put(Geo.box(1.6, 0.1, 0.1), [px, 8.6, z], 0, 1, rgb('#6E6A64'), stuff); DB.put(Geo.box(1.2, 0.1, 0.1), [px, 7.9, z], 0, 1, rgb('#6E6A64'), stuff);
+      if (Math.round(px) % 2 === 0) DB.put(Geo.cyl(0.32, 0.32, 0.9, 10), [px + 0.45, 7.0, z], 0, 1, rgb('#8E959C'), metal);
+      DB.put(Geo.box(0.3, 1.0, 0.04), [px, 2.4, z + (z < RZ2 ? 0.17 : -0.17)], 0, 1, rgb('#F2D16B'), stuff);
+    });
+    [RZ1 - 0.4, RZ2 + 0.4].forEach((z) => [-0.7, 0, 0.7].forEach((dx, wi) => { const y = wi === 1 ? 7.9 : 8.6; DB.put(Geo.cyl(0.012, 0.012, 120, 4), [dx, y - 0.25, z], [0, 0, PI / 2], 1, rgb('#2A2624'), stuff); }));
+    // ---------- 自動販売機・バス停・ポスト・自転車 ----------
+    [RX + 0.9, RX + 1.75].forEach((vx, i) => { DB.put(Geo.box(0.8, 1.8, 0.7), [vx, 0.9, RZ + 0.45], 0, 1, rgb(i ? '#C0392B' : '#3F6F93'), { rough: 0.35 }); LB2.put(Geo.box(0.62, 0.9, 0.02), [vx, 1.15, RZ + 0.81], 0, 1, rgb('#FFF6E4')); DB.put(Geo.box(0.6, 0.12, 0.05), [vx, 0.45, RZ + 0.81], 0, 1, rgb('#2A2624'), stuff); });
+    block(RX + 0.45, RZ, RX + 2.2, RZ + 0.85);
+    DB.put(Geo.cyl(0.18, 0.18, 1.0, 14), [-RX + 0.5, 0.5, RZ + 0.5], 0, 1, rgb('#C21F24'), { rough: 0.35 }); DB.put(Geo.sphere(0.18, 14, 8, 0, PI / 2), [-RX + 0.5, 1.0, RZ + 0.5], 0, 1, rgb('#C21F24'), { rough: 0.35 }); block(-RX + 0.28, RZ + 0.28, -RX + 0.72, RZ + 0.72);
+    { const bx = 14, bz = RZ2 + 1.6; DB.put(Geo.box(3.4, 0.08, 1.4), [bx, 2.5, bz + 0.2], 0, 1, rgb('#4A4F55'), metal); [-1.6, 1.6].forEach((dx) => DB.put(Geo.box(0.08, 2.5, 0.08), [bx + dx, 1.25, bz + 0.8], 0, 1, rgb('#4A4F55'), metal)); DB.put(Geo.box(3.3, 2.2, 0.04), [bx, 1.3, bz + 0.85], 0, 1, rgb('#BFD8E6'), { rough: 0.1 }); DB.put(Geo.box(2.4, 0.08, 0.4), [bx, 0.45, bz + 0.5], 0, 1, rgb('#8A6142'), stuff); DB.put(Geo.cyl(0.04, 0.04, 2.6, 8), [bx - 2.3, 1.3, bz - 1.0], 0, 1, rgb('#6E757C'), metal); DB.put(Geo.cyl(0.3, 0.3, 0.05, 20), [bx - 2.3, 2.6, bz - 1.0], [PI / 2, 0, 0], 1, rgb('#3F6F93'), stuff); }
+    for (let i = 0; i < 4; i++) { const bx = -12 + i * 0.7, bz = RZ2 + 1.0; [-0.42, 0.42].forEach((dz) => DB.put(Geo.torus(0.32, 0.025, 6, 18), [bx, 0.34, bz + dz], [0, PI / 2, 0], 1, rgb('#2A2624'), metal)); DB.put(Geo.box(0.05, 0.05, 0.85), [bx, 0.62, bz], [0.25, 0, 0], 1, rgb(['#C0392B', '#3F6F93', '#E9E6DF', '#4E7A43'][i]), metal); }
+    // ---------- 街路樹（向かい側） ----------
+    for (let tx = -54; tx <= 54; tx += 12) { if (Math.abs(tx) < 4) continue; DB.put(Geo.cyl(0.12, 0.16, 2.4, 8), [tx, 1.2, RZ2 + 0.9], 0, 1, rgb('#6B4630'), stuff); for (let q = 0; q < 4; q++) DB.put(Geo.sphere(0.85, 10, 8), [tx + Math.sin(q * 1.6) * 0.5, 2.7 + (q % 2) * 0.45, RZ2 + 0.9 + Math.cos(q * 1.6) * 0.4], 0, [1, 0.85, 1], shade(C.leaf, (q % 3) * 0.08 - 0.04), { rough: 0.7 }); }
+    const add = (B, o) => { if (!B.empty()) sc.add(new Node(B.build(e), Object.assign({ cast: false }, o || {}))); };
+    add(WB, { tex: TT.win }); add(FB, { tex: TT.front }); add(SB, { tex: TT.signs }); add(DB); add(GB); add(LB2, { em: 1, recv: false });
+    // ---------- 動くもの（車・歩く人）：軽量モードでは出さない ----------
+    W.extras = sc.add(new Node());
+    const car = (col) => { const B = new Builder(), gl = { rough: 0.25 }; B.put(Geo.rbox(4.2, 0.75, 1.75, 0.12), [0, 0.6, 0], 0, 1, rgb(col), gl); B.put(Geo.rbox(2.3, 0.6, 1.6, 0.15), [-0.2, 1.22, 0], 0, 1, rgb(col), gl); B.put(Geo.box(2.1, 0.45, 1.62), [-0.2, 1.24, 0], 0, 1, rgb('#22303C'), { rough: 0.05 }); [[-1.3, -0.8], [-1.3, 0.8], [1.3, -0.8], [1.3, 0.8]].forEach(([cx, cz]) => B.put(Geo.cyl(0.33, 0.33, 0.24, 14), [cx, 0.33, cz], [PI / 2, 0, 0], 1, rgb('#1C1C1E'), { rough: 0.8 })); B.put(Geo.box(0.05, 0.12, 1.3), [2.1, 0.7, 0], 0, 1, rgb('#FFF6DD'), gl); return CS.gl.keep(B.build(e)); };
+    const cols = ['#C0392B', '#F2F0EB', '#2F4A6E', '#3A3E42', '#E8C38A'];
+    W.cars = [];
+    [[-20, RZ2 - 1.1, 0, 0], [26, RZ2 - 1.1, PI, 0], [-40, RZ1 + 2.0, 0, 9], [10, RZ1 + 2.0, 0, 7.5], [35, RZ2 - 2.0, PI, -8]].forEach(([cx, cz, ry, v], i) => { const n = W.extras.add(new Node(car(cols[i]), { cast: false })); n.p = [cx, 0, cz]; n.r = [0, ry, 0]; W.cars.push({ n, x: cx, v }); });
+    W.peds = [];
+    for (let i = 0; i < 5; i++) { const ch = MD.character(e, MD.customerSkin(CS.data.CUSTOMERS[i % CS.data.CUSTOMERS.length].id, i)); W.extras.add(ch.node); const far = i % 2 === 0; W.peds.push({ ch, x: -40 + i * 17, z: far ? RZ2 + 2.6 + (i % 3) * 0.4 : RZ1 - 0.9, v: (i % 3 === 1 ? -1 : 1) * (1.1 + (i % 2) * 0.25) }); }
+  };
+  const L0 = () => W.L;
+  // 車と歩く人を動かす
+  W.updateTown = function (dt) {
+    if (!W.extras || !W.extras.vis) return;
+    for (const c of W.cars || []) { if (!c.v) continue; c.x += c.v * dt; if (c.x > 80) c.x = -80; if (c.x < -80) c.x = 80; c.n.p[0] = c.x; }
+    for (const p of W.peds || []) { p.x += p.v * dt; if (p.x > 60) p.x = -60; if (p.x < -60) p.x = 60; p.ch.node.p = [p.x, 0, p.z]; p.ch.node.r = [0, p.v > 0 ? PI / 2 : -PI / 2, 0]; if (Math.abs(p.x - W.me.x) < 30) p.ch.anim(dt, 'walk', 1); }
   };
   // 裏の路地（トラックが材料を届けに来る）
   W.buildAlley = function (e, sc, L, T) {
@@ -531,19 +675,19 @@
   W.updateTruck = function (s, g, dt) {
     const tr = W.truck, TT = K.TRUCK, tk = s.k.truck; W.dynBlocks = [];
     if (!tr) return;
-    if (!tk) { tr.node.vis = false; tr.z = null; return; }
+    if (!tk) { tr.node.vis = false; tr.z = null; W.truckParked = false; return; }
     const P0 = W.L.truck; let z, parked = false;
     if (g < tk.at) { const f = clamp(1 - (tk.at - g) / TT.IN, 0, 1); z = P0.z - 42 * Math.pow(1 - f, 2.2); }
     else if (!tk.out || g < tk.out) { z = P0.z; parked = true; }
     else { const f = clamp((g - tk.out) / TT.OUT, 0, 1); z = P0.z + 40 * f * f; }
-    tr.node.vis = z < RZ + 16; tr.node.p = [P0.x, 0, z];
+    tr.node.vis = z < RZ + 16; tr.node.p = [P0.x, 0, z]; W.truckParked = parked;
     if (tr.z !== null) { tr.spin += (z - tr.z) / 0.42; tr.wheels.forEach((w) => (w.r = [tr.spin, 0, 0])); }
     tr.z = z;
     tr.doors.forEach((d) => { d.a = lerp(d.a, parked ? 1.75 : 0, 1 - Math.exp(-dt * 3)); d.hinge.r = [0, d.sd * d.a, 0]; });
     if (Math.abs(z - P0.z) < 7) W.dynBlocks.push([P0.x - 1.15, z - 2.85, P0.x + 1.15, z + 2.75]);
     if (parked && W._truckAt !== tk.at) {
       W._truckAt = tk.at;
-      if (Object.values(s.k.items).some((it) => it.t === 'crate' && String(it.at).startsWith('dl:'))) { CS.sound.play('beep'); CS.ui.toast('トラックが到着！倉庫の裏口から出て、荷台の段ボールを運ぼう', 'good'); }
+      if (Object.values(s.k.items).some((it) => (it.t === 'crate' || it.t === 'fcrate') && String(it.at).startsWith('dl:'))) { CS.sound.play('beep'); CS.ui.toast('トラックが到着！倉庫の裏口から出て、荷台の段ボールを運ぼう', 'good'); }
     }
   };
   W.drawOpen = function (open) {
@@ -627,6 +771,32 @@
     m.led(Geo.box(w - 0.12, 0.01, 0.03), [0, 0.93 + gh, 0]);
     P.KINDS.pcase.slots.forEach((s) => m.put('gloss', Geo.cyl(0.19, 0.19, 0.012, 32), [s[0], 0.934, s[2]], 0, 1, rgb('#F4F1EC'), { rough: 0.2 }));
     m.put('gloss', Geo.box(w - 0.1, 0.05, 0.012), [0, 0.86, d / 2 + 0.006], 0, 1, rgb('#9FC5E8'), { rough: 0.1 });
+  };
+  // カウンターのショーケース（3段×3ホール。前はガラス、後ろから出し入れ）
+  FM.scase = (m) => {
+    const w = 2.3, zb = -0.41, zf = 0.6, y0 = 0.92, top = 1.8, zc = (zb + zf) / 2, d = zf - zb;
+    m.put('walnut', Geo.rbox(w, y0, d, 0.02), [0, y0 / 2, zc]);
+    const np = 3; for (let i = 0; i < np; i++) m.put('oak', Geo.rbox(w / np - 0.1, 0.56, 0.02, 0.008), [-w / 2 + (i + 0.5) * (w / np), 0.46, zf + 0.01]);
+    m.put('brass', Geo.box(w, 0.03, 0.02), [0, 0.08, zf + 0.012]);
+    m.put('gloss', Geo.box(w - 0.08, 0.05, 0.012), [0, y0 - 0.05, zf + 0.012], 0, 1, rgb('#9FC5E8'), { rough: 0.1 });
+    // 段々の台（前が低く、奥が高い）
+    [[0.95, 0.15, 0.5], [1.17, -0.12, 0.15], [1.39, zb + 0.02, -0.12]].forEach(([y, a, b]) => {
+      m.put('walnut', Geo.box(w - 0.08, y - y0 + 0.02, b - a), [0, (y + y0) / 2 - 0.01, (a + b) / 2], 0, 1, rgb('#5A3A28'));
+      m.put('marble', Geo.box(w - 0.08, 0.012, b - a), [0, y - 0.006, (a + b) / 2]);
+      m.led(Geo.box(w - 0.12, 0.01, 0.02), [0, y - 0.03, b + 0.002], '#FFEBC8');
+    });
+    P.KINDS.scase.slots.forEach((sl) => m.put('gloss', Geo.cyl(0.19, 0.19, 0.012, 32), [sl[0], sl[1] - 0.006 + 0.006, sl[2]], 0, 1, rgb('#F4F1EC'), { rough: 0.2 }));
+    // 枠とガラス
+    [-1, 1].forEach((sx) => { m.put('brass', Geo.box(0.03, top - y0, 0.03), [sx * (w / 2 - 0.015), (top + y0) / 2, zf - 0.02]); m.put('brass', Geo.box(0.03, top - y0, 0.03), [sx * (w / 2 - 0.015), (top + y0) / 2, zb + 0.02]); m.glass(Geo.box(0.012, top - y0, d - 0.04), [sx * (w / 2 - 0.015), (top + y0) / 2, zc]); });
+    m.put('walnut', Geo.box(w + 0.02, 0.07, 0.62), [0, top + 0.035, zb + 0.31]);
+    m.led(Geo.box(w - 0.1, 0.01, 0.03), [0, top - 0.005, zb + 0.3], '#FFF1D6');
+    m.put('brass', Geo.box(w, 0.025, 0.025), [0, top, zb + 0.6]);
+    m.glass(Geo.box(w - 0.04, 0.58, 0.012), [0, y0 + 0.29, zf - 0.02]);
+    m.glass(Geo.box(w - 0.04, 0.012, 0.46), [0, 1.5 + 0.15, zf - 0.21], [-0.62, 0, 0]);
+    m.put('brass', Geo.box(w, 0.025, 0.025), [0, 1.5, zf - 0.02]);
+    // 後ろの引き戸（ガラス・取っ手）
+    m.glass(Geo.box(w / 2 - 0.04, top - y0 - 0.08, 0.01), [-w / 4, (top + y0) / 2, zb + 0.01]);
+    m.put('steel', Geo.box(0.02, 0.2, 0.03), [-0.15, 1.3, zb - 0.01], 0, 1, rgb('#E1E4E7'));
   };
   FM.pcaseN = (m) => {
     const w = 1.5, d = 0.62;
@@ -782,7 +952,7 @@
   // 家具の当たり判定（レジはカウンターの上なので要らない）
   function furnObstacles(s) {
     W.obstacles = W.sObs.slice();
-    for (const fid in s.fu) { const f = s.fu[fid]; if (!P.KINDS[f.k] || P.KINDS[f.k].counter) continue; const b = P.box(f); const o = [b[0], b[1], b[2], b[3]]; o.furn = fid; W.obstacles.push(o); }
+    for (const fid in s.fu) { const f = s.fu[fid]; if (!P.KINDS[f.k] || f.k === 'reg') continue; const b = P.box(f); const o = f.k === 'scase' ? [b[0], CZ - 0.41, b[2], CZ + 0.6] : [b[0], b[1], b[2], b[3]]; o.furn = fid; W.obstacles.push(o); }
     if (W._decoObs) W.obstacles.push(...W._decoObs);
   }
   W.syncFurn = function (s) {
@@ -837,7 +1007,7 @@
     if (tk) MD.topPiece(B, tk, [ox + Math.sin(a) * R * 0.6, y, oz + Math.cos(a) * R * 0.6], 1);
   }
   function itemKey(it, small) {
-    return JSON.stringify([it.t, it.st, it.b, it.k, it.ing, it.t === 'ing' ? shownN(it.n, small) : 0, small ? 1 : 0, (it.s || []).map((x) => x[0]), it.df, it.cr, it.tp, it.r, it.p, it.dirty ? 1 : 0, it.open ? Math.min(10, it.n) : 0]);
+    return JSON.stringify([it.t, it.st, it.b, it.k, it.ing, it.t === 'ing' ? shownN(it.n, small) : 0, small ? 1 : 0, (it.s || []).map((x) => x[0] + (x[4] ? 'H' : '')), it.df, it.cr, it.tp, it.r, it.p, it.dirty ? 1 : 0, it.open ? Math.min(10, it.n) : 0, it.w ? 1 : 0, it.dish ? 1 : 0]);
   }
   function itemMesh(it, s, small) {
     const e = W.eng;
@@ -845,6 +1015,16 @@
     if (meshCache[key]) return meshCache[key];
     const B = new Builder(), st = { rough: 0.3, metal: 1 };
     if (it.t === 'ing') ingStack(B, it.ing, it.n, small);
+    else if (it.t === 'fcrate') {
+      // 家具の大きな段ボール（中身の大きさに合わせる）
+      const Kd = P.KINDS[it.k] || {}, w = clamp((Kd.w || 1) * 0.8, 0.6, 1.05), d = clamp((Kd.d || 1) * 0.95, 0.5, 0.85), h = clamp((Kd.h || 1) * 0.62, 0.5, 0.88), cb = { rough: 0.85 };
+      B.put(Geo.rbox(w, h, d, 0.012), [0, h / 2, 0], 0, 1, C.card, cb);
+      B.put(Geo.box(w + 0.004, 0.05, 0.08), [0, h - 0.03, 0], 0, 1, rgb('#B88C5E'), cb);
+      B.put(Geo.box(0.08, 0.05, d + 0.004), [0, h - 0.03, 0], 0, 1, rgb('#B88C5E'), cb);
+      B.put(Geo.box(w * 0.5, h * 0.36, 0.006), [0, h * 0.5, d / 2 + 0.002], 0, 1, rgb('#F2EBE1'), cb);
+      B.put(Geo.box(w * 0.42, h * 0.08, 0.008), [0, h * 0.58, d / 2 + 0.004], 0, 1, rgb('#2F4A3F'), cb);
+      for (let k = 0; k < 2; k++) B.put(Geo.cyl(0.0, 0.035, 0.07, 3), [w / 2 - 0.12 - k * 0.09, h * 0.75, d / 2 + 0.005], [PI / 2, 0, 0], 1, rgb('#C0392B'), cb);
+    }
     else if (it.t === 'pan') {
       const Bs = D.BASES[it.b] || {}, burnt = (it.df || []).includes('burnt');
       if (Bs.cookie) B.put(Geo.rbox(0.38, 0.02, 0.28, 0.006), [0, 0.01, 0], 0, 1, rgb('#8C9298'), st);
@@ -862,6 +1042,13 @@
       if (it.dirty) { for (let k = 0; k < 5; k++) B.put(Geo.sphere(0.02, 8, 6), [Math.sin(k * 2.5) * 0.05, 0.013, Math.cos(k * 2.1) * 0.05], 0, [1.4, 0.2, 1], rgb(k % 2 ? '#E8D9B5' : '#B98A55'), { rough: 0.9 }); B.put(Geo.box(0.012, 0.004, 0.17), [0.05, 0.016, 0], [0, 0.5, 0], 1, rgb('#D8DBDF'), st); }
       const sl = it.s || [];
       sl.forEach((x, k) => { const a = sl.length === 1 ? 0 : (k / sl.length) * PI * 2; const rr = sl.length === 1 ? 0 : 0.05; sliceMesh(B, s, x[0], [Math.sin(a) * rr, 0.012, Math.cos(a) * rr], a + PI); });
+    } else if (it.t === 'knife') {
+      // ケーキナイフ（波刃・木の柄）
+      B.put(Geo.rbox(0.25, 0.003, 0.036, 0.001), [0.06, 0.004, 0], 0, 1, rgb('#D9DDE1'), { rough: 0.18, metal: 1 });
+      for (let k = 0; k < 10; k++) B.put(Geo.cyl(0.004, 0.004, 0.0032, 6), [-0.05 + k * 0.024, 0.004, -0.018], 0, 1, rgb('#C2C7CC'), { rough: 0.2, metal: 1 });
+      B.put(Geo.box(0.012, 0.012, 0.03), [-0.07, 0.007, 0], 0, 1, rgb('#B9BEC3'), { rough: 0.3, metal: 1 });
+      B.put(Geo.rbox(0.12, 0.018, 0.026, 0.008), [-0.135, 0.01, 0], 0, 1, rgb('#6B4A32'), { rough: 0.6 });
+      [-0.11, -0.16].forEach((x) => B.put(Geo.cyl(0.004, 0.004, 0.0186, 8), [x, 0.01, 0], 0, 1, rgb('#E1E4E7'), { rough: 0.2, metal: 1 }));
     } else if (it.t === 'cream') {
       B.put(Geo.cyl(0.12, 0.08, 0.09, 24, 0, PI * 2, true), [0, 0.045, 0], 0, 1, rgb('#EDEAE4'), { rough: 0.15 });
       B.put(Geo.cyl(0.08, 0.08, 0.004, 24), [0, 0.002, 0], 0, 1, rgb('#EDEAE4'), { rough: 0.15 });
@@ -873,7 +1060,11 @@
       B.put(Geo.rbox(0.3, 0.16, 0.24, 0.01), [0, 0.08, 0], 0, 1, rgb('#F7F5F0'), { rough: 0.7 });
       B.put(Geo.box(0.302, 0.01, 0.06), [0, 0.165, 0], 0, 1, rgb('#C9A35E'), { rough: 0.5 });
       B.put(Geo.torus(0.05, 0.006, 6, 16, PI), [0, 0.165, 0], 0, 1, rgb('#C9A35E'), { rough: 0.5 });
-      for (let k = 0; k < (it.s || []).length; k++) B.put(Geo.cyl(0.035, 0.035, 0.012, 3), [-0.1 + (k % 3) * 0.1, 0.172, -0.05 + Math.floor(k / 3) * 0.1], [0, 0.4, 0], 1, rgb('#E8D9C4'), { rough: 0.6 });
+      if ((it.s || []).some((x) => x[4])) {
+        // ホール入り：ピンクのリボンを十字に
+        B.put(Geo.box(0.306, 0.166, 0.03), [0, 0.083, 0], 0, 1, rgb('#E8789A'), { rough: 0.5 }); B.put(Geo.box(0.03, 0.166, 0.246), [0, 0.083, 0], 0, 1, rgb('#E8789A'), { rough: 0.5 });
+        B.put(Geo.torus(0.035, 0.009, 6, 14), [-0.03, 0.172, 0], [PI / 2, 0, 0.5], [1, 1, 0.5], rgb('#E8789A'), { rough: 0.5 }); B.put(Geo.torus(0.035, 0.009, 6, 14), [0.03, 0.172, 0], [PI / 2, 0, -0.5], [1, 1, 0.5], rgb('#E8789A'), { rough: 0.5 });
+      } else for (let k = 0; k < (it.s || []).length; k++) B.put(Geo.cyl(0.035, 0.035, 0.012, 3), [-0.1 + (k % 3) * 0.1, 0.172, -0.05 + Math.floor(k / 3) * 0.1], [0, 0.4, 0], 1, rgb('#E8D9C4'), { rough: 0.6 });
     } else if (it.t === 'crate' && it.open) {
       const cb = { rough: 0.85 }, cc = C.card, W2 = 0.48, D2 = 0.36, H2 = 0.34;
       B.put(Geo.box(W2, 0.012, D2), [0, 0.006, 0], 0, 1, cc, cb);
@@ -914,8 +1105,9 @@
     if (it.t === 'deco') return { n: decoNode(it), sc: CAKE_SC };
     if (it.t === 'cake' || it.t === 'tray') {
       const r = sim.recipe(s, it.r); const n = new Node();
-      const pcs = it.t === 'cake' && it.p >= it.n ? 6 : Math.max(1, Math.round(((it.p || 0) / (it.n || 6)) * 6));
-      if (r) { const c = MD.cake(W.eng, r, pcs, 1, it.df); n.add(c); }
+      const pcs = it.p >= it.n ? 6 : Math.max(1, Math.round(((it.p || 0) / (it.n || 6)) * 6));
+      if (r) { const c = MD.cake(W.eng, r, pcs, 1, it.df, !it.w); if (it.dish) c.p = [0, 0.009, 0]; n.add(c); }
+      if (it.dish) { const d = new Node(itemMesh({ t: 'plate', s: [] }, s, small)); d.s = [1.32 / CAKE_SC, 1 / CAKE_SC, 1.32 / CAKE_SC]; n.add(d); }
       return { n, sc: it.t === 'tray' ? CAKE_SC * 0.95 : CAKE_SC };
     }
     return { n: new Node(itemMesh(it, s, small)), sc: 1 };
@@ -952,7 +1144,7 @@
     for (const id in W.custs) { const o = W.custs[id]; W._keep[id] = [o.x, o.z, o.r]; }
     for (const id in W.staffN) { const o = W.staffN[id]; W._keep[id] = [o.x, o.z, o.r]; }
     W.eng.freeTree(W.scene); W.scene.clear();
-    W.keys = { mb: W.keys.mb }; W.items = {}; W.others = {}; W.custs = {}; W.staffN = {}; W.fn = {}; W._decoObs = null; W.mv = null; W.hold = null;
+    W.keys = { mb: W.keys.mb }; W.items = {}; W.others = {}; W.custs = {}; W.staffN = {}; W.fn = {}; W._decoObs = null; W.mv = null; W.hold = null; W.ghost = null;
     W.buildStatic();
     W.applyQuality();
     if (W.S) { W.syncFurn(W.S); }
@@ -1113,6 +1305,7 @@
     for (let k = 0, n = Math.min(5, Math.ceil(raw / 0.05) || 1); k < n; k++) W.updatePlayer(Math.min(0.05, raw / n));
     W.updateCamera(dt);
     W.updateOthers(dtN);
+    W.updateTown(dtN);
     if (s) { if (W.hold && performance.now() > W.hold.until) { W.hold = null; W.placeFurn(s); } if (W.mv || W.hold) W.placeFurn(s); W.updateStations(s, g, dtN); W.updateCustomers(dtN, s, g); W.updateStaff(dtN, s, g); W.updateTruck(s, g, dtN); }
     W.updateTarget(s, g);
     if (s) { W.updateItems(s, g); W.updateGhost(s); }
@@ -1259,15 +1452,15 @@
           mine = true;
           const f = W.fwd, cp = Math.cos(me.pitch), sp = Math.sin(me.pitch);
           const rx = Math.cos(me.yaw), rz = -Math.sin(me.yaw);
-          const big = it.t === 'crate' || it.t === 'box' || it.t === 'cake';
-          const crate = it.t === 'crate', dist = crate ? 0.72 : big ? 0.6 : 0.5, side = big ? 0.0 : 0.2, down = crate ? 0.5 : big ? 0.42 : 0.3;
+          const big = it.t === 'crate' || it.t === 'box' || it.t === 'cake' || it.t === 'fcrate';
+          const crate = it.t === 'crate', huge = it.t === 'fcrate', dist = huge ? 0.95 : crate ? 0.72 : big ? 0.6 : 0.5, side = big ? 0.0 : 0.2, down = huge ? 0.95 : crate ? 0.5 : big ? 0.42 : 0.3;
           const cam = W.eng.cam.pos;
           const ux = Math.sin(me.yaw) * sp, uy = cp, uz = Math.cos(me.yaw) * sp;
           p = [cam[0] + f[0] * dist + rx * side - ux * down, cam[1] + f[1] * dist - uy * down, cam[2] + f[2] * dist + rz * side - uz * down];
-          ry = me.yaw; scl = it.t === 'ing' ? 0.9 : it.t === 'crate' ? 0.72 : 0.85;
+          ry = me.yaw; scl = it.t === 'ing' ? 0.9 : it.t === 'crate' ? 0.72 : it.t === 'fcrate' ? 0.8 : 0.85;
         } else {
           const ot = W.others[who] || W.staffN[who];
-          if (ot) { const r = ot.r || 0; p = [ot.x + Math.sin(r) * 0.42, 1.02, ot.z + Math.cos(r) * 0.42]; ry = r; }
+          if (ot) { const r = ot.r || 0, hg = it.t === 'fcrate'; p = [ot.x + Math.sin(r) * (hg ? 0.6 : 0.42), hg ? 0.6 : 1.02, ot.z + Math.cos(r) * (hg ? 0.6 : 0.42)]; ry = r; }
         }
       } else if (at.startsWith('c:')) {
         const oc = W.custs[at.slice(2)];
@@ -1296,11 +1489,25 @@
   // 配置モード：動かしている家具の色と床の目印
   W.updateGhost = function (s) {
     for (const fid in W.fn) { const o = W.fn[fid]; const v = W.mv && W.mv.id === fid ? (W.mv.why ? 5 : 4) : W.bm && W.target && W.target.fid === fid ? 4 : 0; if (o._g !== v) { o._g = v; o.n.kids.forEach((k) => { if (!k.op || k.op >= 1) setTint(k, v); }); } }
-    const mv = W.mv, ft = W.foot;
+    const ft = W.foot;
     if (!ft) return;
-    if (!mv || !s.fu[mv.id]) { ft.vis = false; return; }
-    const [w, d] = P.size(s.fu[mv.id].k, mv.r);
-    ft.vis = true; ft.p = [mv.x, 0.012, mv.z]; ft.s = [w + 0.06, 1, d + 0.06]; ft.color = mv.why ? rgb('#E2574C') : rgb('#5BD18B');
+    // 大きな段ボールの展開先（家具の形の影）
+    const up = W.up, gh = W.ghost;
+    if (up) {
+      if (!gh || gh.k !== up.k) { if (gh) W.scene.remove(gh.n); const n = new Node(); for (const pt of furnParts(up.k)) { const c = new Node(pt.meshes, Object.assign({}, pt.o, { cast: false })); if (pt.p) c.p = pt.p.slice(); if (pt.r) c.r = pt.r.slice(); n.add(c); } W.scene.add(n); W.ghost = { n, k: up.k, v: -1 }; }
+      const G2 = W.ghost; G2.n.vis = true; G2.n.p = [up.x, 0, up.z]; G2.n.r = [0, P.dirs(up.r).a, 0];
+      const v = up.why ? 5 : 4; if (G2.v !== v) { G2.v = v; G2.n.kids.forEach((k) => { if (!k.op || k.op >= 1) setTint(k, v); }); }
+    } else if (gh) gh.n.vis = false;
+    const mv = W.mv && s.fu[W.mv.id] ? W.mv : null, cur = mv ? { k: s.fu[mv.id].k, x: mv.x, z: mv.z, r: mv.r, why: mv.why } : up;
+    if (!cur) { ft.vis = false; return; }
+    const [w, d] = P.size(cur.k, cur.r);
+    ft.vis = true; ft.p = [cur.x, 0.012, cur.z]; ft.s = [w + 0.06, 1, d + 0.06]; ft.color = cur.why ? rgb('#E2574C') : rgb('#5BD18B');
+  };
+  // 床をねらった位置（配置・展開）
+  W.floorAim = function (o, d) {
+    let hx, hz;
+    if (d[1] < -0.04) { const tt = Math.min(-o[1] / d[1], 5.5); hx = o[0] + d[0] * tt; hz = o[2] + d[2] * tt; } else { hx = o[0] + d[0] * 4; hz = o[2] + d[2] * 4; }
+    return [Math.round(hx * 20) / 20, Math.round(hz * 20) / 20];
   };
   // ---------- ほかのプレイヤー ----------
   W.updateOthers = function (dt) {
@@ -1442,8 +1649,28 @@
   const yen = (n) => '¥' + Math.round(n || 0).toLocaleString();
   W.itemName = (it, s) => (!it ? '' : K.label(s, it) + (it.t === 'ing' ? ' ×' + it.n : ''));
   // 手に持っている物を捨てるボタンの名前
-  W.delLabel = (held) => (!held ? '' : held.t === 'crate' ? ((held.sp || 0) >= 2 && held.n > 0 ? '捨てる' : '') : held.t === 'plate' ? '落とす（割れる）' : '捨てる');
+  W.delLabel = (held) => (!held || held.t === 'fcrate' ? '' : held.t === 'crate' ? ((held.sp || 0) >= 2 && held.n > 0 ? '捨てる' : '') : held.t === 'plate' ? '落とす（割れる）' : '捨てる');
   const SHORT = (s, it) => (it.t === 'ing' ? nm(it.ing) + ' ' + it.n : it.t === 'plate' ? (it.dirty ? '汚れたお皿' : 'お皿') : it.t === 'pan' && it.st === 'empty' ? (it.dirty ? '汚れた型' : 'ケーキ型') : K.label(s, it));
+  // ケーキに対する操作（ナイフで切る・ホールのまま箱へ・1切れずつ箱／お皿へ）
+  function cakeT(s, t, held, top, topId) {
+    if (!held || !top || !(top.t === 'cake' || top.t === 'tray') || top.res) return false;
+    if (held.t === 'knife') {
+      if (top.w) t.pri = { label: 'ケーキナイフで6等分に切る', a: { t: 'cut', id: topId } };
+      else t.name += '（もう切ってあります）';
+      return true;
+    }
+    if (held.t !== 'box' && held.t !== 'plate') return false;
+    if (held.t === 'plate' && (held.dirty || held.wet)) { t.name += held.dirty ? '（汚れたお皿は洗い場へ）' : '（お皿がまだぬれている）'; return true; }
+    if (top.w) {
+      if (held.t === 'box' && !(held.s || []).length) t.pri = { label: 'ホールのまま箱に入れる', a: { t: 'hole', id: topId } };
+      t.name += held.t === 'box' ? ((held.s || []).length ? '（ホールは空の箱に1台）' : '') + '・切るならケーキナイフで' : '（ケーキナイフで切ってから1切れずつ）';
+      return true;
+    }
+    t.pri = { label: (held.t === 'box' ? '箱' : 'お皿') + 'に1切れ入れる', a: { t: 'slice', id: topId } };
+    const last = (held.s || [])[(held.s || []).length - 1];
+    if (last && !last[4] && last[0] === top.r && top.p < top.n) t.sec = { label: '1切れ戻す', a: { t: 'unslice', id: topId } };
+    return true;
+  }
   // 家具の置く所 1か所の操作
   function slotT(s, fid, f, k, sl, held) {
     const at = 'f:' + fid + ':' + k, ids = K.inSlot(s, at), topId = ids.length ? ids[ids.length - 1] : null, top = topId ? s.k.items[topId] : null;
@@ -1453,7 +1680,7 @@
     const t = { slot: at, item: topId, fid, pp: [p[0], p[1] + (T === 'tray' ? 0.12 : T === 'fridge' ? 0.1 : 0.07), p[2]], rr: T === 'tray' ? 0.24 : T === 'fridge' ? 0.18 : 0.17 };
     if (top) t.name = W.itemName(top, s) + (ids.length > 1 ? '（' + ids.length + 'つ）' : '');
     else t.name = W.fname(s, fid) + (T === 'dry' ? '：水切りかご' : T === 'mixpan' ? '：型置き' : '') + '（空き' + (T === 'tray' || T === 'any' ? (cold ? '・冷蔵' : '・常温') : '') + '）';
-    if (top && top.t === 'tray') t.name = ((sim.recipe(s, top.r) || {}).name || 'ケーキ') + '（残り ' + top.p + ' 切れ・' + sim.cakeExpText(s, top.d) + '）';
+    if (top && top.t === 'tray') t.name = ((sim.recipe(s, top.r) || {}).name || 'ケーキ') + (top.w ? '（ホール・' : '（残り ' + top.p + ' 切れ・') + sim.cakeExpText(s, top.d) + '）';
     if (top && top.res) { t.name += '（アルバイトが使用中）'; return t; }
     if (held) {
       if (held.t === 'crate') {
@@ -1468,12 +1695,16 @@
         } else t.name += '（ほかの物が置いてある）';
         return t;
       }
-      if (T === 'tray' && top && top.t === 'tray' && (held.t === 'box' || held.t === 'plate')) {
-        t.pri = { label: (held.t === 'box' ? '箱' : 'お皿') + 'に1切れ入れる', a: { t: 'slice', id: topId } };
-        const last = (held.s || [])[(held.s || []).length - 1];
-        if (last && last[0] === top.r) t.sec = { label: '1切れ戻す', a: { t: 'unslice', id: topId } };
-        if (held.t === 'plate' && (held.dirty || held.wet)) { t.pri = null; t.name += held.dirty ? '（汚れたお皿は洗い場へ）' : '（お皿がまだぬれている）'; }
+      if (cakeT(s, t, held, top, topId)) return t;
+      if (held.t === 'cake' && !held.dish && T === 'any' && ids.length === 1 && top && top.t === 'plate' && !(top.s || []).length) {
+        if (top.dirty || top.wet) t.name += top.dirty ? '（汚れたお皿）' : '（お皿がぬれている）';
+        else t.pri = { label: 'お皿にのせる', a: { t: 'put', slot: at } };
         return t;
+      }
+      const hb = held.t === 'box' && (held.s || [])[0] && held.s[0][4];
+      if (hb && !top) {
+        const ck = { t: 'cake', r: held.s[0][0], p: 6, n: 6, w: 1 }, why2 = K.canPut(s, at, ck);
+        if (!why2) { t.pri = { label: 'ホールを箱から出して置く', a: { t: 'unhole', slot: at } }; if (T !== 'tray' && !K.canPut(s, at, held)) t.sec = { label: '箱ごと置く', a: { t: 'put', slot: at } }; return t; }
       }
       if (held.t === 'ing' && top && top.t === 'ing' && top.ing === held.ing) {
         // 同じ材料の山：もう1つ取る（長押しで続けて）／1つ戻す／全部戻す
@@ -1485,7 +1716,7 @@
       }
       const why = K.canPut(s, at, held);
       if (!why) {
-        const lbl = T === 'tray' ? '切って並べる' : T === 'fridge' ? '冷蔵庫に入れる' : T === 'mixpan' ? '型を置く' : T === 'dry' ? '水切りかごに置く' : held.t === 'box' && top ? '箱を戻す' : top ? '重ねて置く' : '置く';
+        const lbl = T === 'tray' ? (held.t === 'cake' && held.w ? 'ホールのまま並べる' : '並べる') : T === 'fridge' ? '冷蔵庫に入れる' : T === 'mixpan' ? '型を置く' : T === 'dry' ? '水切りかごに置く' : held.t === 'box' && top ? '箱を戻す' : top ? '重ねて置く' : '置く';
         t.pri = { label: lbl, a: { t: 'put', slot: at } };
         if (held.t === 'ing' && held.n > 1 && !top) t.sec = { label: '1つだけ置く', a: { t: 'put', slot: at, one: 1 } };
         if (T === 'tray' && held.t === 'cake' && K.spoilSec(s, held) && !cold) t.name += '・常温（クリームのケーキは傷む）';
@@ -1500,7 +1731,8 @@
       if ((top.sp || 0) >= 2) t.name += '（傷んでいる）';
       return t;
     }
-    if (top.t === 'tray') { t.sec = { label: 'ケーキごと持つ', a: { t: 'caseTake', id: topId } }; t.name += '・箱かお皿を持ってくると入れられる'; return t; }
+    if (top.t === 'tray') { t.sec = { label: 'ケーキごと持つ', a: { t: 'caseTake', id: topId } }; t.name += top.w ? '・ケーキナイフで6等分に切れる／空の箱ならホールのまま入れられる' : '・箱かお皿を持ってくると入れられる'; return t; }
+    if (top.t === 'cake') t.name += top.w ? '・ケーキナイフで切れる' : '・箱かお皿で1切れずつ取れる';
     t.pri = { label: ids.length > 1 ? '1つ持つ' : '持つ', a: { t: 'pick', id: topId } };
     return t;
   }
@@ -1540,7 +1772,8 @@
       const t = { name: nmF, station: fid, item: did || null, deco: fid };
       if (staffBusy) t.name += '（アルバイトが使用中）';
       else {
-        if (!held && dk) t.pri = { label: dk.t === 'cake' ? 'ケーキを持つ' : '持つ', a: { t: 'pick', id: did } };
+        if (dk && dk.t === 'cake' && cakeT(s, t, held, dk, did)) { /* ナイフ・箱・お皿 */ }
+        else if (!held && dk) t.pri = { label: dk.t === 'cake' ? 'ケーキを持つ' : '持つ', a: { t: 'pick', id: did } };
         else if (held && !dk) { const why = K.canPut(s, sl, held); if (!why) t.pri = { label: held.t === 'pan' ? '型から出してのせる' : 'のせる', a: { t: 'put', slot: sl } }; else t.name += '・' + why; }
         else if (held && held.t === 'ing' && D.TOPS[held.ing] && dk && dk.t === 'deco') t.pri = { label: nm(held.ing) + 'をここに置く（残り ' + held.n + '）', a: { t: 'topPlace', fid }, aim: true };
         if (dk && dk.t === 'deco') {
@@ -1593,10 +1826,21 @@
     if (!s || !W.room || W.blocked()) { if (W.onTarget) W.onTarget(null, null); return; }
     const L = W.L, o = W.eng.cam.pos, d = W.fwd, pid = W.room.pid;
     const hid = K.held(s, pid), held = hid ? s.k.items[hid] : null;
+    W.up = null;
     if (W.bm) { const t = W.buildTarget(s, o, d); W.target = t; if (W.onTarget) W.onTarget(t, held); return; }
+    if (held && held.t === 'fcrate' && P.KINDS[held.k]) {
+      // 大きな段ボール：置きたい床をねらって展開する
+      const Kd = P.KINDS[held.k], [x, z] = W.floorAim(o, d), r = Kd.counter ? 0 : (W.upR || 0) % 4, zz = Kd.counter ? CZ : z;
+      const why = P.valid(s, null, held.k, x, zz, r);
+      W.up = { k: held.k, x, z: zz, r, why };
+      const t = { name: Kd.name + '：' + (why || 'ここに展開できます'), unpack: 1,
+        pri: why ? null : { label: 'ここに展開する', a: { t: 'unpack', x, z: zz, r } },
+        sec: Kd.counter ? null : { label: '向きを変える', fn: () => { W.upR = ((W.upR || 0) + 1) % 4; } } };
+      W.target = t; if (W.onTarget) W.onTarget(t, held); return;
+    }
     const cands = [];
     const reachable = (p) => { for (const w of W.rayWalls) if (segHit(o[0], o[2], p[0], p[2], w)) return false; return true; };
-    const add = (p, r, t) => { if (!t) return; const dist = raySphere(o, d, p, r); if (dist >= 0 && dist <= REACH && reachable(p)) cands.push(Object.assign(t, { dist, p })); };
+    const add = (p, r, t, reach) => { if (!t) return; const dist = raySphere(o, d, p, r); if (dist >= 0 && dist <= (reach || REACH) && reachable(p)) cands.push(Object.assign(t, { dist, p })); };
     const working = s.phase === 'prep' || s.phase === 'open';
     // 家具（置く所・設備）
     for (const fid in s.fu) {
@@ -1611,9 +1855,10 @@
     for (const id in s.k.items) {
       const it = s.k.items[id], at = String(it.at);
       if (!(at.startsWith('seat:') || at.startsWith('dl:'))) continue;
-      if (it.t === 'crate' && (it.ar > g || (s.k.truck && s.k.truck.out))) continue;
+      if ((it.t === 'crate' || it.t === 'fcrate') && (it.ar > g || (s.k.truck && s.k.truck.out))) continue;
       const sw = slotWorld(s, at); if (!sw) continue;
-      add([sw.p[0], sw.p[1] + (it.t === 'crate' ? 0.17 : 0.05), sw.p[2]], it.t === 'crate' ? 0.28 : 0.16, { item: id, name: W.itemName(it, s), pri: !held ? { label: '持つ', a: { t: 'pick', id } } : null });
+      const hg = it.t === 'fcrate';
+      add([sw.p[0], sw.p[1] + (hg ? 0.35 : it.t === 'crate' ? 0.17 : 0.05), sw.p[2]], hg ? 0.45 : it.t === 'crate' ? 0.28 : 0.16, { item: id, name: W.itemName(it, s) + (hg ? '（持って、置きたい所で展開）' : ''), pri: !held ? { label: hg ? '大きな段ボールを持つ' : '持つ', a: { t: 'pick', id } } : null }, at.startsWith('dl:') ? 3.4 : 0);
     }
     add(L.pcScr, 0.36, { name: 'パソコン（仕入れ・家具・経営）', pri: { label: 'パソコンを使う', ui: 'pc' } });
     add([L.board[0] + 0.1, 1.75, L.board[1]], 0.7, { name: 'メニュー黒板', pri: { label: 'メニューと価格', ui: 'menu' } });
@@ -1623,7 +1868,7 @@
       const oc = W.custs[id], c = s.cust[id]; if (!c) continue;
       const t = { name: 'お客さん', cust: id };
       if (c.st === 'q' && K.queue(s, c.reg)[0] === id && oc.atSpot) t.pri = { label: '注文を受ける', a: { t: 'takeOrder', c: id } };
-      if (c.st === 'w') { t.name = '注文 #' + c.no + '：' + K.ordText(s, c.ord) + (c.dine ? '（店内・お皿で）' : '（持ち帰り・箱で）'); if (held && (held.t === 'box' || held.t === 'plate')) t.pri = { label: (held.t === 'box' ? '箱' : 'お皿') + 'を渡す', a: { t: 'serve', c: id } }; }
+      if (c.st === 'w') { t.name = '注文 #' + c.no + '：' + K.ordText(s, c.ord, c.wh) + (c.dine ? '（店内・お皿で）' : '（持ち帰り・箱で）'); if (held && (held.t === 'box' || held.t === 'plate')) t.pri = { label: (held.t === 'box' ? '箱' : 'お皿') + 'を渡す', a: { t: 'serve', c: id } }; }
       if (c.st === 'pay') { t.name = 'お会計待ち（' + (c.pm === 'card' ? 'カード' : '現金 ' + yen(c.tend)) + '）'; if (K.payQ(s, c.reg)[0] === id && oc.atSpot && !c.res) t.pri = payAct(c, id); }
       add([oc.x, 1.25, oc.z], 0.42, t);
     }
@@ -1667,7 +1912,7 @@
     let best = null;
     for (const fid in s.fu) {
       const f = s.fu[fid], Kd = P.KINDS[f.k]; if (!Kd) continue;
-      const b = P.box(f), y0 = Kd.counter ? CT : 0, h = Kd.counter ? 0.45 : Kd.h;
+      const b = P.box(f), lowC = f.k === 'reg', y0 = lowC ? CT : 0, h = lowC ? 0.45 : Kd.h;
       const dist = rayBox(o, d, [b[0], y0, b[1]], [b[2], y0 + h, b[3]]);
       if (dist >= 0 && dist < 7 && (!best || dist < best.dist)) best = { fid, dist };
     }
@@ -1739,6 +1984,7 @@
     const s = W.S; if (!s || !W.room) return;
     const hid = K.held(s, W.room.pid); if (!hid) return;
     const it = s.k.items[hid];
+    if (it.t === 'fcrate') { CS.ui.toast('置きたい床をねらって「ここに展開する」', 'err'); return; }
     if (it.t === 'crate' && !((it.sp || 0) >= 2 && it.n > 0)) { CS.ui.toast(it.n > 0 ? '中身は棚に置こう（開けてから）' : '空の段ボールはゴミ箱へ', 'err'); return; }
     if (it.t === 'plate') { send({ t: 'drop' }); return; }
     send({ t: 'trash' });
@@ -1838,7 +2084,7 @@
             else if (b.st === 'spread') h += `<small>${esc(b.by === pid ? 'クリームを塗っています' : ((W.room.members[b.by] || {}).name || 'だれか') + 'さんが塗っています')}</small>`;
             else if (dk.warm) h += '<small class="bad">まだ温かい（クリームが溶ける）</small>';
             else h += '<small>クリームを塗る → 棚からトッピングを持ってきてのせる → 仕上げる</small>';
-          } else if (dk && dk.t === 'cake') h += `<small class="ok">${esc((sim.recipe(s, dk.r) || {}).name || '')} 完成！商品棚に置くと切って並べられる</small>`;
+          } else if (dk && dk.t === 'cake') h += `<small class="ok">${esc((sim.recipe(s, dk.r) || {}).name || '')} 完成！${dk.w ? 'ホールのままショーケースへ／ケーキナイフで6等分にも切れる' : 'ショーケースに並べよう'}</small>`;
           else h += '<small>焼けた型をのせる</small>';
           setHTML(el, h); place(el, P.local(f, 0, 1.5, 0.04));
         }
@@ -1917,8 +2163,9 @@
       if (it.t === 'tray') {
         const nr = dd < 2.6, m = s.menu[it.r];
         const el = lab('tag-' + id, 'tag-lb' + (nr ? '' : ' far'));
-        setHTML(el, nr ? `${esc(yen(m ? m.price : 0))}<small>${esc((sim.recipe(s, it.r) || {}).name || '')}・残り${it.p}</small>${expTag(it.d)}` : expTag(it.d));
-        place(el, [pp[0], pp[1] + (nr ? 0.5 : 0.42), pp[2]], 0, nr ? 0.92 : clamp(3.2 / Math.max(1, dd), 0.72, 0.9));
+        const ex = sim.cakeExpDay(it.d, s) <= s.day, exS = `<small class="${ex ? 'warn' : 'cold'}">${ex ? '今日まで' : '明日まで'}</small>`;
+        setHTML(el, nr ? (it.w ? `ホール ${esc(yen(m ? m.hp || 0 : 0))}<small>1切れ ${esc(yen(m ? m.price : 0))}</small>` : `${esc(yen(m ? m.price : 0))}<small>残り${it.p}</small>`) + exS : exS);
+        place(el, [pp[0], pp[1] + 0.27, pp[2]], 0, nr ? 0.8 : clamp(3.2 / Math.max(1, dd), 0.66, 0.8));
       } else if (dd < 10) { const el = lab('ex-' + id, 'tag-lb far'); setHTML(el, expTag(it.d)); place(el, [pp[0], pp[1] + 0.34, pp[2]], 0, clamp(3.2 / Math.max(1, dd), 0.72, 0.9)); }
     }
     // お客さん（注文・お会計・吹き出し）
@@ -1926,7 +2173,7 @@
       const o = W.custs[id], c = o.c; if (!c) continue;
       let h = '', cls = 'say-lb';
       if (c.st === 'q' && K.queue(s, c.reg)[0] === id && o.atSpot) { h = 'すみません、注文いいですか？'; cls += ' ask'; }
-      else if (c.st === 'w') { const left = Math.max(0, Math.ceil(((c.pw || 0) - g) / 1000)); h = `<b>#${c.no}</b> ${esc(K.ordText(s, c.ord))}<small>${c.dine ? '🍽 店内（お皿）' : '🛍 持ち帰り（箱）'}・<span class="${left < 12 ? 'bad' : ''}">あと${left}秒</span></small>`; cls += ' ord'; }
+      else if (c.st === 'w') { const left = Math.max(0, Math.ceil(((c.pw || 0) - g) / 1000)); h = `<b>#${c.no}</b> ${esc(K.ordText(s, c.ord, c.wh))}<small>${c.dine ? '🍽 店内（お皿）' : '🛍 持ち帰り（箱）'}・<span class="${left < 12 ? 'bad' : ''}">あと${left}秒</span></small>`; cls += ' ord'; }
       else if (c.st === 'pay') { h = `お会計 <b>${esc(yen(c.due))}</b><small>${c.pm === 'card' ? '💳 カードで' : '💴 現金 ' + esc(yen(c.tend))}</small>`; cls += ' ask'; }
       else if (c.say && g - (c.sayT || 0) < 2800) { h = esc(c.say); cls += c.paid ? ' buy' : ' bad'; }
       if (!h || distMe(o.x, o.z) > 10) continue;
@@ -1940,6 +2187,38 @@
     for (const k in W.staffN) { const o = W.staffN[k], m = o.m; if (!m || distMe(o.x, o.z) > 7) continue; const el = lab('sf-' + k, 'nm-lb staff'); setHTML(el, `${esc(m.name)} <small>Lv${m.lv}・${esc((D.STAFF.tasks[m.task] || {}).name || '')}</small>`); place(el, [o.x, 1.98, o.z], 0, 0.8); }
     // トッピングの照準
     if (W.aim) { const el = lab('aim', 'aim-lb' + (W.aim.ok ? ' ok' : '')); setHTML(el, ''); const p = W.eng.project([W.aim.x, W.aim.y, W.aim.z]); if (p) { el.hidden = false; el.style.transform = `translate(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px) translate(-50%,-50%)`; } }
+    // チュートリアルの目印（見えていればその上に、画面の外なら端に矢印）
+    if (W.guide && !W.bm) { const gp = W.guidePos(s, W.guide); if (gp) guideMark(gp, W.guide.label || ''); }
     for (const k in W.lbl) if (!W.lbl[k]._used) { W.lbl[k].remove(); delete W.lbl[k]; }
   };
+  // 目印の場所：{ item } 物 / { fid, y } 家具 / { p } 座標 / { at } 置き場所 / { pc } パソコン / { sign } 看板 / { truck } トラック / { cust } お客さん
+  W.guidePos = function (s, g) {
+    if (!g || !W.L) return null;
+    if (g.p) return g.p;
+    if (g.pc) return [W.L.pcScr[0], 1.32, W.L.pcScr[2]];
+    if (g.sign) return [W.L.sign[0], 1.25, W.L.sign[1]];
+    if (g.truck) { const t = W.truck && W.truck.node.vis ? W.truck.node.p : null; return t ? [t[0], 2.3, t[2] - 2.6] : [W.L.truck.x, 2.0, W.L.truck.z - 2.6]; }
+    if (g.item) { const o = W.items[g.item], it = s.k.items[g.item]; if (!o || !it || String(it.at).startsWith('h:')) return null; const q = o.n.p; return [q[0], q[1] + 0.28, q[2]]; }
+    if (g.at) { const w = slotWorld(s, g.at); return w ? [w.p[0], w.p[1] + 0.3, w.p[2]] : null; }
+    if (g.fid) { const f = fOf(s, g.fid); if (!f) return null; const Kd = P.KINDS[f.k] || {}; return P.local(f, 0, g.y != null ? g.y : (Kd.h || 1) + 0.2, g.dz || 0); }
+    if (g.cust) { const o = W.custs[g.cust]; return o ? [o.x, 2.05, o.z] : null; }
+    return null;
+  };
+  function guideMark(p3, label) {
+    const el = lab('guide', 'guide-lb'), cv = W.eng.canvas, cw = cv.clientWidth, ch = cv.clientHeight;
+    const me = W.me, dx = p3[0] - me.x, dz = p3[2] - me.z, dist = Math.hypot(dx, dz);
+    const fwd = -dx * Math.sin(me.yaw) - dz * Math.cos(me.yaw), side = dx * Math.cos(me.yaw) - dz * Math.sin(me.yaw);
+    const h = `<i class="ga"></i><span>${esc(label)}<small>${dist < 1.6 ? 'ここ！' : Math.round(dist) + 'm'}</small></span>`;
+    if (el._h !== h) { el._h = h; el.innerHTML = h; }
+    const p = W.eng.project(p3), top = (W.hudH || 52) + 8;
+    const onScreen = p && p.z <= 1 && p.d > 0.15 && fwd > 0 && p.x > 24 && p.x < cw - 24 && p.y > top + 20 && p.y < ch - 40;
+    el.hidden = false;
+    if (onScreen) { el.classList.remove('edge'); el.style.transform = `translate(${p.x.toFixed(1)}px, ${(p.y + Math.sin(performance.now() / 260) * 4).toFixed(1)}px) translate(-50%, -100%)`; return; }
+    // 画面の外：見ている向きからの角度で、画面の端に矢印
+    const a = Math.atan2(side, fwd), rx = cw / 2 - 80, ry = ch / 2 - 80;
+    let x = Math.sin(a), y = -Math.cos(a); const k = Math.min(rx / Math.max(1e-3, Math.abs(x)), ry / Math.max(1e-3, Math.abs(y)));
+    x = cw / 2 + x * k; y = clamp(ch / 2 + y * k, top + 40, ch - 140);
+    el.classList.add('edge'); el.style.setProperty('--ga', (a * 180 / PI).toFixed(0) + 'deg');
+    el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%)`;
+  }
 })(typeof window !== 'undefined' ? window : globalThis);
