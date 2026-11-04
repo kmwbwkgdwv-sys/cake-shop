@@ -469,3 +469,99 @@ body.light *, body.light *::before, body.light *::after { animation-duration: 0s
 
 .dfc { display: flex; flex-wrap: wrap; gap: 4px; justify-self: start; }
 .dfc .chip { font-size: 11px; padding: 1px 8px; }
+
+/* =====================================================================
+   一人称視点の HUD（横画面）
+   ===================================================================== */
+.world canvas { cursor: crosshair; }
+.world canvas:active { cursor: crosshair; }
+.xhair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(255, 255, 255, .85); box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .55); z-index: 3; pointer-events: none; transition: transform .12s, background .12s; }
+.xhair.on { transform: scale(1.9); background: #fff; box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .6), 0 0 0 5px rgba(255, 255, 255, .18); }
+.xhair.aim { width: 14px; height: 14px; margin: -7px 0 0 -7px; background: transparent; border: 2px solid #F19C8C; transform: none; }
+.xhair.aim.ok { border-color: #9BE08A; }
+.aim-lb { width: 18px; height: 18px; border-radius: 50%; border: 2px dashed rgba(255, 255, 255, .7); background: rgba(200, 16, 46, .25); }
+.aim-lb.ok { border-color: #9BE08A; }
+.prompt { position: absolute; z-index: 5; left: 50%; top: calc(50% + 26px); transform: translateX(-50%); display: grid; justify-items: center; gap: 4px; pointer-events: none; text-align: center; max-width: min(520px, 70%); }
+.prompt > b { font-size: 14px; font-weight: 700; color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, .9), 0 0 10px rgba(0, 0, 0, .5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.prompt .pr { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.prompt .pa { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border-radius: 8px; background: rgba(20, 16, 13, .78); border: 1px solid rgba(255, 255, 255, .18); color: var(--fg); font-size: 13px; font-weight: 700; }
+.prompt .pa.dim { color: var(--muted); }
+.touch .prompt .pa { padding: 2px 10px; }
+kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 5px; background: #F2EBE1; color: #1B1714; font: 700 12px/1 var(--body); box-shadow: 0 2px 0 #9E9184; }
+.held { position: absolute; z-index: 5; left: 50%; bottom: calc(10px + var(--safe-b)); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 4px 14px 4px 10px; border-radius: 999px; background: rgba(20, 16, 13, .78); border: 1px solid rgba(201, 163, 94, .45); font-size: 13px; font-weight: 700; white-space: nowrap; pointer-events: none; max-width: 60%; }
+.held .ic { width: 18px; height: 18px; color: var(--gold-2); }
+.lockhint { position: absolute; z-index: 5; left: 50%; bottom: calc(52px + var(--safe-b)); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-radius: 999px; background: rgba(20, 16, 13, .82); border: 1px solid var(--line-2); color: var(--fg); font: 700 13px var(--body); cursor: pointer; white-space: nowrap; }
+.lockhint .ic { width: 18px; height: 18px; color: var(--gold-2); }
+/* 注文票 */
+.orders { position: absolute; z-index: 5; left: var(--safe-l); top: calc(58px + var(--safe-t)); display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; pointer-events: none; max-width: 52vw; }
+.ord { width: 158px; }
+.ord.q { width: auto; }
+.ord { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: start; padding: 6px 10px; border-radius: 8px; background: #FBF7EF; color: #2A221D; font-size: 12px; font-weight: 700; line-height: 1.3; box-shadow: var(--shadow-s); border-top: 4px solid var(--gold); animation: fadeIn .25s; }
+.ord b { font-family: var(--display); font-size: 15px; color: var(--accent-2); }
+.ord i { font-style: normal; color: #6A5D52; font-variant-numeric: tabular-nums; }
+.ord.late { border-top-color: var(--bad); }
+.ord.late i { color: var(--bad); }
+.ord.q { display: flex; background: rgba(20, 16, 13, .78); color: var(--fg); border-top: 0; border: 1px solid var(--line-2); }
+.ord.q .ic { width: 16px; height: 16px; color: var(--gold-2); }
+/* チュートリアル */
+.tut { position: absolute; z-index: 6; right: var(--safe-r); top: calc(58px + var(--safe-t)); width: min(300px, 38vw); display: grid; gap: 4px; padding: 10px 12px; font-size: 13px; border-color: rgba(201, 163, 94, .55); }
+.tut > b { font-size: 15px; color: var(--gold-2); }
+.tut .bar { display: block; height: 4px; border-radius: 4px; background: rgba(255, 255, 255, .1); overflow: hidden; margin-top: 4px; }
+.tut .bar u { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--accent)); transition: width .4s; }
+.icon-btn.sm { width: 28px; height: 28px; border-radius: 8px; }
+.icon-btn.sm .ic { width: 16px; height: 16px; }
+/* 吹き出し */
+.say-lb.ask { background: #FFF3C9; }
+.say-lb.ord { background: #FBF7EF; display: grid; justify-items: center; line-height: 1.3; border: 1.5px solid var(--gold); }
+.say-lb.ord b { color: var(--accent-2); }
+.say-lb small { font-size: 10px; color: #6A5D52; }
+.say-lb small.bad { color: var(--bad); }
+.say-lb.buy { background: #E7F4E1; }
+.st-lb small.ok { color: #B9E3AC; }
+.st-lb small.bad { color: #F5ABAB; }
+.tag-lb small.bad { color: #F5ABAB; }
+.nm-lb.staff { background: rgba(47, 74, 63, .85); }
+.nm-lb small { font-weight: 500; opacity: .85; }
+/* 操作ボタン（つかむ／使う／捨てる） */
+.act-btn.sub { width: calc(70px * var(--btn)); height: calc(70px * var(--btn)); font-size: calc(10.5px * var(--btn)); }
+.act-btn.sub .ic { width: calc(20px * var(--btn)); height: calc(20px * var(--btn)); }
+.act-btn.del { width: calc(58px * var(--btn)); height: calc(58px * var(--btn)); }
+.act-btn.on { animation: none; }
+.act-btn.sub.on { background: radial-gradient(circle at 40% 30%, #6EA6C9, #3F6F93); }
+.act-btn.del.on { background: radial-gradient(circle at 40% 30%, #8C7F74, #4E4540); animation: none; }
+.act-btn.off { opacity: .55; }
+.fabs .act-btn .ab-t { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; font-size: inherit; padding: 0 2px; word-break: keep-all; overflow-wrap: anywhere; }
+.hud-end { white-space: nowrap; }
+.hud-end .ic { width: 16px; height: 16px; }
+/* 縦向きのスマホ → 横にしてね */
+.rotate { display: none; }
+@media (orientation: portrait) and (pointer: coarse) {
+  .rotate { position: absolute; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(10, 8, 7, .92); padding: 24px; }
+  .rotate .panel { display: grid; justify-items: center; gap: 8px; padding: 22px 26px; text-align: center; }
+  .rotate .ic { width: 54px; height: 54px; color: var(--gold-2); animation: rot 2s ease-in-out infinite; }
+  @keyframes rot { 0%, 30% { transform: rotate(-90deg); } 60%, 100% { transform: rotate(0); } }
+}
+/* 横画面（高さが低い）用に HUD を詰める */
+@media (max-height: 520px) {
+  .hud { padding-top: calc(4px + var(--safe-t)); padding-bottom: 4px; gap: 8px; flex-wrap: nowrap; }
+  .hud-day b { font-size: 14px; } .hud-day span { font-size: 10px; }
+  .hud-clock b { font-size: 16px; } .hud-money { font-size: 15px; padding: 2px 10px; }
+  .hud-rep b { font-size: 14px; } .hud-party .pa { width: 28px; height: 28px; }
+  .hud .icon-btn { width: 34px; height: 34px; }
+  .orders, .tut { top: calc(44px + var(--safe-t)); }
+  .ord { font-size: 11px; padding: 4px 8px; width: 140px; }
+  .tut { font-size: 12px; padding: 8px 10px; width: min(250px, 32vw); gap: 2px; }
+  .tut > b { font-size: 13px; } .tut .small { font-size: 11px; line-height: 1.4; }
+  .chat-float { top: auto; bottom: calc(46px + var(--safe-b)); }
+  #sheet .sh { max-height: 100%; }
+  .prompt { top: calc(50% + 18px); }
+}
+/* レシピ帳 */
+.howto { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; font-size: 13px; }
+.rcp .thumb { width: 64px; height: 64px; flex: none; }
+.rcp .kv dd { text-align: right; }
+#scr-game:not(.touch) .fabs .act-btn { display: none; }
+.bin-lb { background: rgba(250, 246, 240, .92); color: #2A221D; border-radius: 5px; padding: 0 5px; font-size: 10px; font-weight: 700; line-height: 1.5; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
+.bin-lb.out { background: rgba(224, 106, 106, .92); color: #fff; }
+.bin-lb.tg { background: var(--gold-2); }
+#scr-game:not(.touch) .lockhint { bottom: calc(100px + var(--safe-b)); }

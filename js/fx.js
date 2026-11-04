@@ -4,18 +4,34 @@
   const CS = (G.CS = G.CS || {});
 
   // ---------- 設定（端末ごとに保存。スマホとPCで別々にできる） ----------
-  const DEF = { light: false, sens: 1, camSens: 1, invertY: false, btnScale: 1, hand: 'right', fab: null, sound: true, vol: 0.6, tips: true };
+  const DEF = { light: false, camSens: 1, invertY: false, fov: 72, bob: true, btnScale: 1, hand: 'right', fab: null, sound: true, vol: 0.6, tips: true };
   const settings = Object.assign({}, DEF, (CS.LS && CS.LS.get('cs.settings', {})) || {});
   settings.save = function () { const o = {}; for (const k in DEF) o[k] = settings[k]; CS.LS.set('cs.settings', o); CS.applySettings && CS.applySettings(); };
   settings.reset = function (keys) { (keys || Object.keys(DEF)).forEach((k) => (settings[k] = DEF[k])); settings.save(); };
   CS.settings = settings;
 
   // ---------- 効果音（WebAudio で合成。音声ファイル不要） ----------
-  let ac = null;
+  // ほかのアプリ（音楽・動画）の音を止めない：
+  //  ・iOS/iPadOS Safari 16.4+ は Audio Session を「ambient」にすると、BGM と効果音が混ざって両方鳴る
+  //  ・<audio> 要素やメディアセッションは使わない（使うと他アプリの再生が止まる）。Web Audio だけで鳴らす
+  //  ・電話や Siri などで止められた（interrupted）ときは、次に触ったとき・画面に戻ったときに再開
+  let ac = null, master = null;
+  function ambient() { try { const as = navigator.audioSession; if (as && as.type !== 'ambient') as.type = 'ambient'; } catch (e) { /* 未対応 */ } }
+  ambient();
+  function resume() { if (ac && ac.state !== 'running' && !document.hidden) { ambient(); const r = ac.resume(); if (r && r.catch) r.catch(() => {}); } }
   function ctx() {
-    if (!ac) { const A = G.AudioContext || G.webkitAudioContext; if (!A) return null; ac = new A(); }
-    if (ac.state === 'suspended') ac.resume();
+    if (!ac) {
+      const A = G.AudioContext || G.webkitAudioContext; if (!A) return null;
+      ambient();
+      try { ac = new A({ latencyHint: 'interactive' }); } catch (e) { ac = new A(); }
+      master = ac.createDynamicsCompressor(); master.threshold.value = -12; master.ratio.value = 6; master.connect(ac.destination);
+    }
+    resume();
     return ac;
+  }
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', resume);
+    ['pointerdown', 'keydown', 'touchend'].forEach((ev) => document.addEventListener(ev, resume, { passive: true, capture: true }));
   }
   function tone(freq, dur, type, vol, delay, slide) {
     const a = ctx(); if (!a) return;
@@ -25,7 +41,7 @@
     if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + dur);
     const v = (vol || 0.25) * settings.vol;
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(v, 0.0002), t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + dur + 0.02);
+    o.connect(g); g.connect(master || a.destination); o.start(t); o.stop(t + dur + 0.02);
   }
   const SFX = {
     tap: () => tone(660, 0.07, 'triangle', 0.18),
@@ -37,6 +53,8 @@
     whisk: () => tone(1800 + Math.random() * 600, 0.04, 'triangle', 0.06),
     fanfare: () => { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.22, 'triangle', 0.2, i * 0.11)); tone(1319, 0.5, 'triangle', 0.18, 0.46); },
     open: () => { tone(880, 0.12, 'sine', 0.2); tone(1175, 0.3, 'sine', 0.2, 0.12); },
+    chime: () => { tone(1319, 0.5, 'sine', 0.14); tone(1047, 0.7, 'sine', 0.12, 0.18); },
+    put: () => tone(220, 0.06, 'triangle', 0.16, 0, 160),
   };
   CS.sound = { play(k) { if (!settings.sound) return; try { (SFX[k] || SFX.tap)(); } catch (e) { /* 音が鳴らせない環境 */ } }, unlock() { ctx(); } };
 

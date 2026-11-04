@@ -501,10 +501,10 @@
       const now = Date.now();
       if (now - this.posT < (this.light ? 300 : 150)) return;
       const l = this.lastPos;
-      const moved = !l || Math.abs(l.x - p.x) > 0.03 || Math.abs(l.z - p.z) > 0.03 || Math.abs(l.r - p.r) > 0.08 || l.a !== p.a;
+      const moved = !l || Math.abs(l.x - p.x) > 0.03 || Math.abs(l.z - p.z) > 0.03 || Math.abs(l.r - p.r) > 0.08 || Math.abs((l.p || 0) - (p.p || 0)) > 0.1 || l.a !== p.a;
       if (!moved && now - this.posT < 4000) return;
       this.posT = now; this.lastPos = p;
-      this.ref.child('pos/' + this.pid).set({ x: p.x, z: p.z, r: p.r, a: p.a, t: net.TS() }).catch(() => {});
+      this.ref.child('pos/' + this.pid).set({ x: p.x, z: p.z, r: p.r, p: p.p || 0, a: p.a, t: net.TS() }).catch(() => {});
     }
     setStation(st) {
       if (this.local || !this.ref) { if (this.members[this.pid]) this.members[this.pid].st = st || ''; this.emit('members', this.members); return; }

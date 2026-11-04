@@ -1,0 +1,17 @@
+<meta charset="utf-8"><style>html,body{margin:0;height:100%;background:#FFE4EC}canvas{width:100%;height:100%;display:block}</style>
+<canvas id="c"></canvas>
+<script src="../js/data.js"></script><script src="../js/sim.js"></script><script src="../js/art.js"></script><script src="../js/gl.js"></script><script src="../js/models.js"></script>
+<script>
+const {Engine,Node,Geo,Builder,M,rgb}=CS.gl, MD=CS.models, D=CS.data;
+const e=new Engine(document.getElementById('c')); const scene=new Node();
+const fl=new Node(e.mesh(Geo.plane(14,8,4,2)),{tex:e.texFromCanvas(MD.TX.floor(),true),outline:false}); scene.add(fl);
+const A=D.AVATAR, hairs=Object.keys(A.hair), hats=Object.keys(A.hat), eyes=Object.keys(A.eyes), mouths=Object.keys(A.mouth), cl=Object.keys(A.clothes), acc=Object.keys(A.acc), pat=Object.keys(A.pattern), ap=Object.keys(A.apron);
+const chars=[];
+for(let i=0;i<8;i++){const sk={hair:hairs[i],hat:hats[i%7],eyes:eyes[i%6],mouth:mouths[i%5],clothes:cl[i%4],acc:acc[i%6],pattern:pat[i%4],apron:ap[(i%2)+1],hairColor:A.hairColors[i],clothesColor:A.clothColors[(i+1)%8],brows:['normal','thick','worried','none'][i%4],skin:A.skinColors[i%6]};
+ const c=MD.character(e,sk); c.node.p=[-4.2+i*1.2,0,1.2]; c.node.r[1]=0.25; scene.add(c.node); chars.push(c);}
+const def=MD.character(e,D.DEFAULT_SKIN); def.node.p=[-1.5,0,-0.6]; def.node.s=[1,1,1]; scene.add(def.node); def.anim(0.4,'walk');
+let x=-4; for(const id of ['short','chocolate','baked_cheese','montblanc','fruit_tart','matcha_short','lemon_chiffon']){const n=MD.cake(e,D.RECIPES[id],[6,5,4,6,3,6,2][Math.round(x+4)]); n.p=[x+0.0,0.0,-1.5]; n.s=[2,2,2]; scene.add(n); x+=0.9;}
+e.cam.pos=[0,2.6,5.6]; e.cam.target=[0,0.55,0]; e.shadowCenter=[0,0,0]; e.shadowRadius=7;
+chars.forEach((c,i)=>c.anim(0.3*i,['idle','walk','work','cheer'][i%4]));
+e.render(scene); document.title='done '+e.stats.draws;
+</script>

@@ -1,0 +1,14 @@
+<meta charset="utf-8"><body style="background:#FFF0F5;font:12px sans-serif">
+<div id="a" style="display:flex;flex-wrap:wrap;gap:6px"></div><div id="c" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+<script src="../js/data.js"></script><script src="../js/sim.js"></script><script src="../js/art.js"></script>
+<script>
+const A=CS.art,D=CS.data;const box=(h,w)=>`<div style="width:${w}px;height:${w*1.25}px">${h}</div>`;
+let h=box(A.avatar(D.DEFAULT_SKIN),110);
+const hairs=Object.keys(D.AVATAR.hair), hats=Object.keys(D.AVATAR.hat), eyes=Object.keys(D.AVATAR.eyes), mouths=Object.keys(D.AVATAR.mouth), cl=Object.keys(D.AVATAR.clothes), acc=Object.keys(D.AVATAR.acc), pat=Object.keys(D.AVATAR.pattern), ap=Object.keys(D.AVATAR.apron);
+for(let i=0;i<12;i++){h+=box(A.avatar({hair:hairs[i%8],hat:hats[i%7],eyes:eyes[i%6],mouth:mouths[i%5],clothes:cl[i%4],acc:acc[i%6],pattern:pat[i%4],apron:ap[i%3],hairColor:D.AVATAR.hairColors[i%11],clothesColor:D.AVATAR.clothColors[(i+1)%8],brows:['normal','thick','worried','none'][i%4]}),110);}
+h+=box(A.avatar(A.customerSkin('gourmet',1)),80)+box(A.avatar(A.customerSkin('student',2),{head:true}),80);
+document.getElementById('a').innerHTML=h;
+let c='';for(const id in D.RECIPES){c+=`<div style="width:120px">${A.cakeSide(D.RECIPES[id])}${A.cakeTop(D.RECIPES[id],{pieces:id.length%7})}<div>${D.RECIPES[id].name}</div></div>`}
+c+=['mix','oven','rack','whip','deco','fridge'].map(k=>`<div style="width:80px">${A.station(k)}</div>`).join('');
+document.getElementById('c').innerHTML=c;
+</script>

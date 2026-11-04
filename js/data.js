@@ -100,15 +100,15 @@
   // ---- 店舗拡張 ----
   // req = その段階を導入できる「店舗レベル」
   const UPGRADES = [
-    { id: 'floor', name: '店舗の増床', desc: 'お店と厨房がひと回り広くなる。来店数 +8%・イートイン席が増える（家賃 +¥1,500/日）', icon: 'home', levels: [90000, 200000, 380000], req: [3, 5, 7] },
-    { id: 'showcase', name: 'ショーケース増設', desc: '並べられるケーキの台数が増える', icon: 'case', levels: [18000, 42000, 80000, 140000], req: [1, 2, 4, 6], vals: [3, 4, 5, 6, 8] },
-    { id: 'oven', name: 'オーブン追加', desc: '同時に焼ける数が増える', icon: 'oven', levels: [30000, 70000, 130000], req: [1, 3, 5], vals: [2, 3, 4, 5] },
+    { id: 'floor', name: '店舗の増床', desc: 'お店と厨房がひと回り広くなる。ミキサー・デコ台などの台数が増え、来店数 +8%・席も増える（家賃 +¥1,500/日）', icon: 'home', levels: [90000, 200000, 380000], req: [3, 5, 7] },
+    { id: 'showcase', name: 'ショーケース増設', desc: '並べられるケーキの台数が増える', icon: 'case', levels: [18000, 42000, 80000, 140000], req: [1, 2, 4, 6], vals: [4, 5, 6, 7, 8] },
+    { id: 'oven', name: 'オーブン追加', desc: '同時に焼ける数が増える', icon: 'oven', levels: [30000, 70000, 130000], req: [1, 3, 5], vals: [3, 4, 5, 6] },
     { id: 'coldcase', name: '冷蔵ショーケース', desc: '売れ残りを翌日も販売できる（品質 -20%）', icon: 'case', levels: [45000], req: [3] },
     { id: 'sign', name: '看板', desc: '来店数 +10%', icon: 'sign', levels: [12000], req: [1] },
     { id: 'interior', name: '内装リフォーム', desc: '来店数 +12% / お客さんの払える額 +3%（段階ごと）', icon: 'home', levels: [40000, 90000, 180000], req: [1, 3, 5] },
     { id: 'lab', name: 'レシピ研究室', desc: '試作コスト半額、相性の予想が見える', icon: 'lab', levels: [30000], req: [2] },
   ];
-  // ---- 設備（仕入れ棚で買い替え。店舗レベルで上位機種が解放） ----
+  // ---- 設備（パソコンで買い替え。店舗レベルで上位機種が解放） ----
   const EQUIP = {
     oven: { name: 'オーブン', icon: 'oven', tiers: [
       { name: '家庭用オーブン', desc: '最初の1台。小さくて焼きムラが出やすい', price: 0, lv: 1, speed: 1, win: 1, heat: 1 },
@@ -138,7 +138,7 @@
       { name: 'ウォークイン冷蔵庫', desc: '材料の日持ち ×2', price: 140000, lv: 6, life: 2 },
     ] },
   };
-  // ---- 家具（仕入れ棚で購入。テーブルは増床すると多く置ける） ----
+  // ---- 家具（パソコンで購入。テーブルは増床すると多く置ける） ----
   const FURN = {
     table: { name: 'テーブルセット（2席）', desc: 'お客さんが座って食べていく。座ったお客さんは満足度アップ', icon: 'cup', price: 6000, lv: 2, max: [3, 5, 7, 9] },
     coffee: { name: 'コーヒーマシン', desc: '席に座ったお客さんがドリンクも注文（+¥350）', icon: 'cup', price: 28000, lv: 3, max: [1, 1, 1, 1] },
@@ -165,12 +165,14 @@
     speed: [0.3, 0.38, 0.48, 0.6, 0.74, 0.9, 1.08, 1.3, 1.6, 2.0],
     xp: [0, 5, 12, 22, 35, 52, 74, 100, 132, 170],
     wage: (lv) => 1200 + 450 * (lv - 1),
-    jobSec: { mix: 20, whip: 14, deco: 24, in: 5, out: 4, stock: 8 },
+    jobSec: { mix: 20, whip: 14, deco: 24, in: 5, out: 4, stock: 8, order: 5, serve: 4 },
   };
   // 店舗レベル（売った数・お客さんの満足・評判で経験値がたまる）
   const SHOP_XP = [0, 150, 400, 800, 1400, 2200, 3300, 4800, 6800, 9500];
   // 増床レベルごとの店の大きさ（半幅 rx・半奥行き rz・厨房の奥行き kd、単位 m）
-  const SHOP_SIZES = [{ rx: 8.0, rz: 6.0, kd: 5.7 }, { rx: 9.2, rz: 6.8, kd: 6.1 }, { rx: 10.4, rz: 7.6, kd: 6.5 }, { rx: 11.6, rz: 8.4, kd: 6.9 }];
+  const SHOP_SIZES = [{ rx: 10.5, rz: 8.5, kd: 8.6 }, { rx: 11.5, rz: 9.2, kd: 9.0 }, { rx: 12.5, rz: 9.9, kd: 9.4 }, { rx: 13.5, rz: 10.6, kd: 9.8 }];
+  // 厨房の設備の数（増床レベルごと）と置き場の数
+  const KITCHEN = { mix: [2, 3, 3, 4], whip: [2, 2, 3, 3], deco: [2, 3, 3, 4], reg: [2, 2, 3, 3], rack: 12, deliv: 8, spots: 12, pack: 4 };
 
   // ---- 広告 ----
   const ADS = {
@@ -238,9 +240,13 @@
   const PREHEAT_MS = 9000;
 
   const RULES = {
-    PREP_MS: 90000,      // 開店準備 (07:30-10:00)
-    OPEN_MS: 240000,     // 営業 (10:00-20:00)
+    PREP_MS: 90000,      // （旧）開店準備
+    OPEN_MS: 480000,     // OPEN のあいだに進む 1 日の長さ (10:00-20:00)。CLOSE 中は止まる
     COOL_MS: 15000,      // スポンジを冷ます時間
+    WALK_MS: 7000,       // 入口からレジまで歩く時間
+    QUEUE_MS: 50000,     // 注文を受けてもらえるまで待てる時間
+    WAIT_MS: 45000,      // 注文してから受け取りまで待てる時間（＋1個ごとに9秒）
+    SIT_MS: 20000,       // イートインで座っている時間
     PIECES: 6,           // 1ホール = 6ピース
     START_FUNDS: 30000,
     RENT: 2500,
@@ -278,5 +284,5 @@
     apron: 'waist', apronColor: '#2B2523', pattern: 'plain', acc: 'none', accColor: '#B8862E',
   };
 
-  CS.data = { EQUIP, FURN, STAFF, SHOP_XP, SHOP_SIZES, DEFECTS, OVEN_TEMPS, PREHEAT_MS, ING, BASES, CREAMS, CREAM_YIELD, TOPS, RECIPES, PAIR, UPGRADES, ADS, CUSTOMERS, SAY, WEATHER, DOW, DOW_MULT, HOUR_CURVE, DIFF, RULES, AVATAR, DEFAULT_SKIN };
+  CS.data = { KITCHEN, EQUIP, FURN, STAFF, SHOP_XP, SHOP_SIZES, DEFECTS, OVEN_TEMPS, PREHEAT_MS, ING, BASES, CREAMS, CREAM_YIELD, TOPS, RECIPES, PAIR, UPGRADES, ADS, CUSTOMERS, SAY, WEATHER, DOW, DOW_MULT, HOUR_CURVE, DIFF, RULES, AVATAR, DEFAULT_SKIN };
 })(typeof window !== 'undefined' ? window : globalThis);

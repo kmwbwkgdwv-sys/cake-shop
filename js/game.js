@@ -23,6 +23,7 @@
   //  入店・退店
   // =====================================================================
   game.enter = async function (code) {
+    CS.landscape && CS.landscape();
     UI.loading(true, 'お店に向かっています…');
     try {
       if (game.room) await game.leave(false, true);
@@ -43,7 +44,7 @@
       game.onState();
       cancelAnimationFrame(game.raf);
       game.raf = requestAnimationFrame(game.frame);
-      if (ST.tips && !CS.LS.get('cs.tut', false)) { CS.LS.set('cs.tut', true); setTimeout(game.tutorial, 500); }
+      if (!CS.LS.get('cs.tut2', null)) setTimeout(() => game.tutorial(true), 600);
     } catch (e) {
       console.error(e);
       UI.toast('お店に入れませんでした：' + (e.message || e), 'err');
@@ -63,14 +64,16 @@
   };
 
   // =====================================================================
-  //  画面の骨組み（3D）
+  //  画面の骨組み（一人称の 3D）
   // =====================================================================
   const touch = () => (G.matchMedia ? matchMedia('(pointer: coarse)').matches : false);
   game.build = function () {
+    const T = touch();
     $('#scr-game').innerHTML = `
       <header class="hud">
         <div class="hud-day"><b id="h-day">1日目</b><span id="h-sub">月・晴れ</span></div>
-        <div class="hud-clock"><span class="phase" id="h-phase">準備</span><b id="h-clock" class="num">7:30</b><i class="bar"><u id="h-bar"></u></i></div>
+        <div class="hud-clock"><span class="phase" id="h-phase">CLOSE</span><b id="h-clock" class="num">10:00</b><i class="bar"><u id="h-bar"></u></i></div>
+        <button class="btn sm ghost hud-end" id="h-end" hidden>${ic('door')} 今日は閉店</button>
         <div class="hud-money num" id="h-money">¥0</div>
         <div class="hud-rep" title="お店の評判"><b id="h-rep">★2.8</b><small>評判</small></div>
         <button class="hud-lv" id="h-lv" title="店舗レベル"><b id="h-lvn">Lv1</b><i class="bar"><u id="h-lvb"></u></i></button>
@@ -79,63 +82,90 @@
       </header>
       <div class="floor" id="floor">
         <div class="world" id="world"></div>
-        <div class="phase-band" id="pband" hidden></div>
+        <div class="orders" id="orders" aria-label="注文"></div>
+        <div class="tut panel" id="tut" hidden></div>
         <div class="chat-float" id="chatFloat" aria-live="polite"></div>
-        <div class="keyhint" id="keyhint" ${touch() ? 'hidden' : ''}>WASD：移動　ドラッグ：視点　ホイール：ズーム　E / Space：操作</div>
+        <div class="prompt" id="prompt" aria-live="polite"></div>
+        <div class="held" id="held" hidden></div>
+        <button class="lockhint" id="lockhint" ${T ? 'hidden' : ''}>${ic('hand')} クリックで操作開始（マウス＝視点／WASD＝移動／Esc＝カーソル）</button>
         <div class="fabs" id="fabs">
-          <div class="mv joy" data-id="joy" id="joy" ${touch() ? '' : 'hidden'}><i></i></div>
-          <button class="mv act-btn" data-id="act" id="actBtn" aria-label="操作"><span class="ab-ic">${ic('hand')}</span><span class="ab-t" id="actText">操作</span></button>
-          <button class="mv fab c2" data-id="menu">${ic('book')}メニュー</button>
-          <button class="mv fab c3" data-id="biz">${ic('chart')}経営</button>
-          <button class="mv fab c4" data-id="chat">${ic('chat')}スタンプ</button>
+          <div class="mv joy" data-id="joy" id="joy" ${T ? '' : 'hidden'}><i></i></div>
+          <button class="mv act-btn" data-id="act" id="b-act" aria-label="つかむ・置く"><span class="ab-ic">${ic('hand')}</span><span class="ab-t">つかむ</span></button>
+          <button class="mv act-btn sub" data-id="sec" id="b-sec" aria-label="使う"><span class="ab-ic">${ic('bolt')}</span><span class="ab-t">使う</span></button>
+          <button class="mv act-btn sub del" data-id="del" id="b-del" aria-label="捨てる"><span class="ab-ic">${ic('trash')}</span><span class="ab-t">捨てる</span></button>
+          <button class="mv fab" data-id="book">${ic('book')}レシピ</button>
+          <button class="mv fab" data-id="chat">${ic('chat')}スタンプ</button>
         </div>
         <div class="overlay" id="gov" hidden></div>
+        <div class="rotate" id="rotate"><div class="panel">${ic('phone')}<b>スマホを横向きにしてね</b><small class="muted">このゲームは横画面で遊びます</small></div></div>
       </div>`;
+    $('#scr-game').classList.toggle('touch', T);
     $('#h-menu').onclick = () => UI.openSettings(true);
     $('#h-money').onclick = () => game.openBiz('today');
     $('#h-lv').onclick = () => game.openBiz('level');
+    $('#h-end').onclick = async () => { if (await UI.confirm('今日の営業を終える', 'ショーケースの残りや作りかけは閉店時に片づけ（廃棄）になります。日報に進みますか？', '閉店する', true)) act({ t: 'endDay' }); };
     $$('#fabs .fab').forEach((b) => (b.onclick = () => {
       if (game.editingFabs) return;
       CS.sound.play('tap');
-      ({ menu: () => game.openMenu('sell'), biz: () => game.openBiz('today'), chat: game.openChat })[b.dataset.id]();
+      ({ book: () => game.openRecipeBook(), chat: game.openChat })[b.dataset.id]();
     }));
-    const ab = $('#actBtn');
-    ab.addEventListener('pointerdown', (e) => { e.preventDefault(); if (game.editingFabs) return; ab.classList.add('pressed'); CS.world.doAction(); });
-    ab.addEventListener('pointerup', () => ab.classList.remove('pressed'));
-    ab.addEventListener('pointerleave', () => ab.classList.remove('pressed'));
     const W = CS.world;
+    const press = (id, fn) => { const b = $(id); b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); if (game.editingFabs) return; b.classList.add('pressed'); fn(); }); const up = () => b.classList.remove('pressed'); b.addEventListener('pointerup', up); b.addEventListener('pointerleave', up); b.addEventListener('pointercancel', up); };
     if (!W.init($('#world'))) UI.toast('3D 表示が使えない端末です', 'err');
     W.bindJoystick($('#joy'));
-    W.onAction = (st) => game.stationAction(st);
-    W.onNear = (st) => {
-      const t = st ? st.verb : '近づいて操作';
-      if (game._near !== t) { game._near = t; $('#actText').textContent = t; ab.classList.toggle('on', !!st); }
-    };
+    press('#b-act', () => W.primary()); press('#b-sec', () => W.secondary()); press('#b-del', () => W.discard());
+    W.onTarget = (t, held) => game.renderPrompt(t, held);
+    W.onUI = (k) => { if (k === 'pc') game.openPC(); else if (k === 'menu') game.openMenu('sell'); };
+    $('#lockhint').onclick = () => { const c = $('#world canvas'); if (c && c.requestPointerLock) { try { const r = c.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* noop */ } } };
+    if (!game._plBound) {
+      game._plBound = true;
+      document.addEventListener('pointerlockchange', () => { const h = $('#lockhint'); if (h && !touch()) h.hidden = !!document.pointerLockElement; });
+      document.addEventListener('keydown', (e) => {
+        if (!game.room || UI.scr !== 'game' || /INPUT|TEXTAREA|SELECT/.test((e.target && e.target.tagName) || '')) return;
+        if (UI.sheet || !$('#modal').hidden) return;
+        if (e.code === 'KeyR') game.openRecipeBook();
+        else if (e.code === 'KeyT') game.openChat();
+        else if (e.code === 'Tab') { e.preventDefault(); game.openPC(); }
+      });
+    }
+    game._prompt = ''; game._ordKey = '';
     UI.layoutFabs();
   };
-  game.stationAction = function (st) {
+  // 照準の先にあるものと、できる操作
+  const keyCap = (k) => `<kbd>${k}</kbd>`;
+  game.renderPrompt = function (t, held) {
     const s = S(); if (!s) return;
-    if (st.oven !== undefined) { const o = s.ovens[st.oven]; if (o && o.s) act({ t: 'ovenOut', slot: st.oven }); else game.openOven(st.oven); return; }
-    switch (st.id) {
-      case 'mix': case 'whip': case 'deco': case 'rack': return game.openStation(st.id);
-      case 'market': return game.openMarket();
-      case 'biz': return game.openBiz('today');
-      case 'menu': return game.openMenu('sell');
-      case 'case': return game.openCase();
-      case 'sign':
-        if (s.phase === 'prep') { CS.sound.play('open'); act({ t: 'open' }); }
-        else UI.toast(s.phase === 'open' ? '営業中です（閉店は20:00）' : '開店準備のときに開店できます');
-        return;
-      default: return undefined;
-    }
+    const T = touch();
+    const pri = t && t.pri, sec = t && t.sec, del = t && t.del;
+    const hName = held ? CS.world.itemName(held, s) : '';
+    const delLabel = del ? del.label : held ? (held.t === 'crate' ? '' : '捨てる') : '';
+    const key = JSON.stringify([t && t.name, pri && pri.label, sec && sec.label, delLabel, hName, t && t.aimOK, T]);
+    if (game._prompt === key) return;
+    game._prompt = key;
+    const el = $('#prompt'); if (!el) return;
+    if (t) {
+      const rows = [];
+      if (pri) rows.push(`<span class="pa">${T ? '' : keyCap('E')}${esc(pri.label)}</span>`);
+      if (sec) rows.push(`<span class="pa">${T ? '' : keyCap('F')}${esc(sec.label)}</span>`);
+      if (delLabel && !T) rows.push(`<span class="pa dim">${keyCap('Q')}${esc(delLabel)}</span>`);
+      el.innerHTML = `<b>${esc(t.name || '')}</b>${rows.length ? `<span class="pr">${rows.join('')}</span>` : ''}`;
+      el.hidden = false;
+    } else el.hidden = true;
+    const hd = $('#held');
+    if (held) { hd.hidden = false; hd.innerHTML = `${ic('hand')}<span>${esc(hName)}</span>${held.df && held.df.length ? `<span class="chip bad">${esc(held.df.map((d) => (D.DEFECTS[d] || {}).name || d).join('・'))}</span>` : ''}`; } else hd.hidden = true;
+    const setB = (id, a, fallback) => { const b = $(id); if (!b) return; const lab = a ? a.label || a : fallback; b.querySelector('.ab-t').textContent = lab || fallback || ''; b.classList.toggle('on', !!a); b.classList.toggle('off', !a); };
+    setB('#b-act', pri, held ? '置く' : 'つかむ');
+    setB('#b-sec', sec, '使う');
+    setB('#b-del', delLabel ? { label: delLabel } : null, '捨てる');
+    const xh = $('#xhair'); if (xh) xh.className = 'xhair' + (pri || sec ? ' on' : '') + (t && t.pri && t.pri.aim ? (t.aimOK ? ' aim ok' : ' aim') : '');
   };
 
   // =====================================================================
   //  ボタン配置（大きさ・位置の変更） ※スティックと操作ボタンも動かせる
   // =====================================================================
   const DEF_POS = {
-    right: { joy: { x: 15, y: 76 }, act: { x: 86, y: 78 }, menu: { x: 93, y: 22 }, biz: { x: 93, y: 38 }, chat: { x: 93, y: 54 } },
-    left: { joy: { x: 85, y: 76 }, act: { x: 14, y: 78 }, menu: { x: 7, y: 22 }, biz: { x: 7, y: 38 }, chat: { x: 7, y: 54 } },
+    right: { joy: { x: 13, y: 72 }, act: { x: 89, y: 74 }, sec: { x: 76, y: 85 }, del: { x: 78, y: 62 }, book: { x: 27, y: 90 }, chat: { x: 35, y: 90 } },
+    left: { joy: { x: 87, y: 72 }, act: { x: 11, y: 74 }, sec: { x: 24, y: 85 }, del: { x: 22, y: 62 }, book: { x: 73, y: 90 }, chat: { x: 65, y: 90 } },
   };
   UI.layoutFabs = function () {
     const f = $('#fabs'); if (!f) return;
@@ -148,6 +178,7 @@
   };
   UI.editFabs = function () {
     const f = $('#fabs'), floor = $('#floor'); if (!f || !floor) return;
+    if (document.pointerLockElement) document.exitPointerLock();
     const def = DEF_POS[ST.hand === 'left' ? 'left' : 'right'];
     ST.fab = Object.assign({}, def, ST.fab || {});
     const joy = $('#joy'); const joyWas = joy.hidden; joy.hidden = false;
@@ -158,11 +189,11 @@
     bar.innerHTML = `<span class="small">ボタンをドラッグして移動</span><button class="btn sm ghost" id="eb-reset">元に戻す</button><button class="btn sm mint" id="eb-done">${ic('check')} 完了</button>`;
     floor.appendChild(bar);
     let drag = null;
-    const down = (e) => { const b = e.target.closest('.mv'); if (!b) return; drag = { b, id: e.pointerId }; f.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation(); };
+    const down = (e) => { const b = e.target.closest('.mv'); if (!b) return; drag = { b, id: e.pointerId }; try { f.setPointerCapture(e.pointerId); } catch (err) { /* noop */ } e.preventDefault(); e.stopPropagation(); };
     const move = (e) => {
       if (!drag || e.pointerId !== drag.id) return;
       const r = floor.getBoundingClientRect();
-      const x = clamp(((e.clientX - r.left) / r.width) * 100, 5, 95), y = clamp(((e.clientY - r.top) / r.height) * 100, 6, 94);
+      const x = clamp(((e.clientX - r.left) / r.width) * 100, 4, 96), y = clamp(((e.clientY - r.top) / r.height) * 100, 10, 94);
       ST.fab[drag.b.dataset.id] = { x, y };
       drag.b.style.left = x + '%'; drag.b.style.top = y + '%';
     };
@@ -181,6 +212,8 @@
     CS.world.sync(s, game.room);
     game.renderHud(s);
     game.renderOverlay();
+    game.renderOrders(s);
+    game.tutCheck(s);
     UI.renderSheet(false);
   };
   game.renderHud = function (s) {
@@ -196,6 +229,7 @@
     const L = sim.shopLevel(s);
     $('#h-lvn').textContent = 'Lv' + L.lv; $('#h-lvb').style.width = (L.max ? 100 : Math.round(L.f * 100)) + '%';
     $('#h-lv').title = '店舗レベル ' + L.lv + (L.max ? '（最大）' : '・次まで ' + (L.next - L.xp) + 'pt');
+    $('#h-end').hidden = !(s.phase === 'prep' && s.dayT > 0);
   };
   game.renderParty = function () {
     const r = game.room; if (!r || !$('#h-party')) return;
@@ -203,20 +237,26 @@
     const ids = Object.keys(r.members).sort((a, b) => (r.members[a].joined || 0) - (r.members[b].joined || 0));
     $('#h-party').innerHTML = ids.map((pid) => `<span class="pa ${r.isOnline(pid) || r.local ? '' : 'off'} ${pid === hostPid ? 'host' : ''}" title="${esc(r.members[pid].name || '')}${pid === hostPid ? '（ホスト）' : ''}">${face(r.members[pid].skin)}</span>`).join('');
   };
-  function decoReady(s, rid, g) {
-    const r = sim.recipe(s, rid); if (!r) return { ok: false };
-    const bases = Object.keys(s.bases).filter((id) => s.bases[id].k === r.base);
-    const cool = bases.filter((id) => g >= s.bases[id].cool);
-    const creams = r.cream === 'none' ? ['-'] : Object.keys(s.creams).filter((id) => s.creams[id].k === r.cream && s.creams[id].n > 0);
-    const tops = sim.hasAll(s, r.tops || {});
-    return { ok: cool.length > 0 && creams.length > 0 && tops, bases, cool, creams, tops, r };
-  }
-
+  // 注文票（待っているお客さん）— 画面の左上
+  game.renderOrders = function (s) {
+    const el = $('#orders'); if (!el) return;
+    const g = game.room.now();
+    const ws = Object.keys(s.cust).filter((id) => s.cust[id].st === 'w').sort((a, b) => s.cust[a].no - s.cust[b].no).slice(0, 6);
+    let nq = 0; for (const id in s.cust) if (s.cust[id].st === 'q') nq++;
+    // 並び（注文の中身）が変わったときだけ作り直し、残り時間は文字だけ書き換える（ちらつき防止）
+    const key = JSON.stringify([ws.map((id) => [id, s.cust[id].no, s.cust[id].ord]), nq]);
+    if (game._ordKey !== key) {
+      game._ordKey = key;
+      el.innerHTML = ws.map((id) => { const c = s.cust[id]; return `<div class="ord" data-c="${esc(id)}"><b>#${c.no}</b><span>${Object.keys(c.ord).map((r) => `${esc((sim.recipe(s, r) || {}).name || r)} ×${c.ord[r]}`).join('<br>')}</span><i class="num"></i></div>`; }).join('') + (nq ? `<div class="ord q">${ic('people')} レジ待ち ${nq}人</div>` : '');
+    }
+    $$('.ord[data-c]', el).forEach((d) => { const c = s.cust[d.dataset.c]; if (!c) return; const left = Math.max(0, Math.ceil(((c.pw || 0) - g) / 1000)); const t = left + 's'; const i = d.lastChild; if (i.textContent !== t) i.textContent = t; d.classList.toggle('late', left < 12); });
+  };
   // ---------- 毎フレーム ----------
   game.frame = function () {
     const r = game.room;
     if (!r || !r.S) return;
     const s = r.S, g = r.now();
+    CS.world.hudH = (game._hudH = game._hudH || ($('.hud') ? $('.hud').offsetHeight : 52));
     CS.world.frame();
     const pi = sim.phaseInfo(s, g);
     const ph = $('#h-phase');
@@ -224,13 +264,8 @@
       ph.textContent = pi.label; ph.className = 'phase ' + pi.phase;
       $('#h-clock').textContent = sim.clockStr(pi.min);
       $('#h-bar').style.width = pi.f * 100 + '%';
-      const band = $('#pband');
-      if (s.phase === 'prep') {
-        band.hidden = false;
-        const t = '開店まで ' + mmss(pi.left);
-        if (band.dataset.t !== t) { band.dataset.t = t; band.innerHTML = `<span class="num">${t}</span><button class="btn sm mint" id="pb-open">今すぐ開店</button>`; $('#pb-open').onclick = () => act({ t: 'open' }); }
-      } else if (!band.hidden) { band.hidden = true; band.dataset.t = ''; }
     }
+    if (!game._ordT || performance.now() - game._ordT > 500) { game._ordT = performance.now(); game.renderOrders(s); }
     game.raf = requestAnimationFrame(game.frame);
   };
   // =====================================================================
@@ -264,8 +299,8 @@
         <p class="muted" style="text-align:center;margin:-6px 0 0">ロビー・むずかしさ「${esc(D.DIFF[s.diff].name)}」</p>
         ${r.local ? '<div class="banner">オフラインのお店です（ひとり用）。Firebase を設定すると、招待コードでみんなと遊べます。</div>' : `<div class="invite"><span class="small">招待コード（最大${R.MAX_PLAYERS}人）</span><div class="code" id="ov-code">${esc(r.code)}</div><div class="row wrap" style="justify-content:center"><button class="btn sm" id="ov-cc">${ic('copy')} コードをコピー</button><button class="btn sm" id="ov-cl">${ic('link')} 招待リンクをコピー</button></div></div>`}
         <div class="seats">${seats.join('')}</div>
-        <button class="btn big pink wide" id="ov-start">${ic('play')} 開店準備をはじめる！</button>
-        <p class="muted small" style="margin:0;text-align:center">だれが押してもスタートできます。営業中でも途中から参加できます。</p>
+        <button class="btn big pink wide" id="ov-start">${ic('play')} お店に入る（準備から）</button>
+        <p class="muted small" style="margin:0;text-align:center">だれが押してもスタートできます。お店は CLOSE から始まり、外の看板で OPEN にします。途中から参加もできます。</p>
         <div class="row" style="justify-content:center"><button class="btn sm ghost" id="ov-skin">${ic('shirt')} きせかえ</button><button class="btn sm ghost" id="ov-title">${ic('door')} タイトルへ</button></div></div>`;
       if (!r.local) { $('#ov-cc').onclick = () => UI.copy(r.code, $('#ov-code')); $('#ov-cl').onclick = () => UI.copy(link); }
       $('#ov-start').onclick = () => { CS.sound.play('open'); act({ t: 'start' }); };
@@ -286,12 +321,12 @@
       if (h.waste > h.sales * 0.12) tips.push('廃棄が多めです。作る量や仕入れを見直そう。');
       if (h.sat && h.sat < 0.45) tips.push('満足度が低め。品質を上げるか、少し値下げしてみよう。');
       if (h.profit < 0) tips.push('今日は赤字（' + yen(h.profit) + '）。たくさん作って売るほど家賃の負担は軽くなります。');
-      if (h.profit > 0 && s.funds > 30000) tips.push('資金に余裕があります。仕入れ棚の「設備」「家具」や「経営 → 拡張」でお店を育てよう！');
+      if (h.profit > 0 && s.funds > 30000) tips.push('資金に余裕があります。パソコンの「設備」「家具」「拡張」でお店を育てよう！');
       if (h.wages) tips.push('アルバイトの日給 合計 ' + yen(h.wages) + '。働くほどレベルが上がって速くなります。');
       if (!tips.length) tips.push('いい調子！この調子でお店を大きくしよう。');
       const stat = (l, v, cls) => `<div class="stat"><small>${l}</small><b class="${cls || ''}">${v}</b></div>`;
       ov.innerHTML = `<div class="panel ov-card"><h2>${h.d}日目の営業結果</h2>
-        <div class="report-grid">${stat('来店', h.cust + '人')}${stat('販売', h.sold + '切れ')}${stat('売上', yen(h.sales))}${stat('原価', yen(h.cogs))}${stat('廃棄', yen(h.waste), h.waste ? 'neg' : '')}${stat('家賃・光熱費・人件費', yen(h.fixed))}${stat('広告・試作', yen(h.ads))}${stat('利益', yen(h.profit), h.profit >= 0 ? 'pos' : 'neg')}${stat('クレーム', (h.cmp || 0) + '件', h.cmp ? 'neg' : '')}${stat('評判', '★' + h.rep.toFixed(1) + (repD ? (repD > 0 ? ' ↑' : ' ↓') : ''), repD > 0 ? 'pos' : repD < 0 ? 'neg' : '')}</div>
+        <div class="report-grid">${stat('来店', h.cust + '人')}${stat('販売', h.sold + '個')}${stat('売上', yen(h.sales))}${stat('原価', yen(h.cogs))}${stat('廃棄', yen(h.waste), h.waste ? 'neg' : '')}${stat('家賃・光熱費・人件費', yen(h.fixed))}${stat('広告・試作', yen(h.ads))}${stat('利益', yen(h.profit), h.profit >= 0 ? 'pos' : 'neg')}${stat('クレーム', (h.cmp || 0) + '件', h.cmp ? 'neg' : '')}${stat('評判', '★' + h.rep.toFixed(1) + (repD ? (repD > 0 ? ' ↑' : ' ↓') : ''), repD > 0 ? 'pos' : repD < 0 ? 'neg' : '')}</div>
         ${best ? `<div class="banner pink">${ic('star')} 一番人気：${esc(best.name)}</div>` : ''}
         <div class="banner sky" style="display:grid;gap:2px">${tips.map((t) => '<span>・' + esc(t) + '</span>').join('')}</div>
         <div class="row between small"><span>現在の資金</span><b class="num">${yen(s.funds)}</b></div>
@@ -313,7 +348,7 @@
       case 'toast': UI.toast(f.x); break;
       case 'err': UI.toast(f.x, 'err'); CS.sound.play('bad'); break;
       case 'phase': UI.toast(f.x, 'big'); CS.sound.play('open'); break;
-      case 'cake': UI.toast(f.x, 'good'); if (CS.world.ready) { const p = CS.world.eng.project([1.7, 1.2, -1.55]); const r = $('#world').getBoundingClientRect(); if (p) CS.sparkle(r.left + p.x, r.top + p.y, 18); } break;
+      case 'cake': UI.toast(f.x, 'good'); CS.sound.play('ok'); CS.sparkle(innerWidth / 2, innerHeight / 2, 18); break;
       case 'discover': UI.toast(f.x, 'big', 3500); CS.sound.play('fanfare'); CS.sparkle(innerWidth / 2, innerHeight / 3, 30); break;
       case 'up': {
         const m = /Lv(\d+) に上がった！\s*(.*)$/.exec(f.x || '');
@@ -357,219 +392,128 @@
   };
 
   // =====================================================================
-  //  作業台
+  //  パソコン（仕入れ・設備・家具・アルバイト・経営）
   // =====================================================================
-  const ingChips = (s, req) => Object.keys(req).map((id) => { const have = sim.invCount(s, id); return `<span class="chip ${have >= req[id] ? 'ok' : 'bad'}" title="在庫${have}">${D.ING[id].icon}×${req[id]}</span>`; }).join('');
-  game.openStation = function (kind) {
-    const r = game.room;
-    r.setStation(kind);
-    const titles = { mix: 'ミキサー台', oven: 'オーブン', rack: '冷却ラック', whip: 'クリーム台', deco: 'デコ台' };
+  game.openPC = function (tab) {
+    const r = game.room; if (!r) return;
+    if (document.pointerLockElement) document.exitPointerLock();
+    r.setStation('pc');
     UI.openSheet({
-      title: titles[kind] || '作業台', live: true, key: kind,
+      title: 'パソコン', live: true, key: 'pc', tab: tab || game.pcTab || 'ing',
+      tabs: [{ id: 'ing', label: '材料の注文' }, { id: 'eq', label: '設備' }, { id: 'furn', label: '家具' }, { id: 'staff', label: 'アルバイト' }, { id: 'up', label: '拡張' }, { id: 'ad', label: '広告' }, { id: 'today', label: '収支' }, { id: 'level', label: 'レベル' }],
       onClose: () => r.setStation(''),
-      render(body) {
-        const s = S(); const g = r.now();
-        if (kind === 'mix') {
-          body.innerHTML = `${working() ? '' : '<div class="banner">開店準備・営業中に作業できます</div>'}<div class="list">${Object.keys(D.BASES).filter((id) => Object.keys(s.known).some((rid) => { const rr = sim.recipe(s, rid); return rr && rr.base === id; })).map((id) => { const b = D.BASES[id]; const ok = sim.hasAll(s, b.ing); return `<div class="item"><div class="ico" style="background:${b.color}"></div><div class="mid"><b>${esc(b.name)}</b><small>${ingChips(s, b.ing)} 焼き${Math.round(sim.ovenDur(s, id) / 1000)}秒</small></div><div class="end"><button class="btn sm sky" data-mix="${id}" ${ok && working() ? '' : 'disabled'}>作る</button></div></div>`; }).join('')}</div>
-          <div class="card soft"><h3>オーブン待ちの生地</h3>${Object.keys(s.batters).length ? `<div class="list">${Object.keys(s.batters).map((id) => { const b = s.batters[id]; return `<div class="item"><div class="ico" style="background:${D.BASES[b.k].color}"></div><div class="mid"><b>${esc(D.BASES[b.k].short)}生地</b><small>品質 ${qtxt(b.q)}・推奨 ${D.BASES[b.k].temp}℃</small>${dfChips(b.df)}</div><div class="end"><button class="btn sm ghost" data-disc="batter" data-id="${id}" aria-label="捨てる">${ic('trash')}</button><button class="btn sm" data-oin="${id}">オーブンへ</button></div></div>`; }).join('')}</div>` : '<p class="muted small" style="margin:0">まだありません</p>'}</div>
-          <p class="muted small" style="margin:0">材料の投入順はレシピ帳に書いてあります。品質＝投入順＋かき混ぜの上手さ。</p>`;
-        } else if (kind === 'oven') {
-          body.innerHTML = `<div class="list">${s.ovens.map((o, i) => o.s ? `<div class="item"><div class="ico">${ic('oven')}</div><div class="mid"><b>オーブン${i + 1}：${esc(D.BASES[o.k].short)}</b><small>焼き上がりまで ${mmss((o.t0 + o.dur) - g)}</small></div><div class="end"><button class="btn sm pink" data-oout="${i}">取り出す</button></div></div>` : `<div class="item"><div class="ico">${ic('oven')}</div><div class="mid"><b>オーブン${i + 1}</b><small>空き</small></div><div class="end"><button class="btn sm" data-oslot="${i}" ${Object.keys(s.batters).length ? '' : 'disabled'}>生地を入れる</button></div></div>`).join('')}</div>
-          <div class="banner sky">${ic('fire')} メーターの緑の枠に針が入ったら取り出そう。早すぎると生焼け、遅すぎると焦げて廃棄に。</div>`;
-        } else if (kind === 'rack') {
-          const ids = Object.keys(s.bases);
-          body.innerHTML = ids.length ? `<div class="list">${ids.map((id) => { const b = s.bases[id]; const c = g >= b.cool; return `<div class="item"><div class="ico" style="background:${D.BASES[b.k].color}"></div><div class="mid"><b>${esc(D.BASES[b.k].name)}</b><small>品質 ${qtxt(b.q)} ・ ${c ? '冷めた（仕上げOK）' : 'あと' + mmss(b.cool - g) + 'で冷める'}${b.day < s.day ? ' ・ 前日の残り' : ''}</small>${dfChips(b.df)}</div><div class="end"><button class="btn sm ghost" data-disc="base" data-id="${id}" aria-label="捨てる">${ic('trash')}</button></div></div>`; }).join('')}</div>` : '<div class="banner">焼き上がったスポンジがここで冷まされます</div>';
-          body.innerHTML += `<p class="muted small" style="margin:0">温かいままデコするとクリームが溶けて品質ダウン。スポンジは翌日まで持ちます（品質-10%）。</p>`;
-        } else if (kind === 'whip') {
-          body.innerHTML = `${working() ? '' : '<div class="banner">開店準備・営業中に作業できます</div>'}<div class="list">${Object.keys(D.CREAMS).filter((k) => k !== 'none' && Object.keys(s.known).some((rid) => { const rr = sim.recipe(s, rid); return rr && rr.cream === k; })).map((id) => { const c = D.CREAMS[id]; const ok = sim.hasAll(s, c.ing); return `<div class="item"><div class="ico"><span class="sw" style="width:30px;height:30px;border-radius:50%;border:1.5px solid rgba(242,235,225,.35);background:${c.color}"></span></div><div class="mid"><b>${esc(c.name)}</b><small>${ingChips(s, c.ing)} ${D.CREAM_YIELD}台分</small></div><div class="end"><button class="btn sm lilac" data-whip="${id}" ${ok && working() ? '' : 'disabled'}>作る</button></div></div>`; }).join('')}</div>
-          <div class="card soft"><h3>できているクリーム</h3>${Object.keys(s.creams).length ? Object.keys(s.creams).map((id) => { const c = s.creams[id]; return `<div class="row between"><span>${esc(D.CREAMS[c.k].name)} ×${c.n}（品質${qtxt(c.q)}）${dfChips(c.df)}</span><button class="btn sm ghost" data-disc="cream" data-id="${id}" aria-label="捨てる">${ic('trash')}</button></div>`; }).join('') : '<p class="muted small" style="margin:0">まだありません。クリームはその日のうちに使い切ろう（閉店で廃棄）</p>'}</div>`;
-        } else if (kind === 'deco') {
-          const rids = Object.keys(s.known).filter((rid) => s.menu[rid]);
-          body.innerHTML = `${working() ? '' : '<div class="banner">開店準備・営業中に作業できます</div>'}<div class="list">${rids.map((rid) => {
-            const d = decoReady(s, rid, g); const rr = d.r; if (!rr) return '';
-            const cr = rr.cream === 'none' ? '' : `<span class="chip ${d.creams.length ? 'ok' : 'bad'}">${esc(D.CREAMS[rr.cream].short)}</span>`;
-            return `<div class="item"><div class="ico">${cakeImg(rr)}</div><div class="mid"><b>${esc(rr.name)}${s.menu[rid].on ? '' : '（販売OFF）'}</b><small><span class="chip ${d.cool.length ? 'ok' : d.bases.length ? 'warn' : 'bad'}">${esc(D.BASES[rr.base].short)}${d.cool.length ? '' : d.bases.length ? ' 冷却中' : ' なし'}</span> ${cr} ${ingChips(s, rr.tops || {})}</small></div><div class="end"><button class="btn sm pink" data-deco="${rid}" ${(d.ok || (d.bases.length && d.creams.length && d.tops)) && working() ? '' : 'disabled'}>デコる</button></div></div>`;
-          }).join('')}</div><p class="muted small" style="margin:0">完成したケーキは自動でショーケースに並びます（満杯ならバックヤードへ）。</p>`;
-        }
-        // 共通ハンドラ
-        $$('[data-mix]', body).forEach((b) => (b.onclick = () => game.mixFlow(b.dataset.mix)));
-        $$('[data-whip]', body).forEach((b) => (b.onclick = () => game.whipFlow(b.dataset.whip)));
-        $$('[data-deco]', body).forEach((b) => (b.onclick = () => game.decoFlow(b.dataset.deco)));
-        $$('[data-oin]', body).forEach((b) => (b.onclick = () => { const s2 = S(); const slot = s2.ovens.findIndex((o) => !o.s); if (slot < 0) return UI.toast('空いているオーブンがありません', 'err'); act({ t: 'ovenIn', slot, id: b.dataset.oin }); }));
-        $$('[data-oslot]', body).forEach((b) => (b.onclick = () => game.openOven(+b.dataset.oslot)));
-        $$('[data-oout]', body).forEach((b) => (b.onclick = () => act({ t: 'ovenOut', slot: +b.dataset.oout })));
-        $$('[data-disc]', body).forEach((b) => (b.onclick = async () => { if (await UI.confirm('捨てる', '廃棄すると原価がロスになります。', '捨てる', true)) act({ t: 'discard', kind: b.dataset.disc, id: b.dataset.id }); }));
+      render(body, t) {
+        const s = S(); game.pcTab = t;
+        if (t === 'ing') return game.renderMarket(body, s);
+        if (t === 'eq') return game.renderEquip(body, s);
+        if (t === 'furn') return game.renderFurn(body, s);
+        if (t === 'staff') return game.renderStaff(body, s);
+        return game.renderBizTab(body, s, t);
       },
     });
   };
-  // ---------- オーブン：温度設定・予熱・投入 ----------
-  game.openOven = function (slot) {
-    const r = game.room;
-    r.setStation('oven');
-    UI.openSheet({
-      title: 'オーブン' + (slot + 1), live: true, key: 'oven',
-      onClose: () => r.setStation(''),
-      render(body) {
-        const s = S(); const o = s.ovens[slot]; const g = r.now();
-        if (!o) { body.innerHTML = ''; return; }
-        if (o.s) { body.innerHTML = `<div class="banner">${esc(D.BASES[o.k].name)}を ${o.temp}℃ で焼いています</div><button class="btn primary wide" id="ov-out">取り出す</button>`; $('#ov-out', body).onclick = () => { act({ t: 'ovenOut', slot }); UI.closeSheet(); }; return; }
-        const heating = o.h && g < (o.hot || 0);
-        const status = !o.h ? '<span class="chip">停止中</span>' : heating ? `<span class="chip warn">予熱中 ${o.temp}℃（あと${Math.ceil(((o.hot || 0) - g) / 1000)}秒）</span>` : `<span class="chip ok">${o.temp}℃ 予熱完了</span>`;
-        const cur = o.h ? o.temp : 170;
-        const bat = Object.keys(s.batters);
-        body.innerHTML = `<div class="card"><div class="row between"><h3>温度</h3>${status}</div>
-          <div class="seg" id="ov-t">${D.OVEN_TEMPS.map((t) => `<button data-t="${t}" aria-pressed="${t === cur && o.h ? 'true' : 'false'}">${t}℃</button>`).join('')}</div>
-          <p class="muted small" style="margin:0">温度を選ぶと予熱が始まります。予熱が終わる前に入れるとふくらみ不足に。生地ごとの適温より高いと表面が焦げ、低いとパサつきます。</p></div>
-          <div class="card"><h3>入れる生地</h3>${bat.length ? `<div class="list">${bat.map((id) => { const b = s.batters[id], B0 = D.BASES[b.k], dT = cur - B0.temp; return `<div class="item"><div class="ico" style="background:${B0.color}"></div><div class="mid"><b>${esc(B0.name)}</b><small>品質 ${qtxt(b.q)}・適温 ${B0.temp}℃ ${o.h && dT ? `<span class="${Math.abs(dT) >= 20 ? 'neg' : ''}">（今の温度との差 ${dT > 0 ? '+' : ''}${dT}℃）</span>` : ''}</small>${dfChips(b.df)}</div><div class="end"><button class="btn sm primary" data-in="${id}">入れる</button></div></div>`; }).join('')}</div>` : '<p class="muted small" style="margin:0">ミキサー台で生地を作ってください</p>'}</div>`;
-        $$('#ov-t button', body).forEach((b) => (b.onclick = () => { CS.sound.play('tap'); act({ t: 'ovenHeat', slot, temp: +b.dataset.t }); }));
-        $$('[data-in]', body).forEach((b) => (b.onclick = async () => {
-          const s2 = S(), o2 = s2.ovens[slot];
-          if (!o2.h || r.now() < (o2.hot || 0)) { if (!(await UI.confirm('予熱が終わっていません', 'このまま入れると、ふくらみ不足になります。', '入れる', true))) return; }
-          act({ t: 'ovenIn', slot, id: b.dataset.in }); UI.closeSheet();
-        }));
-      },
-    });
-  };
-  game.ovenIn = async function (slot) {
-    const s = S(); const ids = Object.keys(s.batters);
-    if (!ids.length) return UI.toast('オーブンに入れる生地がありません。ミキサー台で作ろう', 'err');
-    let id = ids[0];
-    if (ids.length > 1) {
-      id = await UI.choose('どの生地を焼く？', `<div class="list">${ids.map((k) => `<button class="item" style="cursor:pointer;text-align:left" data-pick="${k}"><div class="ico" style="background:${D.BASES[s.batters[k].k].color}"></div><div class="mid"><b>${esc(D.BASES[s.batters[k].k].name)}</b><small>品質 ${qtxt(s.batters[k].q)}</small></div><span></span></button>`).join('')}</div>`, '[data-pick]');
-      if (!id) return;
-    }
-    act({ t: 'ovenIn', slot, id });
-  };
-
-  game.mixFlow = async function (baseId) {
-    const s = S(); const b = D.BASES[baseId];
-    if (!working()) return UI.toast('開店準備・営業中に作業できます', 'err');
-    if (!sim.hasAll(s, b.ing)) return UI.toast('材料が足りません：' + sim.missing(s, b.ing).join('、'), 'err');
-    UI.closeSheet(true);
-    game.room.setStation('mix');
-    const mt = sim.eqv(s, 'mixer'); const res = await CS.mg.mix(baseId, { diff: s.diff, mixWin: mt.win, mixFast: mt.fast });
-    game.room && game.room.setStation('');
-    if (res && game.room) await act({ t: 'mix', base: baseId, q: res.q, df: res.df || [] });
-  };
-  game.whipFlow = async function (creamId) {
-    const s = S(); const c = D.CREAMS[creamId];
-    if (!working()) return UI.toast('開店準備・営業中に作業できます', 'err');
-    if (!sim.hasAll(s, c.ing)) return UI.toast('材料が足りません：' + sim.missing(s, c.ing).join('、'), 'err');
-    UI.closeSheet(true);
-    game.room.setStation('whip');
-    const wt = sim.eqv(s, 'whisk'); const res = await CS.mg.whip(creamId, { diff: s.diff, win: wt.win, gain: wt.gain });
-    game.room && game.room.setStation('');
-    if (res && game.room) await act({ t: 'whip', cream: creamId, q: res.q, df: res.df || [] });
-  };
-  game.decoFlow = async function (rid) {
-    const s = S(); const g = game.room.now();
-    if (!working()) return UI.toast('開店準備・営業中に作業できます', 'err');
-    const d = decoReady(s, rid, g);
-    if (!d.bases.length) return UI.toast(D.BASES[d.r.base].short + 'のスポンジがありません', 'err');
-    if (!d.creams.length) return UI.toast(D.CREAMS[d.r.cream].short + 'クリームがありません', 'err');
-    if (!d.tops) return UI.toast('トッピングが足りません：' + sim.missing(s, d.r.tops).join('、'), 'err');
-    let baseId;
-    if (d.cool.length) baseId = d.cool.sort((a, b) => ((s.bases[a].df || []).length - (s.bases[b].df || []).length) || s.bases[b].q - s.bases[a].q)[0];
-    else {
-      if (!(await UI.confirm('まだ温かいよ', 'スポンジが冷めていません。クリームが溶けて品質が3割下がります。それでもデコる？', 'デコる', true))) return;
-      baseId = d.bases.sort((a, b) => s.bases[a].cool - s.bases[b].cool)[0];
-    }
-    const creamId = d.r.cream === 'none' ? '' : d.creams.sort((a, b) => ((s.creams[a].df || []).length - (s.creams[b].df || []).length) || s.creams[b].q - s.creams[a].q)[0];
-    const bad = [].concat((s.bases[baseId] || {}).df || [], creamId ? (s.creams[creamId] || {}).df || [] : []);
-    if (bad.length && !(await UI.confirm('失敗した材料を使う？', '使うスポンジ／クリームに欠点（' + bad.map((x) => D.DEFECTS[x].name).join('・') + '）があります。売るとお客さんの満足度と評判が下がります。', '使う', true))) return;
-    UI.closeSheet(true);
-    game.room.setStation('deco');
-    const res = await CS.mg.deco(d.r, { diff: s.diff });
-    game.room && game.room.setStation('');
-    if (res && game.room) await act({ t: 'deco', r: rid, base: baseId, cream: creamId, q: res.q, df: res.df || [] });
-  };
-
-  // ---------- ショーケース全体 ----------
-  game.openCase = function () {
-    UI.openSheet({
-      title: 'ショーケース', live: true,
-      render(body) {
-        const s = S();
-        const rows = s.showcase.map((k, i) => {
-          if (!k) return `<div class="item"><div class="ico">${ic('case')}</div><div class="mid"><b>${i + 1}番：あき</b><small>デコ台で完成したケーキが自動で並びます</small></div><span></span></div>`;
-          const r = sim.recipe(s, k.r); const m = s.menu[k.r] || { price: 0 };
-          return `<div class="item"><div class="ico">${cakeImg(r, k.p, k.df)}</div><div class="mid"><b>${esc(r.name)}${k.o ? '（前日）' : ''}</b><small>残り${k.p}切れ・品質${qtxt(k.q)}・${yen(m.price)}／切れ</small>${dfChips(k.df)}</div><div class="end"><button class="btn sm ghost" data-dc="${i}" aria-label="廃棄">${ic('trash')}</button></div></div>`;
-        }).join('');
-        const n = Object.keys(s.stock).length;
-        body.innerHTML = `<div class="list">${rows}</div>${n ? `<div class="banner sky">バックヤードに ${n} 台（空きができると自動で並びます）</div>` : ''}<button class="btn pink" id="cs-price">${ic('book')} 価格を変える</button>`;
-        $('#cs-price', body).onclick = () => game.openMenu('sell');
-        $$('[data-dc]', body).forEach((b) => (b.onclick = async () => { if (await UI.confirm('廃棄する', '残りのケーキを捨てます（原価がロスになります）。', '捨てる', true)) act({ t: 'discard', kind: 'case', slot: +b.dataset.dc }); }));
-      },
-    });
-  };
-  // ---------- ショーケースの1台 ----------
-  game.openSlot = function (i) {
-    const s = S(); const k = s.showcase[i];
-    if (!k) { UI.toast('完成したケーキがここに並びます'); return; }
-    const r = sim.recipe(s, k.r);
-    UI.openSheet({
-      title: r.name, live: true,
-      render(body) {
-        const s2 = S(); const k2 = s2.showcase[i];
-        if (!k2 || k2.r !== k.r) { body.innerHTML = '<div class="banner">売り切れました！</div>'; return; }
-        const m = s2.menu[k2.r];
-        body.innerHTML = `<div class="lab-preview"><div>${cakeImg(r, k2.p, k2.df, 'big')}</div><dl class="kv"><dt>品質</dt><dd>${qtxt(k2.q)}</dd><dt>残り</dt><dd>${k2.p} / ${k2.n || R.PIECES} ${esc(r.unit || '切れ')}</dd><dt>価格（1切れ）</dt><dd>${yen(m.price)}</dd><dt>原価（1${esc(r.unit || '切れ')}）</dt><dd>${yen(k2.c / (k2.n || R.PIECES))}</dd><dt>作った日</dt><dd>${k2.d}日目${k2.o ? '（前日）' : ''}</dd></dl></div>${k2.df && k2.df.length ? `<div class="banner pink">${dfChips(k2.df)}<span>欠点のあるケーキは売れにくく、買ったお客さんの満足度と評判が下がります</span></div>` : ''}
-          <div class="row wrap"><button class="btn pink" id="sl-price">${ic('book')} 価格を変える</button><button class="btn ghost" id="sl-disc">${ic('trash')} 廃棄</button></div>`;
-        $('#sl-price', body).onclick = () => game.openMenu('sell');
-        $('#sl-disc', body).onclick = async () => { if (await UI.confirm('廃棄する', '残りのケーキを捨てます。', '捨てる', true)) { act({ t: 'discard', kind: 'case', slot: i }); UI.closeSheet(); } };
-      },
-    });
-  };
-
-  // =====================================================================
-  //  仕入れ
-  // =====================================================================
-  game.openMarket = function () {
-    const r = game.room;
-    r.setStation('market');
-    UI.openSheet({
-      title: '仕入れ', live: true, key: 'market', tab: game.mkTab || 'ing',
-      tabs: [{ id: 'ing', label: '材料' }, { id: 'furn', label: '家具' }, { id: 'eq', label: '設備' }],
-      onClose: () => r.setStation(''),
-      render(body, tab) {
-        const s = S();
-        game.mkTab = tab;
-        if (tab === 'furn') return game.renderFurn(body, s);
-        if (tab === 'eq') return game.renderEquip(body, s);
-        const ev = s.mEvent && s.mEvent.id ? `<div class="banner ${s.mEvent.up ? 'pink' : 'mint'}">${D.ING[s.mEvent.id].icon} 今日は${esc(D.ING[s.mEvent.id].name)}が${s.mEvent.up ? '高騰中！' : '特売中！'}</div>` : '';
-        body.innerHTML = `${ev}<div class="row between wrap"><span class="small">資金 <b class="num">${yen(s.funds)}</b></span><button class="btn sm mint" id="mk-bulk">${ic('cart')} 販売中メニュー2台分をまとめ買い</button></div>
-          <div class="list">${Object.keys(D.ING).map((id) => {
-            const ing = D.ING[id]; const p = s.market[id]; const n = game.mq[id] || 5; const have = sim.invCount(s, id);
-            const ch = Math.round((p / ing.price - 1) * 100);
-            const exp = sim.expSoon(s, id);
-            const unit = p * (n >= 10 ? 0.95 : 1); const cost = Math.round(unit * n);
-            return `<div class="item mk"><div class="ico">${ing.icon}</div><div class="mid"><b>${esc(ing.name)} <span class="chip ${have ? '' : 'bad'}">在庫 ${have}</span></b><small>${yen(p)}/個 <span class="${ch > 3 ? 'neg' : ch < -3 ? 'pos' : ''}">${ch > 3 ? '▲' + ch + '%' : ch < -3 ? '▼' + -ch + '%' : '±0'}</span>・${ing.life ? (exp !== null ? 'いちばん古いのはあと' + Math.max(0, exp) + '日' : '日持ち' + Math.round(ing.life * sim.eqv(s, 'fridge').life) + '日') : '日持ちする'}</small></div>
-              <div class="end"><div class="step"><button data-q="${id}" data-d="-1" aria-label="減らす">${ic('minus')}</button><output>${n}</output><button data-q="${id}" data-d="1" aria-label="増やす">${ic('plus')}</button></div><button class="btn sm yellow num" data-buy="${id}" ${s.funds >= cost ? '' : 'disabled'}>${yen(cost)}</button></div></div>`;
-          }).join('')}</div>
-          <p class="muted small" style="margin:0">10個以上で5%オフ。生ものは期限が来ると閉店時に廃棄されます。</p>`;
-        const hold = (b) => {
-          let t = null, n = 0;
-          const stepOnce = () => { const id = b.dataset.q; const v = clamp((game.mq[id] || 5) + +b.dataset.d * (n > 6 ? 5 : 1), 1, 99); game.mq[id] = v; n++; const o = b.parentNode.querySelector('output'); o.textContent = v; const s2 = S(); const cost = Math.round(s2.market[id] * (v >= 10 ? 0.95 : 1) * v); const bb = body.querySelector('[data-buy="' + id + '"]'); bb.textContent = yen(cost); bb.disabled = s2.funds < cost; };
-          b.onpointerdown = (e) => { e.preventDefault(); n = 0; stepOnce(); t = setInterval(stepOnce, 140); const stop = () => { clearInterval(t); document.removeEventListener('pointerup', stop); }; document.addEventListener('pointerup', stop); };
-        };
-        $$('[data-q]', body).forEach(hold);
-        $$('[data-buy]', body).forEach((b) => (b.onclick = () => { CS.sound.play('coin'); act({ t: 'buy', id: b.dataset.buy, n: game.mq[b.dataset.buy] || 5 }); }));
-        $('#mk-bulk', body).onclick = () => game.bulkBuy();
-      },
-    });
+  // ---------- 材料の注文（裏口に段ボールで届く） ----------
+  game.renderMarket = function (body, s) {
+    const ev = s.mEvent && s.mEvent.id ? `<div class="banner ${s.mEvent.up ? 'pink' : 'mint'}">${D.ING[s.mEvent.id].icon} 今日は${esc(D.ING[s.mEvent.id].name)}が${s.mEvent.up ? '高騰中！' : '特売中！'}</div>` : '';
+    const free = CS.kitchen.deliveryFree(s);
+    body.innerHTML = `${ev}<div class="row between wrap"><span class="small">資金 <b class="num">${yen(s.funds)}</b>・裏口の置き場 あと<b>${free}</b>箱</span><button class="btn sm mint" id="mk-bulk">${ic('cart')} 販売中メニュー2台分をまとめて注文</button></div>
+      <div class="banner sky">${ic('box')}<span>注文した材料は<b>裏口（左奥）に段ボール</b>で届きます（1箱10個まで）。持って<b>在庫の棚</b>にしまうと使えるようになります。</span></div>
+      <div class="list">${Object.keys(D.ING).map((id) => {
+        const ing = D.ING[id]; const p = s.market[id]; const n = game.mq[id] || 5; const have = sim.invCount(s, id);
+        const ch = Math.round((p / ing.price - 1) * 100);
+        const exp = sim.expSoon(s, id);
+        const unit = p * (n >= 10 ? 0.95 : 1); const cost = Math.round(unit * n);
+        return `<div class="item mk"><div class="ico">${ing.icon}</div><div class="mid"><b>${esc(ing.name)} <span class="chip ${have ? '' : 'bad'}">在庫 ${have}</span></b><small>${yen(p)}/個 <span class="${ch > 3 ? 'neg' : ch < -3 ? 'pos' : ''}">${ch > 3 ? '▲' + ch + '%' : ch < -3 ? '▼' + -ch + '%' : '±0'}</span>・${ing.life ? (exp !== null ? 'いちばん古いのはあと' + Math.max(0, exp) + '日' : '日持ち' + Math.round(ing.life * sim.eqv(s, 'fridge').life) + '日') : '日持ちする'}</small></div>
+          <div class="end"><div class="step"><button data-q="${id}" data-d="-1" aria-label="減らす">${ic('minus')}</button><output>${n}</output><button data-q="${id}" data-d="1" aria-label="増やす">${ic('plus')}</button></div><button class="btn sm yellow num" data-buy="${id}" ${s.funds >= cost && free >= Math.ceil(n / 10) ? '' : 'disabled'}>${yen(cost)}</button></div></div>`;
+      }).join('')}</div>
+      <p class="muted small" style="margin:0">10個以上で5%オフ。生ものは期限が来ると閉店時に廃棄されます。</p>`;
+    const hold = (b) => {
+      let t = null, n = 0;
+      const stepOnce = () => { const id = b.dataset.q; const v = clamp((game.mq[id] || 5) + +b.dataset.d * (n > 6 ? 5 : 1), 1, 40); game.mq[id] = v; n++; const o = b.parentNode.querySelector('output'); o.textContent = v; const s2 = S(); const cost = Math.round(s2.market[id] * (v >= 10 ? 0.95 : 1) * v); const bb = body.querySelector('[data-buy="' + id + '"]'); bb.textContent = yen(cost); bb.disabled = s2.funds < cost || CS.kitchen.deliveryFree(s2) < Math.ceil(v / 10); };
+      b.onpointerdown = (e) => { e.preventDefault(); n = 0; stepOnce(); t = setInterval(stepOnce, 140); UI.busyUntil = Date.now() + 1500; const stop = () => { clearInterval(t); document.removeEventListener('pointerup', stop); }; document.addEventListener('pointerup', stop); };
+    };
+    $$('[data-q]', body).forEach(hold);
+    $$('[data-buy]', body).forEach((b) => (b.onclick = () => { CS.sound.play('coin'); act({ t: 'buy', id: b.dataset.buy, n: game.mq[b.dataset.buy] || 5 }); game.tutMark('order'); }));
+    $('#mk-bulk', body).onclick = () => game.bulkBuy();
   };
   game.bulkBuy = async function () {
     const s = S(); const need = {};
     const add = (req, k) => { for (const id in req) need[id] = (need[id] || 0) + req[id] * k; };
     Object.keys(s.menu).filter((rid) => s.menu[rid].on && s.known[rid]).forEach((rid) => { const r = sim.recipe(s, rid); add(D.BASES[r.base].ing, 2); if (r.cream !== 'none') add(D.CREAMS[r.cream].ing, 1); add(r.tops || {}, 2); });
-    const buy = []; let total = 0;
-    for (const id in need) { const n = Math.ceil(need[id] - sim.invCount(s, id)); if (n > 0) { const c = Math.round(s.market[id] * (n >= 10 ? 0.95 : 1) * n); buy.push({ id, n, c }); total += c; } }
+    const buy = []; let total = 0, boxes = 0;
+    for (const id in need) { const n = Math.ceil(need[id] - sim.invCount(s, id)); if (n > 0) { const c = Math.round(s.market[id] * (n >= 10 ? 0.95 : 1) * n); buy.push({ id, n, c }); total += c; boxes += Math.ceil(n / 10); } }
     if (!buy.length) return UI.toast('いまの在庫で足りています', 'good');
-    const ok = await UI.confirm('まとめ買い', `<span style="display:grid;gap:4px">${buy.map((b) => `<span>${D.ING[b.id].icon} ${esc(D.ING[b.id].name)} ×${b.n}　<b class="num">${yen(b.c)}</b></span>`).join('')}<b style="border-top:1px solid var(--line);padding-top:4px">合計 ${yen(total)}</b></span>`, '買う');
+    const free = CS.kitchen.deliveryFree(s);
+    const ok = await UI.confirm('まとめて注文', `<span style="display:grid;gap:4px">${buy.map((b) => `<span>${D.ING[b.id].icon} ${esc(D.ING[b.id].name)} ×${b.n}　<b class="num">${yen(b.c)}</b></span>`).join('')}<b style="border-top:1px solid var(--line);padding-top:4px">合計 ${yen(total)}・段ボール ${boxes}箱</b>${boxes > free ? `<span class="neg">裏口の置き場が足りません（あと${free}箱）。先に段ボールを棚にしまおう</span>` : ''}</span>`, '注文する');
     if (!ok) return;
     if (S().funds < total) return UI.toast('資金が足りません', 'err');
     for (const b of buy) await act({ t: 'buy', id: b.id, n: b.n });
-    CS.sound.play('coin');
+    CS.sound.play('coin'); game.tutMark('order');
+  };
+  // ---------- 経営のタブ（収支・拡張・広告・レベル） ----------
+  game.renderBizTab = function (body, s, t) {
+    if (t === 'level') return game.renderLevel(body, s);
+    if (t === 'today') {
+      const T = s.today;
+      let equip = 0; for (const u of D.UPGRADES) equip += s.up[u.id] || 0;
+      const wages = s.staff.reduce((a, st) => a + (st ? D.STAFF.wage(st.lv) : 0), 0);
+      const rentU = R.RENT + (s.up.floor || 0) * (R.RENT_PER_FLOOR || 1500) + (equip + 2) * R.UTIL_PER_EQUIP;
+      const fixed = s.phase === 'report' && s.history.length ? s.history[s.history.length - 1].fixed : rentU + wages;
+      const rev = T.sales + T.drinks;
+      const prof = rev - T.cogs - T.waste - T.ads - (T.lab || 0) - fixed;
+      body.innerHTML = `<div class="card"><h3>${s.day}日目（${s.phase === 'report' ? '確定' : 'いまの時点'}）</h3><dl class="kv">
+        <dt>売上（ケーキ）</dt><dd>${yen(T.sales)}</dd><dt>売上（ドリンク）</dt><dd>${yen(T.drinks)}</dd>
+        <dt>原価（売れた分）</dt><dd class="neg">-${yen(T.cogs)}</dd><dt>廃棄ロス</dt><dd class="neg">-${yen(T.waste)}</dd>
+        <dt>広告・試作</dt><dd class="neg">-${yen(T.ads + (T.lab || 0))}</dd><dt>家賃・光熱費・日給（閉店時）</dt><dd class="neg">-${yen(fixed)}</dd>
+        <dt class="tot">営業利益（見込み）</dt><dd class="tot ${prof >= 0 ? 'pos' : 'neg'}">${yen(prof)}</dd></dl></div>
+        <div class="card"><dl class="kv"><dt>来店</dt><dd>${T.cust}人</dd><dt>販売</dt><dd>${T.sold}個</dd><dt>買わずに帰った</dt><dd>${T.miss}人（うち売り切れ ${T.soldout}人）</dd><dt>満足度</dt><dd>${T.cust - T.miss > 0 ? Math.round((T.sat / (T.cust - T.miss)) * 100) + '%' : '—'}</dd><dt>今日の仕入れ額</dt><dd>${yen(T.buy || 0)}</dd><dt>設備投資</dt><dd>${yen(T.capex || 0)}</dd><dt class="tot">現在の資金</dt><dd class="tot">${yen(s.funds)}</dd></dl></div>
+        ${s.history.length ? `<div class="card"><h3>売上と利益（直近14日）</h3><div class="chart">${chartSVG(s.history.slice(-14))}</div><div class="row small" style="gap:14px"><span><i style="display:inline-block;width:12px;height:12px;background:rgba(201,163,94,.55);border:1.5px solid var(--gold);border-radius:3px"></i> 売上</span><span><i style="display:inline-block;width:14px;height:3px;background:var(--good)"></i> 利益</span></div></div>` : ''}
+        <p class="muted small" style="margin:0">資金が ${yen(R.BANKRUPT)} を下回ると倒産です。</p>`;
+      return;
+    }
+    if (t === 'up') {
+      const SL = sim.shopLevel(s).lv;
+      body.innerHTML = `<div class="row between"><span class="small">資金 <b class="num">${yen(s.funds)}</b>・店舗 <b>Lv${SL}</b></span><span class="small muted">設備1つごとに光熱費 +${yen(R.UTIL_PER_EQUIP)}/日</span></div><div class="list">${D.UPGRADES.map((u) => {
+        const lv = s.up[u.id] || 0, max = u.levels.length, cost = u.levels[lv], need = sim.upReq(u, lv);
+        const cur = u.vals ? `いま ${u.vals[lv]}台` : '';
+        const btn = lv >= max ? '<span class="chip ok">導入済み</span>' : SL < need ? `<span class="chip">${ic('lock')} Lv${need}</span>` : `<button class="btn sm pink num" data-up="${u.id}" ${s.funds >= cost ? '' : 'disabled'}>${yen(cost)}</button>`;
+        return `<div class="card upg"><div class="ico">${ic(u.icon)}</div><div style="min-width:0;display:grid;gap:2px"><b>${esc(u.name)}</b><span class="small muted">${esc(u.desc)}${cur ? '（' + cur + '）' : ''}</span><span class="lv">${u.levels.map((_, i) => `<i class="${i < lv ? 'on' : ''}"></i>`).join('')}</span></div>${btn}</div>`;
+      }).join('')}</div><p class="muted small" style="margin:0">増床するとお店と厨房が広くなり、ミキサー・クリーム台・デコ台・レジの数も増えます。</p>`;
+      $$('[data-up]', body).forEach((b) => (b.onclick = async () => { const u = D.UPGRADES.find((x) => x.id === b.dataset.up); if (await UI.confirm(u.name, `${yen(u.levels[S().up[u.id] || 0])} で導入しますか？`, '導入する')) act({ t: 'upgrade', id: u.id }); }));
+      return;
+    }
+    if (t === 'ad') {
+      body.innerHTML = `${s.phase === 'prep' ? '' : '<div class="banner">広告は CLOSE（準備中）のあいだに出せます</div>'}<div class="list">${Object.keys(D.ADS).map((k) => { const a = D.ADS[k]; return `<div class="item"><div class="ico">${ic('megaphone')}</div><div class="mid"><b>${esc(a.name)}</b><small>${a.cost ? yen(a.cost) + '・今日の来店数 ×' + a.mult : '広告を出さない'}</small></div><div class="end">${s.ad === k ? '<span class="chip ok">実施中</span>' : `<button class="btn sm" data-ad="${k}" ${s.phase === 'prep' ? '' : 'disabled'}>えらぶ</button>`}</div></div>`; }).join('')}</div><p class="muted small" style="margin:0">広告はその日だけ有効です。作れる量より客が多いと売り切れで評判が下がるので注意！</p>`;
+      $$('[data-ad]', body).forEach((b) => (b.onclick = () => act({ t: 'ad', kind: b.dataset.ad })));
+    }
+  };
+  // ---------- レシピ帳（作り方。どこでも見られる） ----------
+  game.openRecipeBook = function () {
+    if (document.pointerLockElement) document.exitPointerLock();
+    UI.openSheet({
+      title: 'レシピ帳', live: false, key: 'book',
+      render(body) {
+        const s = S();
+        const howTo = `<div class="card soft"><h3>作り方（ショートケーキの例）</h3><ol class="howto">
+          <li><b>型</b>：左奥の棚で「型を取る」</li>
+          <li><b>生地</b>：ミキサー上の材料を<b>順番どおり</b>に入れる → ミキサーを回し、ゲージが<b class="pos">緑</b>で止める → 型を持ってミキサーをねらい「型に流す」</li>
+          <li><b>焼く</b>：オーブンに入れて電源ON（温度は生地ごとの適温）→ ゲージの緑で「取り出す」</li>
+          <li><b>冷ます</b>：右の冷却ラックに置いて冷めるまで待つ</li>
+          <li><b>クリーム</b>：クリーム台に材料を入れて泡立て、緑で止める → 「クリームを取る」</li>
+          <li><b>デコ</b>：冷めた型をデコ台にのせる → クリームを持って「塗る」（緑で止める）→ トッピングを取ってケーキの上に1つずつ置く → 「仕上げる」</li>
+          <li><b>販売</b>：ショーケースに並べる → 外の看板を OPEN → レジで注文を受ける → 箱を取ってショーケースから入れる → お客さんに渡す</li></ol></div>`;
+        const comp = (r) => `${esc(D.BASES[r.base].short)}生地 ＋ ${r.cream === 'none' ? 'クリームなし' : esc(D.CREAMS[r.cream].short)}${Object.keys(r.tops || {}).length ? ' ＋ ' + Object.keys(r.tops).map((k) => D.ING[k].icon + '×' + r.tops[k]).join(' ') : ''}`;
+        const ingTxt = (req, order) => (order || Object.keys(req)).map((k) => D.ING[k].icon + esc(D.ING[k].name) + '×' + req[k]).join(' → ');
+        const known = Object.keys(D.RECIPES).filter((k) => s.known[k]);
+        const rows = known.map((rid) => {
+          const r = D.RECIPES[rid], B = D.BASES[r.base], Cr = D.CREAMS[r.cream];
+          return `<div class="card rcp"><div class="row" style="gap:10px">${cakeImg(r)}<div style="min-width:0;display:grid;gap:2px"><b>${esc(r.name)}</b><span class="small muted">${comp(r)}</span></div></div>
+            <dl class="kv small"><dt>生地（${esc(B.short)}）</dt><dd>${ingTxt(B.ing, B.order)}</dd><dt>焼き</dt><dd>${B.temp}℃・約${Math.round(sim.ovenDur(s, r.base) / 1000)}秒</dd>${r.cream !== 'none' ? `<dt>クリーム</dt><dd>${ingTxt(Cr.ing)}</dd>` : ''}${Object.keys(r.tops || {}).length ? `<dt>トッピング</dt><dd>${Object.keys(r.tops).map((k) => D.ING[k].icon + esc(D.ING[k].name) + '×' + r.tops[k]).join('、')}</dd>` : ''}</dl></div>`;
+        }).join('');
+        const locked = Object.keys(D.RECIPES).filter((k) => !s.known[k]).map((rid) => `<span class="chip">${ic('lock')} ${esc(D.RECIPES[rid].name)}（Lv${D.RECIPES[rid].lv || 1}）</span>`).join(' ');
+        body.innerHTML = howTo + rows + (locked ? `<div class="card soft"><h3>まだ作れない商品</h3><div class="row wrap">${locked}</div></div>` : '');
+      },
+    });
   };
 
   // =====================================================================
@@ -665,46 +609,15 @@
   //  経営（収支・推移・拡張・広告）
   // =====================================================================
   game.openBiz = function (tab) {
+    if (document.pointerLockElement) document.exitPointerLock();
     UI.openSheet({
       title: '経営', live: true, key: 'biz',
-      tabs: [{ id: 'today', label: '収支' }, { id: 'trend', label: '推移' }, { id: 'level', label: 'レベル' }, { id: 'staff', label: 'アルバイト' }, { id: 'up', label: '拡張' }, { id: 'ad', label: '広告' }], tab,
+      tabs: [{ id: 'today', label: '収支' }, { id: 'trend', label: '推移' }, { id: 'level', label: 'レベル' }], tab: ['today', 'trend', 'level'].includes(tab) ? tab : 'today',
       render(body, t) {
         const s = S();
-        if (t === 'today') {
-          const T = s.today;
-          let equip = 0; for (const u of D.UPGRADES) equip += s.up[u.id] || 0;
-          const wages = s.staff.reduce((a, st) => a + (st ? D.STAFF.wage(st.lv) : 0), 0);
-          const rentU = R.RENT + (s.up.floor || 0) * (R.RENT_PER_FLOOR || 1500) + (equip + 2) * R.UTIL_PER_EQUIP;
-          const fixed = s.phase === 'report' && s.history.length ? s.history[s.history.length - 1].fixed : rentU + wages;
-          const rev = T.sales + T.drinks;
-          const prof = rev - T.cogs - T.waste - T.ads - (T.lab || 0) - fixed;
-          body.innerHTML = `<div class="card"><h3>${s.day}日目（${s.phase === 'report' ? '確定' : 'いまの時点'}）</h3><dl class="kv">
-            <dt>売上（ケーキ）</dt><dd>${yen(T.sales)}</dd><dt>売上（ドリンク）</dt><dd>${yen(T.drinks)}</dd>
-            <dt>原価（売れた分）</dt><dd class="neg">-${yen(T.cogs)}</dd><dt>廃棄ロス</dt><dd class="neg">-${yen(T.waste)}</dd>
-            <dt>広告・試作</dt><dd class="neg">-${yen(T.ads + (T.lab || 0))}</dd><dt>家賃・光熱費・日給（閉店時）</dt><dd class="neg">-${yen(fixed)}</dd>
-            <dt class="tot">営業利益（見込み）</dt><dd class="tot ${prof >= 0 ? 'pos' : 'neg'}">${yen(prof)}</dd></dl></div>
-            <div class="card"><dl class="kv"><dt>来店</dt><dd>${T.cust}人</dd><dt>販売</dt><dd>${T.sold}切れ</dd><dt>買わずに帰った</dt><dd>${T.miss}人（うち売り切れ ${T.soldout}人）</dd><dt>満足度</dt><dd>${T.cust - T.miss > 0 ? Math.round((T.sat / (T.cust - T.miss)) * 100) + '%' : '—'}</dd><dt>今日の仕入れ額</dt><dd>${yen(T.buy || 0)}</dd><dt>設備投資</dt><dd>${yen(T.capex || 0)}</dd><dt class="tot">現在の資金</dt><dd class="tot">${yen(s.funds)}</dd></dl></div>
-            <p class="muted small" style="margin:0">原価＝売れたケーキに使った材料費。仕入れ額とは別に計算しています。資金が ${yen(R.BANKRUPT)} を下回ると倒産です。</p>`;
-        } else if (t === 'trend') {
-          body.innerHTML = s.history.length ? `<div class="card"><h3>売上と利益（直近14日）</h3><div class="chart">${chartSVG(s.history.slice(-14))}</div><div class="row small" style="gap:14px"><span><i style="display:inline-block;width:12px;height:12px;background:rgba(201,163,94,.55);border:1.5px solid var(--gold);border-radius:3px"></i> 売上</span><span><i style="display:inline-block;width:14px;height:3px;background:var(--good)"></i> 利益</span></div></div>
-            <div class="card" style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums"><thead><tr style="text-align:right"><th style="text-align:left">日</th><th>来店</th><th>販売</th><th>売上</th><th>利益</th><th>評判</th></tr></thead><tbody>${s.history.slice().reverse().map((h) => `<tr style="text-align:right;border-top:1px solid var(--line)"><td style="text-align:left">${h.d}</td><td>${h.cust}</td><td>${h.sold}</td><td>${yen(h.sales)}</td><td class="${h.profit >= 0 ? 'pos' : 'neg'}">${yen(h.profit)}</td><td>${h.rep.toFixed(1)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="banner">1日目の営業が終わると、ここに推移が表示されます</div>';
-        } else if (t === 'level') {
-          game.renderLevel(body, s);
-        } else if (t === 'staff') {
-          game.renderStaff(body, s);
-        } else if (t === 'up') {
-          const SL = sim.shopLevel(s).lv;
-          body.innerHTML = `<div class="row between"><span class="small">資金 <b class="num">${yen(s.funds)}</b>・店舗 <b>Lv${SL}</b></span><span class="small muted">設備1つごとに光熱費 +${yen(R.UTIL_PER_EQUIP)}/日</span></div><div class="list">${D.UPGRADES.map((u) => {
-            const lv = s.up[u.id] || 0, max = u.levels.length, cost = u.levels[lv], need = sim.upReq(u, lv);
-            const cur = u.vals ? `いま ${u.vals[lv]}${u.id === 'oven' ? '台' : '台分'}` : '';
-            const btn = lv >= max ? '<span class="chip ok">導入済み</span>' : SL < need ? `<span class="chip">${ic('lock')} Lv${need}</span>` : `<button class="btn sm pink num" data-up="${u.id}" ${s.funds >= cost ? '' : 'disabled'}>${yen(cost)}</button>`;
-            return `<div class="card upg"><div class="ico">${ic(u.icon)}</div><div style="min-width:0;display:grid;gap:2px"><b>${esc(u.name)}</b><span class="small muted">${esc(u.desc)}${cur ? '（' + cur + '）' : ''}</span><span class="lv">${u.levels.map((_, i) => `<i class="${i < lv ? 'on' : ''}"></i>`).join('')}</span></div>${btn}</div>`;
-          }).join('')}</div><p class="muted small" style="margin:0">機械（オーブンの機種・ミキサーなど）と家具は、厨房の「仕入れ棚」から買えます。</p>`;
-          $$('[data-up]', body).forEach((b) => (b.onclick = async () => { const u = D.UPGRADES.find((x) => x.id === b.dataset.up); if (await UI.confirm(u.name, `${yen(u.levels[S().up[u.id] || 0])} で導入しますか？`, '導入する')) act({ t: 'upgrade', id: u.id }); }));
-        } else if (t === 'ad') {
-          body.innerHTML = `${s.phase === 'prep' ? '' : '<div class="banner">広告は「開店準備」のあいだに出せます</div>'}<div class="list">${Object.keys(D.ADS).map((k) => { const a = D.ADS[k]; return `<div class="item"><div class="ico">${ic('megaphone')}</div><div class="mid"><b>${esc(a.name)}</b><small>${a.cost ? yen(a.cost) + '・今日の来店数 ×' + a.mult : '広告を出さない'}</small></div><div class="end">${s.ad === k ? '<span class="chip ok">実施中</span>' : `<button class="btn sm" data-ad="${k}" ${s.phase === 'prep' ? '' : 'disabled'}>えらぶ</button>`}</div></div>`; }).join('')}</div><p class="muted small" style="margin:0">広告はその日だけ有効です。作れる量より客が多いと売り切れで評判が下がるので注意！</p>`;
-          $$('[data-ad]', body).forEach((b) => (b.onclick = () => act({ t: 'ad', kind: b.dataset.ad })));
-        }
+        if (t !== 'trend') return game.renderBizTab(body, s, t);
+        body.innerHTML = s.history.length ? `<div class="card"><h3>売上と利益（直近14日）</h3><div class="chart">${chartSVG(s.history.slice(-14))}</div></div>
+          <div class="card" style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums"><thead><tr style="text-align:right"><th style="text-align:left">日</th><th>来店</th><th>販売</th><th>売上</th><th>利益</th><th>評判</th></tr></thead><tbody>${s.history.slice().reverse().map((h) => `<tr style="text-align:right;border-top:1px solid var(--line)"><td style="text-align:left">${h.d}</td><td>${h.cust}</td><td>${h.sold}</td><td>${yen(h.sales)}</td><td class="${h.profit >= 0 ? 'pos' : 'neg'}">${yen(h.profit)}</td><td>${h.rep.toFixed(1)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="banner">1日目の営業が終わると、ここに推移が表示されます</div>';
       },
     });
   };
@@ -751,7 +664,7 @@
     $$('[data-stask]', body).forEach((b) => (b.onclick = () => { CS.sound.play('tap'); act({ t: 'staffTask', slot: +b.dataset.stask, task: b.dataset.k, opt: '' }); }));
     $$('[data-sopt]', body).forEach((el) => (el.onchange = () => { const st = S().staff[+el.dataset.sopt]; act({ t: 'staffTask', slot: +el.dataset.sopt, task: st.task, opt: el.value }); }));
   };
-  // ---------- 仕入れ棚：家具・設備 ----------
+  // ---------- パソコン：家具・設備 ----------
   game.renderFurn = function (body, s) {
     const SL = sim.shopLevel(s).lv;
     body.innerHTML = `<div class="row between"><span class="small">資金 <b class="num">${yen(s.funds)}</b></span><span class="small muted">増床すると置ける数が増えます</span></div><div class="list">${Object.keys(D.FURN).map((id) => {
@@ -831,19 +744,48 @@
     const q = $('#ss-quit', body);
     if (q) q.onclick = async () => { if (await UI.confirm('メンバーから抜ける', '席が空き、ほかの人が参加できるようになります。お店はほかのメンバーが続けられます。', '抜ける', true)) game.leave(true); };
   };
-  game.tutorial = function () {
-    const steps = [
-      ['仕入れ', '「仕入れ」ボタンや冷蔵庫から材料を買います。いちご・生クリームは日持ちが短いので買いすぎ注意。'],
-      ['生地 → オーブン', 'ミキサー台で生地を作り（投入順＋かき混ぜ）、オーブンへ。焼き加減メーターの緑で「取り出す」！'],
-      ['冷ます → クリーム', '焼けたスポンジは冷却ラックで冷めるのを待つ間に、クリーム台で泡立て。'],
-      ['デコ → 販売', 'デコ台でナッペとトッピング。完成したケーキはショーケースに並び、お客さんが買っていきます。'],
-      ['価格と拡張', '「メニュー」で1切れの価格を設定。品質と価格で売れ行き・満足度が変わります。儲けたら「経営」で設備投資！'],
-      ['みんなで', '4人なら役割分担（焼き係・クリーム係・デコ係・店長）がおすすめ。スタンプで声をかけ合おう。'],
-    ];
+  // ---------- チュートリアル（最初に1回。画面右上のチェックリスト） ----------
+  const TUT = [
+    { id: 'order', t: 'パソコンで材料を注文', d: '右の壁ぎわのパソコンをねらって使う。卵・砂糖・小麦粉・バター・生クリーム・いちごを注文しよう（「まとめて注文」が便利）', ok: (s) => (s.today.buy || 0) > 0 || s.history.length > 0 },
+    { id: 'stock', t: '段ボールを在庫の棚へ', d: '裏口（左奥）に届いた段ボールを持って、左の壁の「在庫の棚」をねらってしまう', ok: (s) => ((s.today.buy || 0) > 0 || s.history.length > 0) && !Object.values(s.k.items).some((it) => it.t === 'crate') },
+    { id: 'mix', t: 'ミキサーで生地を作る', d: '奥のミキサーの上の材料を順番に入れる（卵→砂糖→小麦粉→バター）→ 回して緑で止める', ok: (s) => s.k.mix.some((b) => b.st === 'done' && b.k) || Object.values(s.k.items).some((it) => it.t === 'pan' && it.st !== 'empty') },
+    { id: 'bake', t: '型に流してオーブンへ', d: '左奥の棚で型を取り、ミキサーをねらって「型に流す」→ オーブンに入れて電源を入れる', ok: (s) => Object.values(s.k.items).some((it) => it.t === 'pan' && (it.st === 'baking' || it.st === 'baked')) || Object.values(s.k.items).some((it) => it.t === 'deco' || it.t === 'cake') },
+    { id: 'cool', t: '焼けたら取り出して冷ます', d: 'ゲージが緑のうちに取り出し、右の冷却ラックに置く', ok: (s) => Object.values(s.k.items).some((it) => (it.t === 'pan' && it.st === 'baked' && !String(it.at).startsWith('ov:')) || it.t === 'deco' || it.t === 'cake') },
+    { id: 'whip', t: 'クリームを泡立てる', d: 'クリーム台に生クリーム×2・砂糖×1を入れて泡立て、緑で止めて「クリームを取る」', ok: (s) => Object.values(s.k.items).some((it) => it.t === 'cream' || (it.t === 'deco' && it.cr) || it.t === 'cake') },
+    { id: 'deco', t: 'デコして仕上げる', d: '冷めた型をデコ台にのせる → クリームを塗る → いちごを3つ置く → 仕上げる', ok: (s) => Object.values(s.k.items).some((it) => it.t === 'cake') || s.showcase.some((c) => c) },
+    { id: 'case', t: 'ショーケースに並べる', d: 'できたケーキを持って、ショーケースの空いている台に「並べる」', ok: (s) => s.showcase.some((c) => c) },
+    { id: 'open', t: '看板を OPEN にする', d: '入口の外にある看板をねらって OPEN に。お客さんが来て時間が進みます', ok: (s) => s.phase === 'open' || s.today.sold > 0 },
+    { id: 'serve', t: '接客して売る', d: 'レジで注文を受ける → 箱を取り、ショーケースから注文の数だけ入れる → 待っているお客さんに渡す', ok: (s) => s.today.sold > 0 || s.history.length > 0 },
+  ];
+  game.tutMark = function () { /* 進み具合は状態から判定するので何もしない（呼び出し側の互換用） */ };
+  game.tutCheck = function (s) {
+    const el = $('#tut'); if (!el) return;
+    const st = CS.LS.get('cs.tut2', null);
+    if (!st || st.off || !ST.tips) { el.hidden = true; return; }
+    let i = st.i || 0;
+    while (i < TUT.length && TUT[i].ok(s)) i++;
+    if (i !== st.i) { st.i = i; CS.LS.set('cs.tut2', st); if (i > 0) CS.sound.play('ok'); }
+    if (i >= TUT.length) { el.hidden = false; el.innerHTML = `<b>${ic('check')} チュートリアル完了！</b><span class="small muted">あとは自由に。経営はパソコンから</span><button class="btn sm" id="tut-x">閉じる</button>`; $('#tut-x').onclick = () => { st.off = true; CS.LS.set('cs.tut2', st); el.hidden = true; }; return; }
+    const step = TUT[i];
+    const h = `<div class="row between"><b class="small">やること ${i + 1}/${TUT.length}</b><button class="icon-btn sm" id="tut-x" aria-label="チュートリアルを閉じる">${ic('close')}</button></div><b>${esc(step.t)}</b><span class="small">${esc(step.d)}</span><i class="bar"><u style="width:${Math.round((i / TUT.length) * 100)}%"></u></i>`;
+    if (el._h !== h) { el._h = h; el.innerHTML = h; $('#tut-x').onclick = () => { st.off = true; CS.LS.set('cs.tut2', st); el.hidden = true; UI.toast('設定 → お店 → 「遊び方」でもう一度見られます'); }; }
+    el.hidden = false;
+  };
+  game.tutorial = function (first) {
+    const T = touch();
+    const ctl = T
+      ? [['移動', '左下のスティック'], ['見回す', '画面の右側をスワイプ'], ['つかむ・置く', '大きいボタン（照準の先の物）'], ['使う', '小さいボタン（ミキサーを回す・電源など）'], ['捨てる', 'ゴミ箱のボタン']]
+      : [['移動', 'W A S D（Shift で小走り）'], ['見回す', 'マウス（画面をクリックで開始・Esc で解除）'], ['つかむ・置く', 'E / 左クリック'], ['使う', 'F / 右クリック'], ['捨てる', 'Q'], ['パソコン・レシピ', 'Tab / R']];
     UI.modal({
-      title: '遊び方',
-      html: `<ol style="margin:0;padding-left:1.4em;display:grid;gap:8px">${steps.map((s) => `<li><b>${esc(s[0])}</b><br><span class="muted">${esc(s[1])}</span></li>`).join('')}</ol>`,
-      buttons: [{ label: 'わかった！', cls: 'pink', value: true }],
+      title: 'ようこそ！ケーキ屋さんへ',
+      html: `<div style="display:grid;gap:10px"><p style="margin:0">一人称でお店の中を歩いて、<b>材料を注文 → 生地 → 焼く → クリーム → デコ → 並べる → 接客</b>を自分の手でやります。みんなで分担すると早い！</p>
+        <dl class="kv">${ctl.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join('')}</dl>
+        <div class="banner sky">お店は最初 <b>CLOSE</b>。CLOSE のあいだはお客さんが来ず、時計も止まります。準備ができたら入口の外の<b>看板</b>を OPEN に。</div>
+        <p class="muted small" style="margin:0">画面右上に「やること」が出ます。設定でボタンの位置・大きさ・視点の感度を変えられます。</p></div>`,
+      buttons: [{ label: 'はじめる！', cls: 'pink', value: true }],
     });
+    const st = CS.LS.get('cs.tut2', null) || {};
+    if (first || st.off) CS.LS.set('cs.tut2', { i: 0, off: false });
+    const s = S(); if (s) game.tutCheck(s);
   };
 })(typeof window !== 'undefined' ? window : globalThis);

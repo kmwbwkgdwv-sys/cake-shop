@@ -114,6 +114,16 @@
     if (UI.room) UI.room.setLight(!!ST.light);
     if (UI.layoutFabs) UI.layoutFabs();
   };
+  // スマホは横画面で遊ぶ：全画面にして横向きに固定（対応ブラウザのみ。iPhone の Safari は「横にしてね」表示）
+  CS.landscape = function () {
+    if (!(G.matchMedia && matchMedia('(pointer: coarse)').matches)) return;
+    const lock = () => { try { const o = screen.orientation; if (o && o.lock) { const r = o.lock('landscape'); if (r && r.catch) r.catch(() => {}); } } catch (e) { /* 未対応 */ } };
+    const el = document.documentElement;
+    try {
+      if (!document.fullscreenElement && el.requestFullscreen) { const r = el.requestFullscreen({ navigationUI: 'hide' }); if (r && r.then) r.then(lock, lock); else lock(); }
+      else lock();
+    } catch (e) { lock(); }
+  };
   UI.syncLabel = function () {
     if (!net.online) return { cls: 'offline', text: 'オフライン（この端末のみ）' };
     const s = save.status;
@@ -131,21 +141,23 @@
       render(body, tab) {
         if (tab === 'play') {
           body.innerHTML = `
-          <div class="card"><h3>カメラ感度</h3><p class="muted small" style="margin:0">ドラッグ（スマホは画面スワイプ）で視点を回す速さ。</p>
+          <div class="card"><h3>視点の感度</h3><p class="muted small" style="margin:0">マウス・スワイプで見回す速さ。</p>
             <div class="row"><input type="range" id="set-cam" min="0.3" max="2.5" step="0.05" value="${ST.camSens}"><b class="num" id="set-cam-v" style="min-width:48px;text-align:right">${ST.camSens.toFixed(2)}</b></div>
             <div class="row between"><span class="small">上下を反転</span><label class="switch"><input type="checkbox" id="set-inv" ${ST.invertY ? 'checked' : ''} aria-label="上下反転"><i></i></label></div></div>
-          <div class="card"><h3>調理の感度</h3><p class="muted small" style="margin:0">かき混ぜ・泡立て・クリーム塗りの反応の大きさ。小さくすると細かく調整できます。</p>
-            <div class="row"><input type="range" id="set-sens" min="0.5" max="2" step="0.05" value="${ST.sens}"><b class="num" id="set-sens-v" style="min-width:48px;text-align:right">${ST.sens.toFixed(2)}</b></div></div>
+          <div class="card"><h3>視野角（FOV）</h3><p class="muted small" style="margin:0">広くすると周りがよく見え、狭くすると手元が大きく見えます。</p>
+            <div class="row"><input type="range" id="set-fov" min="55" max="95" step="1" value="${ST.fov}"><b class="num" id="set-fov-v" style="min-width:48px;text-align:right">${ST.fov}°</b></div>
+            <div class="row between"><span class="small">歩くときの画面の揺れ</span><label class="switch"><input type="checkbox" id="set-bob" ${ST.bob ? 'checked' : ''} aria-label="画面の揺れ"><i></i></label></div></div>
           <div class="card"><h3>ボタンの大きさ</h3>
             <div class="row"><input type="range" id="set-btn" min="0.8" max="1.6" step="0.05" value="${ST.btnScale}"><b class="num" id="set-btn-v" style="min-width:48px;text-align:right">${Math.round(ST.btnScale * 100)}%</b></div></div>
           <div class="card"><h3>ボタンの位置</h3>
             <div class="seg" id="set-hand"><button data-v="right" aria-pressed="${!ST.fab && ST.hand === 'right'}">右手用（スティック左）</button><button data-v="left" aria-pressed="${!ST.fab && ST.hand === 'left'}">左手用（スティック右）</button><button data-v="free" aria-pressed="${!!ST.fab}">自由配置</button></div>
             <div class="row wrap"><button class="btn sm" id="set-edit" ${inGame ? '' : 'disabled'}>${ic('move')} スティック・ボタンを動かす</button>${inGame ? '' : '<span class="muted small">お店の中で動かせます</span>'}</div>
             <p class="muted small" style="margin:0">位置と大きさはこの端末だけに保存されます（スマホとPCで別々に設定できます）。</p></div>`;
-          const sens = $('#set-sens', body), btn = $('#set-btn', body), cam = $('#set-cam', body);
+          const fov = $('#set-fov', body), btn = $('#set-btn', body), cam = $('#set-cam', body);
           cam.oninput = () => { ST.camSens = +cam.value; $('#set-cam-v', body).textContent = ST.camSens.toFixed(2); ST.save(); };
           $('#set-inv', body).onchange = (e) => { ST.invertY = e.target.checked; ST.save(); };
-          sens.oninput = () => { ST.sens = +sens.value; $('#set-sens-v', body).textContent = ST.sens.toFixed(2); ST.save(); };
+          fov.oninput = () => { ST.fov = +fov.value; $('#set-fov-v', body).textContent = ST.fov + '°'; ST.save(); };
+          $('#set-bob', body).onchange = (e) => { ST.bob = e.target.checked; ST.save(); };
           btn.oninput = () => { ST.btnScale = +btn.value; $('#set-btn-v', body).textContent = Math.round(ST.btnScale * 100) + '%'; ST.save(); };
           $$('#set-hand button', body).forEach((b) => (b.onclick = () => {
             const v = b.dataset.v;
@@ -156,10 +168,10 @@
           const e = $('#set-edit', body); if (e) e.onclick = () => { UI.closeSheet(); UI.editFabs(); };
         } else if (tab === 'view') {
           body.innerHTML = `
-          <div class="card"><div class="row between"><div><h3>軽量モード</h3><p class="muted small" style="margin:0">3D の解像度を下げ、影・輪郭線・紙吹雪を止め、通信の頻度も下げます。古いスマホや電池を節約したいときに。</p></div><label class="switch"><input type="checkbox" id="set-light" ${ST.light ? 'checked' : ''} aria-label="軽量モード"><i></i></label></div></div>
-          <div class="card"><div class="row between"><h3>効果音</h3><label class="switch"><input type="checkbox" id="set-sound" ${ST.sound ? 'checked' : ''} aria-label="効果音"><i></i></label></div>
+          <div class="card"><div class="row between"><div><h3>軽量モード</h3><p class="muted small" style="margin:0">3D の解像度を下げ、影・照明の数・遠くの街並み・紙吹雪を減らし、通信の頻度も下げます。古いスマホや電池を節約したいときに。</p></div><label class="switch"><input type="checkbox" id="set-light" ${ST.light ? 'checked' : ''} aria-label="軽量モード"><i></i></label></div></div>
+          <div class="card"><div class="row between"><div><h3>効果音</h3><p class="muted small" style="margin:0">ほかのアプリの音楽を止めずに、いっしょに鳴ります</p></div><label class="switch"><input type="checkbox" id="set-sound" ${ST.sound ? 'checked' : ''} aria-label="効果音"><i></i></label></div>
             <div class="row"><span class="small">音量</span><input type="range" id="set-vol" min="0" max="1" step="0.05" value="${ST.vol}"></div></div>
-          <div class="card"><div class="row between"><div><h3>操作のヒント</h3><p class="muted small" style="margin:0">ミニゲーム中の説明を表示</p></div><label class="switch"><input type="checkbox" id="set-tips" ${ST.tips ? 'checked' : ''} aria-label="ヒント"><i></i></label></div></div>`;
+          <div class="card"><div class="row between"><div><h3>チュートリアル・ヒント</h3><p class="muted small" style="margin:0">画面右上の「やること」を表示</p></div><label class="switch"><input type="checkbox" id="set-tips" ${ST.tips ? 'checked' : ''} aria-label="ヒント"><i></i></label></div></div>`;
           $('#set-light', body).onchange = (e) => { ST.light = e.target.checked; ST.save(); };
           $('#set-sound', body).onchange = (e) => { ST.sound = e.target.checked; ST.save(); CS.sound.play('ok'); };
           $('#set-vol', body).oninput = (e) => { ST.vol = +e.target.value; ST.save(); };
@@ -320,7 +332,7 @@
     const r = await UI.modal({
       title: 'お店をつくる',
       html: `<div style="display:grid;gap:12px"><label class="field"><span>お店の名前</span><input class="input" id="ns-name" maxlength="16" value="${esc(save.data.name)}のケーキ屋さん"></label>
-        <div class="field"><span>むずかしさ（ミニゲームの判定の厳しさ）</span><div class="seg" id="ns-diff">${Object.keys(D.DIFF).map((k) => `<button data-v="${k}" aria-pressed="${k === diff}">${D.DIFF[k].name}</button>`).join('')}</div><small class="muted" id="ns-note">${D.DIFF[diff].note}</small></div>
+        <div class="field"><span>むずかしさ（ゲージの緑の幅・焼き加減の厳しさ）</span><div class="seg" id="ns-diff">${Object.keys(D.DIFF).map((k) => `<button data-v="${k}" aria-pressed="${k === diff}">${D.DIFF[k].name}</button>`).join('')}</div><small class="muted" id="ns-note">${D.DIFF[diff].note}</small></div>
         <div class="banner ${net.online ? 'mint' : ''}">${net.online ? '作ったあと、招待コードで最大4人まで参加できます。ひとりで遊ぶこともできます。' : 'オフラインなので、この端末でひとりで遊ぶお店になります。'}</div></div>`,
       buttons: [{ label: 'やめる', value: null, cls: 'ghost' }, { label: 'つくる！', cls: 'pink', value: (m) => ({ name: $('#ns-name', m).value.trim() || 'ケーキ屋さん', diff }) }],
       onOpen(m) { $$('#ns-diff button', m).forEach((b) => (b.onclick = () => { diff = b.dataset.v; $$('#ns-diff button', m).forEach((x) => x.setAttribute('aria-pressed', x === b)); $('#ns-note', m).textContent = D.DIFF[diff].note; })); },

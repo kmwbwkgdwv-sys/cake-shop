@@ -26,13 +26,14 @@
       clock: { base: 0, at: 0, run: false },
       funds: R.START_FUNDS, rep: 2.8,
       inv: {}, market: {}, mEvent: 0,
-      batters: {}, ovens: [{ s: 0 }, { s: 0 }], bases: {}, creams: {}, showcase: [0, 0, 0], stock: {},
+      ovens: [], showcase: [], stock: {}, k: null, dayT: 0,
       menu: {}, known: {}, originals: {}, tested: {},
-      up: {}, eq: {}, furn: {}, staff: [0, 0, 0, 0], ad: 'none', weather: 'sun',
+      up: {}, eq: {}, furn: { table: 2 }, staff: [0, 0, 0, 0], ad: 'none', weather: 'sun',
       xp: 0, today: blankToday(), history: [], cust: {}, fx: [], fxi: 0, seq: 0, np: 1, bankrupt: 0,
     };
     for (const id in D.RECIPES) if ((D.RECIPES[id].lv || 1) <= 1) addKnown(S, id);
     genMarket(S, true);
+    normalize(S);
     // 初期在庫（ちょっとだけ）
     const start = { flour: 8, egg: 18, sugar: 14, butter: 4, cream: 8, strawberry: 6, choco: 3, cocoa: 2, cheese: 6, lemon: 3, milk: 2 };
     for (const id in start) invAdd(S, id, start[id], D.ING[id].price);
@@ -59,11 +60,10 @@
     S.fx = toArr(S.fx);
     for (const id in S.inv) { S.inv[id] = toArr(S.inv[id]).map(toArr).filter((l) => l.length === 3 && l[0] > 0); if (!S.inv[id].length) delete S.inv[id]; }
     const nOven = upVal('oven', S.up.oven || 0);
-    S.ovens = toArr(S.ovens).map((o) => (o && typeof o === 'object' ? o : { s: 0 }));
-    while (S.ovens.length < nOven) S.ovens.push({ s: 0 });
+    S.ovens = toArr(S.ovens).map((o) => (o && typeof o === 'object' ? { h: o.h || 0, temp: o.temp || 170, hot: o.hot || 0 } : { h: 0, temp: 170, hot: 0 }));
+    while (S.ovens.length < nOven) S.ovens.push({ h: 0, temp: 170, hot: 0 });
     const nCase = upVal('showcase', S.up.showcase || 0);
     S.showcase = toArr(S.showcase, nCase).map((c) => (c && typeof c === 'object' ? Object.assign(c, { df: toArr(c.df).filter((x) => x) }) : 0));
-    S.ovens.forEach((o) => { if (o.s) o.df = toArr(o.df).filter((x) => x); });
     while (S.showcase.length < nCase) S.showcase.push(0);
     for (const id in S.originals) { const o = S.originals[id]; if (!o.tops) o.tops = {}; }
     // 旧データの設備を新しい「設備・家具」に移す
@@ -73,6 +73,7 @@
     delete U.proOven; delete U.mixer; delete U.cooler; delete U.fridge; delete U.eatin;
     S.staff = toArr(S.staff, 4).slice(0, 4).map((x) => (x && typeof x === 'object' ? x : 0));
     unlockByLevel(S);
+    if (CS.kitchen) CS.kitchen.normalize(S);
     return S;
   }
   function toArr(v, len) {
@@ -128,9 +129,10 @@
     return (c.base || 0) + clamp(now - (c.at || now), 0, 10000);
   }
   function phaseInfo(S, t) {
-    const el = Math.max(0, t - (S.phaseAt || 0));
-    if (S.phase === 'prep') { const f = clamp(el / R.PREP_MS, 0, 1); return { phase: 'prep', label: '開店準備', f, min: 7.5 * 60 + f * 150, left: R.PREP_MS - el }; }
-    if (S.phase === 'open') { const f = clamp(el / R.OPEN_MS, 0, 1); return { phase: 'open', label: '営業中', f, min: 600 + f * 600, left: R.OPEN_MS - el }; }
+    const el = (S.dayT || 0) + (S.phase === 'open' ? clamp(t - (S.dayAt || t), 0, 3000) : 0);
+    const f = clamp(el / R.OPEN_MS, 0, 1);
+    if (S.phase === 'prep') return { phase: 'prep', label: 'CLOSE', f, min: 600 + f * 600, left: R.OPEN_MS - el };
+    if (S.phase === 'open') return { phase: 'open', label: 'OPEN', f, min: 600 + f * 600, left: R.OPEN_MS - el };
     if (S.phase === 'report') return { phase: 'report', label: '閉店', f: 1, min: 20 * 60, left: 0 };
     return { phase: 'lobby', label: 'ロビー', f: 0, min: 7 * 60, left: 0 };
   }
@@ -278,16 +280,20 @@
   // ===================== アクション =====================
   // a = { t: 種類, by: 端末ID, pid: プレイヤーID, ... }   戻り値 { ok, msg }
   function apply(S, a, now) {
-    const f = ACT[a.t];
+    const kf = CS.kitchen && CS.kitchen.ACT[a.t];
+    const f = ACT[a.t] || kf;
     if (!f) return { ok: false, msg: '不明な操作' };
     if (S.bankrupt && a.t !== 'reset') return { ok: false, msg: 'お店は倒産しました' };
+    if (kf && !ACT[a.t] && !working(S)) return { ok: false, msg: S.phase === 'report' ? '今日の営業は終わりました' : 'まだ営業日が始まっていません' };
     try { return f(S, a, now) || { ok: true }; } catch (e) { return { ok: false, msg: 'エラー: ' + e.message }; }
   }
   const working = (S) => S.phase === 'prep' || S.phase === 'open';
   const ACT = {
-    start(S, a, now) { if (S.phase !== 'lobby') return { ok: false }; S.phase = 'prep'; S.phaseAt = now; fx(S, 'phase', '開店準備スタート！'); return { ok: true }; },
+    start(S, a, now) { if (S.phase !== 'lobby') return { ok: false }; S.phase = 'prep'; S.phaseAt = now; S.dayT = 0; fx(S, 'phase', '準備中（CLOSE）。仕込みができたら入口の看板を OPEN に！'); return { ok: true }; },
     open(S, a, now) { if (S.phase !== 'prep') return { ok: false }; openShop(S, now); return { ok: true }; },
+    close(S, a, now) { if (S.phase !== 'open') return { ok: false }; S.phase = 'prep'; CS.kitchen.sendAway(S, now, '準備中なんだ…'); fx(S, 'phase', 'CLOSE（準備中）。時計が止まりました'); return { ok: true }; },
     next(S, a, now) { if (S.phase !== 'report') return { ok: false }; nextDay(S, now); return { ok: true }; },
+    endDay(S, a, now) { if (S.phase !== 'prep' || !(S.dayT > 0)) return { ok: false, msg: 'OPEN してから閉店できます' }; closeDay(S, now); return { ok: true }; },
 
     buy(S, a) {
       const ing = D.ING[a.id]; const n = Math.floor(a.n);
@@ -295,83 +301,10 @@
       const unit = S.market[a.id] * (n >= 10 ? 0.95 : 1);
       const cost = Math.round(unit * n);
       if (S.funds < cost) return { ok: false, msg: '資金が足りません' };
+      if (CS.kitchen.deliveryFree(S) < Math.ceil(n / 10)) return { ok: false, msg: '配達置き場がいっぱいです（段ボールを棚にしまおう）' };
       S.funds -= cost; S.today.buy += cost;
-      invAdd(S, a.id, n, Math.round(unit));
-      return { ok: true, msg: ing.name + '×' + n + ' を仕入れた（¥' + cost.toLocaleString() + '）' };
-    },
-    mix(S, a) {
-      if (!working(S)) return { ok: false, msg: '営業時間外です' };
-      const b = D.BASES[a.base]; if (!b) return { ok: false, msg: '生地が不明' };
-      const cost = takeAll(S, b.ing);
-      if (cost < 0) return { ok: false, msg: '材料が足りなかった…（' + missing(S, b.ing).join('、') + '）' };
-      const id = uid(S, 'm');
-      S.batters[id] = { k: a.base, q: clamp(+a.q || 0, 0, 1), c: cost, by: a.pid || '', df: cleanDf(a.df) };
-      return { ok: true, msg: b.short + '生地ができた（品質' + Math.round(S.batters[id].q * 100) + '）' };
-    },
-    ovenHeat(S, a, now) {
-      const o = S.ovens[a.slot]; if (!o) return { ok: false };
-      if (o.s) return { ok: false, msg: '焼いている間は温度を変えられません' };
-      const t = D.OVEN_TEMPS.indexOf(+a.temp) >= 0 ? +a.temp : 170;
-      if (o.h && o.temp === t) return { ok: true, msg: t + '℃ で予熱済みです' };
-      S.ovens[a.slot] = { s: 0, h: 1, temp: t, hot: now + D.PREHEAT_MS * (o.h ? 0.5 : 1) * (eqv(S, 'oven').heat || 1) };
-      fx(S, 'info', 'オーブン' + (a.slot + 1) + 'を' + t + '℃ に予熱中…');
-      return { ok: true };
-    },
-    ovenIn(S, a, now) {
-      const o = S.ovens[a.slot]; const b = S.batters[a.id];
-      if (!o || o.s) return { ok: false, msg: 'そのオーブンは使用中です' };
-      if (!b) return { ok: false, msg: 'その生地はもうありません' };
-      const B = D.BASES[b.k];
-      const temp = o.h ? o.temp : 170;
-      const cold = !o.h || now < (o.hot || 0);
-      delete S.batters[a.id];
-      S.ovens[a.slot] = { s: 1, h: 1, temp, hot: o.hot || now, k: b.k, q: b.q, c: b.c, t0: now, dur: ovenDur(S, b.k, temp, cold), cold: cold ? 1 : 0, dT: temp - B.temp, df: b.df || [], by: a.pid || '' };
-      fx(S, cold ? 'err' : 'oven', cold ? '予熱が終わる前に入れた！ふくらみが悪くなりそう…' : B.short + 'を' + temp + '℃ で焼きはじめた');
-      return { ok: true };
-    },
-    ovenOut(S, a, now) {
-      const o = S.ovens[a.slot];
-      if (!o || !o.s) return { ok: false, msg: 'オーブンは空です' };
-      const d = (now - o.t0) / o.dur;
-      const bq = bakeQuality(S, d, o.dT || 0, !!o.cold);
-      S.ovens[a.slot] = { s: 0, h: 1, temp: o.temp, hot: o.hot || now };
-      const id = uid(S, 'b');
-      S.bases[id] = { k: o.k, q: clamp(o.q * 0.4 + bq.q * 0.6 + (eqv(S, 'oven').qb || 0), 0, 1), c: o.c, cool: now + coolMs(S), day: S.day, df: union(o.df, bq.df) };
-      const bad = bq.df.length;
-      fx(S, bad ? 'fail' : bq.q >= 1 ? 'good' : 'info', D.BASES[o.k].short + '：' + bq.label + (bad ? '（' + bq.df.map((x) => D.DEFECTS[x].name).join('・') + '）' : ''), '');
-      return { ok: true };
-    },
-    whip(S, a) {
-      if (!working(S)) return { ok: false, msg: '営業時間外です' };
-      const c = D.CREAMS[a.cream]; if (!c || a.cream === 'none') return { ok: false, msg: 'クリームが不明' };
-      const cost = takeAll(S, c.ing);
-      if (cost < 0) return { ok: false, msg: '材料が足りなかった…（' + missing(S, c.ing).join('、') + '）' };
-      const id = uid(S, 'c');
-      S.creams[id] = { k: a.cream, q: clamp(+a.q || 0, 0, 1), n: D.CREAM_YIELD, c: cost / D.CREAM_YIELD, day: S.day, df: cleanDf(a.df) };
-      return { ok: true, msg: c.short + 'クリームができた！（' + D.CREAM_YIELD + '台分）' };
-    },
-    deco(S, a, now) {
-      if (!working(S)) return { ok: false, msg: '営業時間外です' };
-      const r = recipe(S, a.r); if (!r || !S.known[a.r]) return { ok: false, msg: 'レシピが不明' };
-      const b = S.bases[a.base];
-      if (!b || b.k !== r.base) return { ok: false, msg: 'スポンジが見つかりません（だれかが先に使ったかも）' };
-      let cr = null;
-      if (r.cream !== 'none') { cr = S.creams[a.cream]; if (!cr || cr.k !== r.cream || cr.n < 1) return { ok: false, msg: 'クリームが見つかりません' }; }
-      if (!hasAll(S, r.tops)) return { ok: false, msg: 'トッピングが足りない（' + missing(S, r.tops).join('、') + '）' };
-      const tc = takeAll(S, r.tops);
-      delete S.bases[a.base];
-      let cost = b.c + tc;
-      let cq = 1;
-      if (cr) { cost += cr.c; cq = cr.q; cr.n -= 1; if (cr.n <= 0) delete S.creams[a.cream]; }
-      const warm = now < b.cool;
-      let q = b.q * 0.35 + cq * 0.25 + clamp(+a.q || 0, 0, 1) * 0.4;
-      if (warm) q *= 0.7;
-      q = clamp(q, 0, 1);
-      const df = union(b.df, cr ? cr.df : [], cleanDf(a.df), warm && cr ? ['melt'] : []);
-      const pc = pieceCount(r); const cake = { r: a.r, q, p: pc, n: pc, c: Math.round(cost), d: S.day, o: 0, df };
-      placeCake(S, cake);
-      fx(S, df.length ? 'fail' : 'cake', r.name + ' 完成（品質' + Math.round(q * 100) + '）' + (df.length ? '　欠点：' + df.map((x) => D.DEFECTS[x].name).join('・') : ''));
-      return { ok: true, msg: (warm ? 'スポンジが温かくてクリームが溶けた…　' : '') + r.name + 'が完成！' };
+      CS.kitchen.deliver(S, a.id, n, Math.round(unit));
+      return { ok: true, msg: ing.name + '×' + n + ' を注文。裏口に段ボールが届きました（¥' + cost.toLocaleString() + '）' };
     },
     buyEq(S, a) {
       const E = D.EQUIP[a.kind]; if (!E) return { ok: false };
@@ -401,30 +334,19 @@
       fx(S, 'info', sl.name + ' さんがアルバイトに来てくれた！');
       return { ok: true };
     },
-    fire(S, a) { const st = S.staff[a.slot]; if (!st) return { ok: false }; S.staff[a.slot] = 0; fx(S, 'info', st.name + ' さんとお別れした'); return { ok: true }; },
+    fire(S, a) { const st = S.staff[a.slot]; if (!st) return { ok: false }; CS.kitchen.releaseStaff(S, a.slot); S.staff[a.slot] = 0; fx(S, 'info', st.name + ' さんとお別れした'); return { ok: true }; },
     staffTask(S, a) {
       const st = S.staff[a.slot]; if (!st || !D.STAFF.tasks[a.task]) return { ok: false };
-      if (st.task !== a.task) st.job = null;
+      if (st.task !== a.task) { st.job = null; CS.kitchen.releaseStaff(S, a.slot); }
       st.task = a.task; st.opt = String(a.opt || ''); st.wait = 0;
       return { ok: true };
-    },
-    discard(S, a) {
-      let c = 0;
-      if (a.kind === 'batter' && S.batters[a.id]) { c = S.batters[a.id].c; delete S.batters[a.id]; }
-      else if (a.kind === 'base' && S.bases[a.id]) { c = S.bases[a.id].c; delete S.bases[a.id]; }
-      else if (a.kind === 'cream' && S.creams[a.id]) { c = S.creams[a.id].c * S.creams[a.id].n; delete S.creams[a.id]; }
-      else if (a.kind === 'case' && S.showcase[a.slot]) { const k = S.showcase[a.slot]; c = (k.c / kN(k)) * k.p; S.showcase[a.slot] = 0; fillCase(S); }
-      else if (a.kind === 'stock' && S.stock[a.id]) { const k = S.stock[a.id]; c = (k.c / kN(k)) * k.p; delete S.stock[a.id]; }
-      else return { ok: false, msg: 'もうありません' };
-      S.today.waste += Math.round(c);
-      return { ok: true, msg: '廃棄しました' };
     },
     price(S, a) {
       if (!S.menu[a.r]) return { ok: false };
       const p = clamp(round10(+a.price || 0), 100, 3000);
       S.menu[a.r].price = p; return { ok: true };
     },
-    menuOn(S, a) { if (!S.menu[a.r]) return { ok: false }; S.menu[a.r].on = !!a.on; fillCase(S); return { ok: true }; },
+    menuOn(S, a) { if (!S.menu[a.r]) return { ok: false }; S.menu[a.r].on = !!a.on; return { ok: true }; },
     upgrade(S, a) {
       const u = D.UPGRADES.find((x) => x.id === a.id); if (!u) return { ok: false };
       const lv = S.up[u.id] || 0;
@@ -435,7 +357,8 @@
       S.funds -= cost; S.up[u.id] = lv + 1;
       S.today.capex = (S.today.capex || 0) + cost;
       if (u.id === 'oven') while (S.ovens.length < upVal('oven', lv + 1)) S.ovens.push({ s: 0 });
-      if (u.id === 'showcase') { while (S.showcase.length < upVal('showcase', lv + 1)) S.showcase.push(0); fillCase(S); }
+      if (u.id === 'showcase') { while (S.showcase.length < upVal('showcase', lv + 1)) S.showcase.push(0); }
+      if (u.id === 'floor') CS.kitchen.normalize(S);
       fx(S, 'up', u.name + (u.levels.length > 1 ? ' Lv' + (lv + 1) : '') + ' を導入！');
       return { ok: true };
     },
@@ -491,208 +414,39 @@
       delete S.originals[a.r]; delete S.menu[a.r]; delete S.known[a.r];
       S.showcase = S.showcase.map((c) => (c && c.r === a.r ? 0 : c));
       for (const id in S.stock) if (S.stock[id].r === a.r) delete S.stock[id];
-      fillCase(S);
       return { ok: true };
     },
     reset(S) { const fresh = newState({ name: S.name, diff: S.diff }); Object.keys(S).forEach((k) => delete S[k]); Object.assign(S, fresh); return { ok: true }; },
   };
 
   const df0 = (k) => (k.df || []).length > 0;
-  function placeCake(S, cake) {
-    const i = S.showcase.findIndex((c) => !c);
-    if (i >= 0 && S.menu[cake.r] && S.menu[cake.r].on) S.showcase[i] = cake;
-    else S.stock[uid(S, 'k')] = cake;
-  }
-  function fillCase(S) {
-    // 販売OFFのケーキはバックヤードへ
-    S.showcase.forEach((c, i) => { if (c && (!S.menu[c.r] || !S.menu[c.r].on)) { S.stock[uid(S, 'k')] = c; S.showcase[i] = 0; } });
-    const ids = Object.keys(S.stock).filter((id) => S.menu[S.stock[id].r] && S.menu[S.stock[id].r].on).sort((a, b) => S.stock[b].q - S.stock[a].q);
-    for (const id of ids) {
-      const i = S.showcase.findIndex((c) => !c);
-      if (i < 0) break;
-      S.showcase[i] = S.stock[id]; delete S.stock[id];
-    }
-  }
-
   // ===================== 営業 =====================
   // ===================== アルバイト =====================
-  const staffQ = (lv) => clamp(0.48 + 0.048 * lv + gauss() * 0.05, 0.3, 0.99);
-  const staffDf = (lv, kinds) => (Math.random() < 0.2 - 0.02 * lv ? [pick(kinds)] : []);
   function menuRecipes(S) { return Object.keys(S.menu).filter((rid) => S.menu[rid].on && S.known[rid] && recipe(S, rid)); }
-  function staffTick(S, now) {
-    if (!working(S) || !S.staff) return;
-    S.staff.forEach((st, slot) => {
-      if (!st) return;
-      const sp = D.STAFF.speed[st.lv - 1] || 0.2;
-      const dur = (k) => ((D.STAFF.jobSec[k] || 10) * 1000) / sp * (k === 'mix' ? eqv(S, 'mixer').fast || 1 : 1);
-      if (st.job) { if (now >= st.job.end) finishJob(S, st, slot, now); return; }
-      if (st.wait && now < st.wait) return;
-      st.wait = now + 1200;
-      const job = (o) => { st.job = Object.assign(o, { t0: now }); };
-      const recs = menuRecipes(S).map((rid) => [rid, recipe(S, rid)]);
-      if (st.task === 'mix') {
-        if (Object.keys(S.batters).length >= Math.max(1, S.ovens.length)) return;
-        let base = D.BASES[st.opt] ? st.opt : null;
-        if (!base) { const need = {}; recs.forEach(([, r]) => (need[r.base] = 0)); for (const id in S.bases) if (id in need) need[S.bases[id].k]++; let best = 1e9; for (const k in need) { const n = (need[k] || 0) + Object.values(S.batters).filter((b) => b.k === k).length; if (n < best && hasAll(S, D.BASES[k].ing)) { best = n; base = k; } } }
-        if (!base || !hasAll(S, D.BASES[base].ing)) return;
-        const cost = takeAll(S, D.BASES[base].ing);
-        job({ k: 'mix', base, cost, end: now + dur('mix') });
-      } else if (st.task === 'bake') {
-        const err = Math.max(0.02, 0.22 - 0.022 * st.lv);
-        for (let i = 0; i < S.ovens.length; i++) {
-          const o = S.ovens[i]; if (!o.s) continue;
-          if (o.tg == null) o.tg = 1 + gauss() * err;
-          const d = (now - o.t0) / o.dur;
-          if (d >= o.tg - dur('out') / o.dur) return job({ k: 'out', slot: i, end: now + dur('out') });
-        }
-        const bid = Object.keys(S.batters).sort()[0];
-        if (!bid) return;
-        const B = D.BASES[S.batters[bid].k], i = S.ovens.findIndex((o) => !o.s);
-        if (i < 0) return;
-        const o = S.ovens[i];
-        if (!o.h || o.temp !== B.temp) { ACT.ovenHeat(S, { slot: i, temp: B.temp }, now); st.wait = now + 2500; return; }
-        if (now >= (o.hot || 0) || (st.lv <= 2 && Math.random() < 0.08)) job({ k: 'in', slot: i, id: bid, end: now + dur('in') });
-      } else if (st.task === 'whip') {
-        let cream = D.CREAMS[st.opt] && st.opt !== 'none' ? st.opt : null;
-        const have = (k) => Object.values(S.creams).filter((c) => c.k === k).reduce((a, c) => a + c.n, 0);
-        if (!cream) { let best = 1e9; recs.forEach(([, r]) => { if (r.cream !== 'none' && have(r.cream) < best && hasAll(S, D.CREAMS[r.cream].ing)) { best = have(r.cream); cream = r.cream; } }); }
-        if (!cream || have(cream) >= 2 || !hasAll(S, D.CREAMS[cream].ing)) return;
-        const cost = takeAll(S, D.CREAMS[cream].ing);
-        job({ k: 'whip', cream, cost, end: now + dur('whip') });
-      } else if (st.task === 'deco') {
-        const made = S.showcase.filter((c) => c).length + Object.keys(S.stock).length;
-        if (made >= S.showcase.length + 2) return;
-        const cand = (st.opt && S.known[st.opt] ? [[st.opt, recipe(S, st.opt)]] : recs).sort((a, b) => S.showcase.filter((c) => c && c.r === a[0]).length - S.showcase.filter((c) => c && c.r === b[0]).length);
-        for (const [rid, r] of cand) {
-          const bid = Object.keys(S.bases).filter((id) => S.bases[id].k === r.base && now >= S.bases[id].cool).sort((x, y) => (S.bases[x].df || []).length - (S.bases[y].df || []).length)[0];
-          if (!bid) continue;
-          const cid = r.cream === 'none' ? null : Object.keys(S.creams).find((id) => S.creams[id].k === r.cream && S.creams[id].n > 0);
-          if (r.cream !== 'none' && !cid) continue;
-          if (!hasAll(S, r.tops)) continue;
-          const b = S.bases[bid]; delete S.bases[bid];
-          let cr = null; if (cid) { const c = S.creams[cid]; cr = { q: c.q, c: c.c, df: c.df || [] }; c.n -= 1; if (c.n <= 0) delete S.creams[cid]; }
-          const tc = takeAll(S, r.tops);
-          return job({ k: 'deco', r: rid, b, cr, tc, end: now + dur('deco') });
-        }
-      } else if (st.task === 'stock') {
-        if (S.funds < 8000) return;
-        const need = {};
-        recs.forEach(([, r]) => { [D.BASES[r.base].ing, r.cream !== 'none' ? D.CREAMS[r.cream].ing : {}, r.tops || {}].forEach((g) => { for (const k in g) need[k] = Math.max(need[k] || 0, g[k]); }); });
-        const id = Object.keys(need).find((k) => invCount(S, k) < need[k] * 2 + 2);
-        if (id) job({ k: 'stock', id, end: now + dur('stock') });
-      }
-    });
-  }
-  function finishJob(S, st, slot, now) {
-    const j = st.job; st.job = null;
-    let ok = true;
-    if (j.k === 'mix') { const id = uid(S, 'm'); S.batters[id] = { k: j.base, q: staffQ(st.lv), c: j.cost, by: 'staff' + slot, df: staffDf(st.lv, ['lump', 'weight', 'flat']) }; }
-    else if (j.k === 'whip') { const id = uid(S, 'c'); S.creams[id] = { k: j.cream, q: staffQ(st.lv), n: D.CREAM_YIELD, c: j.cost / D.CREAM_YIELD, day: S.day, df: staffDf(st.lv, ['soft', 'sep']) }; }
-    else if (j.k === 'in') { const o = S.ovens[j.slot]; ok = !!(o && !o.s && S.batters[j.id]); if (ok) ACT.ovenIn(S, { slot: j.slot, id: j.id, pid: 'staff' + slot }, now); }
-    else if (j.k === 'out') { const o = S.ovens[j.slot]; ok = !!(o && o.s); if (ok) ACT.ovenOut(S, { slot: j.slot }, now); }
-    else if (j.k === 'deco') {
-      const r = recipe(S, j.r); if (!r) return;
-      const q = clamp(j.b.q * 0.35 + (j.cr ? j.cr.q : 1) * 0.25 + staffQ(st.lv) * 0.4, 0, 1);
-      const df = union(j.b.df, j.cr ? j.cr.df : [], staffDf(st.lv, r.cream === 'none' ? ['messy'] : ['messy', 'uneven', 'tilt']));
-      const pc = pieceCount(r);
-      placeCake(S, { r: j.r, q, p: pc, n: pc, c: Math.round(j.b.c + j.tc + (j.cr ? j.cr.c : 0)), d: S.day, o: 0, df });
-      fx(S, df.length ? 'fail' : 'cake', st.name + 'が ' + r.name + ' を仕上げた（品質' + Math.round(q * 100) + '）' + (df.length ? '　欠点：' + df.map((x) => D.DEFECTS[x].name).join('・') : ''));
-    } else if (j.k === 'stock') { const r = ACT.buy(S, { id: j.id, n: 6 }); ok = r && r.ok; }
-    if (!ok) return;
-    st.xp = (st.xp || 0) + 1; st.done = (st.done || 0) + 1;
-    while (st.lv < 10 && st.xp >= D.STAFF.xp[st.lv]) { st.lv++; fx(S, 'info', st.name + ' さんが Lv' + st.lv + ' に！仕事が速くなった'); }
-  }
   function openShop(S, now) {
-    S.phase = 'open'; S.phaseAt = now; S.lastSpawn = now;
-    fx(S, 'phase', '開店！いらっしゃいませ！');
+    S.phase = 'open'; S.dayAt = now; S.lastSpawn = now;
+    fx(S, 'phase', 'OPEN！いらっしゃいませ！');
   }
+  // OPEN のあいだだけ時計が進み、お客さんが来る
   function tick(S, now) {
     if (S.bankrupt) return;
-    if (S.phase === 'prep' && now - S.phaseAt >= R.PREP_MS) openShop(S, now);
     if (S.phase === 'open') {
-      const el = now - S.phaseAt;
-      if (el >= R.OPEN_MS) { closeDay(S, now); return; }
+      const dt = clamp(now - (S.dayAt || now), 0, 3000);
+      S.dayAt = now;
+      S.dayT = (S.dayT || 0) + dt;
+      if (S.dayT >= R.OPEN_MS) { closeDay(S, now); return; }
       const last = S.lastSpawn || now;
-      const dt = Math.min(now - last, 5000);
+      const sdt = Math.min(now - last, 5000);
       S.lastSpawn = now;
-      if (dt > 0) {
-        const hourIdx = Math.floor((el / R.OPEN_MS) * 10);
-        const expect = arrivalRate(S, hourIdx) * (dt / (R.OPEN_MS / 10));
+      if (sdt > 0) {
+        const hourIdx = Math.floor((S.dayT / R.OPEN_MS) * 10);
+        const expect = arrivalRate(S, hourIdx) * (sdt / (R.OPEN_MS / 10));
         let n = 0; let p = Math.exp(-expect), cum = p, u = Math.random();
-        while (u > cum && n < 5) { n++; p *= expect / n; cum += p; }
-        for (let i = 0; i < n; i++) spawn(S, now + i * 400);
+        while (u > cum && n < 4) { n++; p *= expect / n; cum += p; }
+        for (let i = 0; i < n; i++) CS.kitchen.spawn(S, now + i * 400);
       }
     }
-    staffTick(S, now);
-    for (const id in S.cust) {
-      const c = S.cust[id];
-      if (c.st === 'walk' && now >= c.t1) decide(S, c);
-      else if (c.st !== 'walk' && now >= c.t2) delete S.cust[id];
-    }
-  }
-  function spawn(S, now) {
-    if (Object.keys(S.cust).length >= MAX_IN_SHOP + 2 * (S.furn.table || 0)) { S.today.miss++; return; }
-    const ct = wpick(D.CUSTOMERS);
-    const id = uid(S, 'u');
-    S.cust[id] = { ty: ct.id, t0: now, t1: now + DECIDE_MS, t2: now + DECIDE_MS + LEAVE_MS, st: 'walk', v: Math.floor(Math.random() * 4) };
-  }
-  function decide(S, c) {
-    const ct = D.CUSTOMERS.find((x) => x.id === c.ty) || D.CUSTOMERS[0];
-    const noise = Math.exp(gauss() * 0.15);
-    let best = null, bestS = 0, anySeen = false;
-    S.showcase.forEach((k, i) => {
-      if (!k || k.p <= 0) return;
-      const m = S.menu[k.r]; if (!m || !m.on) return;
-      const r = recipe(S, k.r); if (!r) return;
-      anySeen = true;
-      const w = wtp(S, r, k.q, ct, noise) * appearance(k.df);
-      const s = w - m.price;
-      if (s > bestS) { bestS = s; best = { i, k, r, w, price: m.price }; }
-    });
-    S.today.cust++;
-    if (!best) {
-      c.st = 'miss';
-      if (!anySeen) { c.say = pick(D.SAY.soldout); S.today.soldout++; rate(S, 1.8, 0.02); }
-      else { c.say = pick(D.SAY.pricey); rate(S, 2.6, 0.012); }
-      S.today.miss++;
-      return;
-    }
-    let n = ct.multi ? 2 + Math.floor(Math.random() * 3) : (Math.random() < 0.22 ? 2 : 1);
-    if (bestS < best.w * 0.12) n = 1;
-    n = Math.min(n, best.k.p);
-    best.k.p -= n;
-    S.today.sales += best.price * n;
-    S.funds += best.price * n;
-    S.today.cogs += Math.round((best.k.c / kN(best.k)) * n);
-    S.today.sold += n;
-    S.today.best[best.k.r] = (S.today.best[best.k.r] || 0) + n;
-    if (!df0(best.k)) addXp(S, n);
-    // イートイン：空いている席があれば座って食べていく
-    const seats = 2 * (S.furn.table || 0), cash = S.staff.find((x) => x && x.task === 'cashier');
-    let seat = -1;
-    if (seats && Math.random() < 0.5) { const used = {}; for (const id in S.cust) if (S.cust[id].seat >= 0) used[S.cust[id].seat] = 1; for (let i = 0; i < seats; i++) if (!used[i]) { seat = i; break; } }
-    if (seat >= 0) {
-      c.seat = seat; c.t2 = c.t1 + 1100 + 3200 + SIT_MS + LEAVE_MS;
-      if (S.furn.coffee && Math.random() < 0.55 + (cash ? 0.15 + 0.01 * cash.lv : 0)) { S.today.drinks += 350; S.funds += 350; S.today.cogs += 80; c.drink = 1; }
-    }
-    const surplus = bestS / best.w;
-    const df = best.k.df || [];
-    let pen = 0, worst = null;
-    df.forEach((d) => { const x = D.DEFECTS[d]; pen += x.sat * (ct.picky > 0.6 ? 1.3 : 1); if (!worst || x.sat > D.DEFECTS[worst].sat) worst = d; });
-    const sat = clamp(0.35 + surplus * 1.6 + (best.k.q - 0.6) * 0.9 + 0.04 * (S.up.interior || 0) + (seat >= 0 ? 0.06 : 0) + (S.furn.speaker ? 0.03 : 0) + (cash ? 0.02 + 0.004 * cash.lv : 0) - pen, 0, 1);
-    S.today.sat += sat;
-    if (sat > 0.6 && !df.length) addXp(S, 1);
-    // 失敗したケーキを売るとクレームになり、評判が大きく下がる
-    if (df.length) {
-      S.today.complaints = (S.today.complaints || 0) + 1;
-      df.forEach((d) => { S.today.issues[d] = (S.today.issues[d] || 0) + 1; });
-      rate(S, 1 + sat * 4, 0.07);
-      if (!D.DEFECTS[worst].vis) fx(S, 'review', '口コミ ★' + Math.max(1, Math.round(1 + sat * 4)) + '「' + D.DEFECTS[worst].say + '」');
-    } else rate(S, 1 + sat * 4, 0.03);
-    c.st = 'buy'; c.r = best.k.r; c.n = n;
-    c.say = worst && D.DEFECTS[worst].vis ? D.DEFECTS[worst].say : ct.id === 'gourmet' && best.k.q > 0.8 ? pick(D.SAY.gourmet) : sat > 0.65 ? pick(D.SAY.great) : sat > 0.4 ? pick(D.SAY.ok) : pick(D.SAY.meh);
-    if (best.k.p <= 0) { S.showcase[best.i] = 0; fillCase(S); }
-    fx(S, 'sale', '', '');
+    CS.kitchen.tick(S, now);
   }
   function rate(S, stars5, w) { S.rep = clamp(S.rep + (stars5 - S.rep) * w, 1, 5); }
 
@@ -703,10 +457,7 @@
     const ageCake = (k) => { if (!keepCold || k.o >= 1) { waste += (k.c / kN(k)) * k.p; return null; } return Object.assign({}, k, { o: (k.o || 0) + 1, q: k.q * 0.8, df: union(k.df, ['stale']) }); };
     S.showcase = S.showcase.map((k) => (k ? ageCake(k) || 0 : 0));
     for (const id in S.stock) { const k = ageCake(S.stock[id]); if (k) S.stock[id] = k; else delete S.stock[id]; }
-    for (const id in S.creams) { waste += S.creams[id].c * S.creams[id].n; delete S.creams[id]; }
-    for (const id in S.batters) { waste += S.batters[id].c; delete S.batters[id]; }
-    S.ovens = S.ovens.map((o) => { if (o && o.s) waste += o.c; return { s: 0 }; });
-    for (const id in S.bases) { const b = S.bases[id]; if (b.day < S.day) { waste += b.c; delete S.bases[id]; } else { b.q *= 0.9; } }
+    waste += CS.kitchen.endDay(S);
     for (const id in S.inv) {
       S.inv[id] = S.inv[id].filter((lot) => { if (lot[1] <= S.day) { waste += lot[0] * lot[2]; return false; } return true; });
       if (!S.inv[id].length) delete S.inv[id];
@@ -735,13 +486,14 @@
     genMarket(S);
     S.ad = 'none';
     S.today = blankToday();
-    S.phase = 'prep'; S.phaseAt = now;
-    fx(S, 'phase', S.day + '日目の開店準備スタート！');
+    S.phase = 'prep'; S.phaseAt = now; S.dayT = 0;
+    fx(S, 'phase', S.day + '日目：準備中（CLOSE）。看板を OPEN にすると開店');
   }
 
   CS.sim = {
     shopLevel, addXp, upReq, eqv, pieceCount, furnMax, unlockByLevel, newState, normalize, gt, phaseInfo, clockStr, tick, apply, recipe, recipeTags, stars, recipeValue, comboKey, findRecipeByCombo,
     costEstimate, demandEstimate, wtp, arrivalRate, invCount, hasAll, missing, expSoon, bakeQuality, bakeWindow, ovenDur, coolMs, upVal,
-    DECIDE_MS, LEAVE_MS, clamp, fx, appearance, cleanDf,
+    DECIDE_MS, LEAVE_MS, clamp, fx, appearance, cleanDf, ACT, working,
+    _: { toArr, uid, union, cleanDf, fx, invCount, invTake, invAdd, hasAll, takeAll, eqv, ovenDur, bakeQuality, bakeWindow, coolMs, findRecipeByCombo, wtp, appearance, addXp, rate, pick, wpick, gauss, menuRecipes },
   };
 })(typeof window !== 'undefined' ? window : globalThis);
