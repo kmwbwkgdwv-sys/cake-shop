@@ -128,6 +128,8 @@ async def main():
     await pg.wait_for_timeout(300)
     print('pickCake', await step("const d=W.L.deco[0]; const a=aim(d.stand[0], d.stand[1], [d.tt[0],1.02,d.tt[2]]); return a+' -> '+go('p')+' '+JSON.stringify(held())"))
     print('case', await step("const p=W.L.cases[0]; const a=aim(p[0], p[2]-1.0, [p[0],1.08,p[2]]); return a+' -> '+go('p')+' '+JSON.stringify(S().showcase[0])"))
+    # 販売する商品はショートケーキだけにする（ホスト＝この端末）
+    await step("Object.keys(S().menu).forEach(r=>R().act({t:'menuOn',r,on:r==='short'}))")
     # 看板を OPEN
     print('sign', await step("const L=W.L; const a=aim(L.sign[0]-0.2, L.sign[1]+1.4, [L.sign[0],0.55,L.sign[1]]); return a+' -> '+go('p')+' phase='+S().phase"))
     # お客さん

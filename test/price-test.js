@@ -3,6 +3,7 @@ global.window = global; require('../js/data.js'); require('../js/sim.js'); requi
 const { sim, kitchen: K, data: D } = CS;
 for (const f of [1.0, 1.2, 1.5]) {
   let now = 1000; const S = sim.newState('t', 'normal', now); sim.apply(S, { t: 'start' }, now); sim.apply(S, { t: 'open' }, now);
+  for (const r in S.menu) S.menu[r].on = r === 'short';
   const mk = sim.cakeMarket(S, 'short'); S.menu.short.price = Math.round(mk * f / 10) * 10;
   for (let i = 0; i < 4; i++) S.showcase[i] = { r: 'short', q: 0.85, p: 6, n: 6, c: 900, d: 1, o: 0, df: [] };
   let bought = 0;

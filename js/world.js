@@ -1426,7 +1426,7 @@
     // ショーケース
     s.showcase.forEach((c, i) => {
       const p = L.cases[i]; if (!p) return;
-      const t = { name: c ? ((sim.recipe(s, c.r) || {}).name || '') + '（残り' + c.p + '）' : 'ショーケース ' + (i + 1) + '番（空き）', caseI: i };
+      const t = { name: c ? ((sim.recipe(s, c.r) || {}).name || '') + '（残り' + c.p + '・' + sim.cakeExpText(s, c.d) + '）' : '商品棚 ' + (i + 1) + '番（空き・冷蔵）', caseI: i };
       if (c && held && held.t === 'box') t.pri = { label: '箱に1つ入れる', a: { t: 'slice', ci: i } };
       if (c && !held) t.sec = { label: 'ケーキごと持つ', a: { t: 'caseTake', ci: i } };
       if (!c && held && held.t === 'cake') t.pri = { label: '並べる', a: { t: 'put', slot: 'cs:' + i } };
@@ -1631,6 +1631,7 @@
       let h = esc(itemName(it, s));
       if (it.t === 'pan' && it.st === 'baked') h += `<small>${g < (it.cool || 0) ? '冷ましています… あと' + Math.ceil((it.cool - g) / 1000) + '秒' : '冷めた'}${it.lab ? '・' + esc(it.lab) : ''}</small>`;
       if (it.df && it.df.length) h += `<small class="bad">${it.df.map((x) => esc((D.DEFECTS[x] || {}).name || x)).join('・')}</small>`;
+      if (it.t === 'cake') h += `<small class="${sim.cakeExpDay(it.d, s) <= s.day ? 'warn' : 'cold'}">${esc(sim.cakeExpText(s, it.d))}</small>`;
       h += W.freshHTML(K.fresh(s, it, g), it);
       setHTML(el, h); place(el, [p[0], p[1] + 0.3, p[2]], 0, 0.9);
     }
@@ -1643,15 +1644,24 @@
       setHTML(el, fr.stage >= 2 ? '傷んでいる' : 'ぬるい あと' + mmss(fr.left));
       place(el, [p[0], p[1] + (it.t === 'crate' ? 0.5 : 0.28), p[2]], 0, 0.8);
     }
-    // ショーケースの値札
+    // 商品棚の値札と賞味期限（賞味期限はいつも表示）
+    const expTag = (d) => { const last = sim.cakeExpDay(d, s) <= s.day; return `<small class="${last ? 'warn' : 'cold'}">${esc(sim.cakeExpText(s, d))}</small>`; };
     s.showcase.forEach((c, i) => {
       const p = L.cases[i]; if (!c || !p) return;
-      if (!(tg && tg.caseI === i) && distMe(p[0], p[2]) > 2.6) return;
-      const el = lab('tag-' + i, 'tag-lb');
+      const dd = distMe(p[0], p[2]); if (dd > 16) return;
+      const near = (tg && tg.caseI === i) || dd < 2.6;
+      const el = lab('tag-' + i, 'tag-lb' + (near ? '' : ' far'));
       const m = s.menu[c.r];
-      setHTML(el, `¥${m ? m.price : 0}<small>${esc((sim.recipe(s, c.r) || {}).name || '')}・残り${c.p}</small>`);
-      place(el, [p[0], 1.55, p[2] + 0.2], 0, 0.85);
+      setHTML(el, near ? `¥${m ? m.price : 0}<small>${esc((sim.recipe(s, c.r) || {}).name || '')}・残り${c.p}</small>${expTag(c.d)}` : expTag(c.d));
+      place(el, [p[0], near ? 1.55 : 1.42, p[2] + 0.2], 0, near ? 0.95 : clamp(3.2 / Math.max(1, dd), 0.72, 0.9));
     });
+    // 商品棚の外にあるケーキ（冷蔵庫・作業台・デコ台）にも賞味期限
+    for (const id in W.items) {
+      const o = W.items[id], it = o.it; if (!it || it.t !== 'cake' || !o.n.vis || (tg && tg.item === id) || String(it.at).startsWith('h:')) continue;
+      const pp = o.n.p, dd = distMe(pp[0], pp[2]); if (dd > 10) continue;
+      const el = lab('ex-' + id, 'tag-lb far'); setHTML(el, expTag(it.d));
+      place(el, [pp[0], pp[1] + 0.32, pp[2]], 0, clamp(3.2 / Math.max(1, dd), 0.72, 0.9));
+    }
     // お客さん（注文・吹き出し）
     for (const id in W.custs) {
       const o = W.custs[id], c = o.c; if (!c) continue;

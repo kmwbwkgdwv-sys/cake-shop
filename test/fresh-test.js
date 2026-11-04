@@ -59,6 +59,7 @@ const cake = S.k.items[K.at(S, 'dt:0')];
 ok(cake && cake.t === 'cake' && cake.df.includes('spoil'), 'cake keeps spoil defect');
 A({ t: 'pick', id: K.at(S, 'dt:0') }); A({ t: 'put', slot: 'cs:0' });
 ok(S.showcase[0] && S.showcase[0].df.includes('spoil') && S.showcase[0].sp === 2, 'showcase entry carries freshness');
+for (const r in S.menu) A({ t: 'menuOn', r, on: r === 'short' });
 A({ t: 'sign' });
 const rep0 = S.rep; K.spawn(S, now); const cid = Object.keys(S.cust)[0]; for (let k = 0; k < 4; k++) { now += 2500; sim.tick(S, now); }
 if (S.cust[cid].st === 'q') {
@@ -67,7 +68,7 @@ if (S.cust[cid].st === 'q') {
 } else console.log('  (customer did not queue:', S.cust[cid].st, S.cust[cid].say, ')');
 A({ t: 'sign' }); console.log('phase after CLOSE', S.phase);
 // 5) 新鮮なケーキ：冷蔵庫の中は傷まない、外に5分で傷む
-S.k.items.ck = { t: 'cake', r: 'short', q: 0.9, df: [], p: 6, n: 6, c: 900, at: 'sp:5' };
+S.k.items.ck = { t: 'cake', r: 'short', q: 0.9, df: [], p: 6, n: 6, c: 900, d: S.day, at: 'sp:5' };
 tick(160000); ok(S.k.items.ck.sp === 1 && S.k.items.ck.df.includes('melt'), 'cake on worktable 2.6 min → cream melting');
 A({ t: 'pick', id: 'ck' }); A({ t: 'put', slot: 'fr:2' }); tick(600000); ok(S.k.items.ck.sp === 1, 'cake in fridge: paused');
 // 6) 一晩：冷蔵庫の中は残る（1晩まで）・外の要冷蔵の段ボールは傷む
@@ -75,7 +76,7 @@ S.k.items.cr9 = { t: 'crate', ing: 'egg', n: 10, u: 35, ar: 0, at: 'sp:6', open:
 S.k.items.cr8 = { t: 'crate', ing: 'sugar', n: 10, u: 25, ar: 0, at: 'sp:7', open: 1 };
 const c2 = whip(); A({ t: 'put', slot: 'fr:3' }); const c3 = whip(); A({ t: 'put', slot: 'sp:8' });
 A({ t: 'endDay' });
-ok(S.k.items.ck && S.k.items.ck.o === 1 && S.k.items.ck.df.includes('stale'), 'cake in fridge kept overnight (stale)');
+ok(S.k.items.ck && S.k.items.ck.o === 1, 'cake in fridge kept overnight (until best-before)');
 ok(S.k.items[c2] && S.k.items[c2].o === 1, 'cream in fridge kept overnight');
 ok(!S.k.items[c3], 'cream left out discarded at night');
 ok(S.k.items.cr9.sp === 2 && !S.k.items.cr8.sp, 'egg crate left out spoiled overnight, sugar crate fine');

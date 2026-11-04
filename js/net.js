@@ -48,7 +48,7 @@
         this.online = false;
         this.uid = LS.get('cs.localUid', null) || 'L' + rid(16);
         LS.set('cs.localUid', this.uid);
-        this.error = !cfg || !cfg.apiKey ? 'Firebase未設定（オフライン）' : 'Firebaseを読み込めませんでした';
+        this.error = !cfg || !cfg.apiKey ? 'Firebase未設定（オフライン）' : !cfg.databaseURL ? 'Firebase の databaseURL が未設定です（js/firebase-config.js）。オフラインで動いています' : 'Firebaseを読み込めませんでした';
         return;
       }
       try {
@@ -444,7 +444,9 @@
         S.ak = Array.isArray(S.ak) ? S.ak : [];
         if (it.key && S.ak.indexOf(it.key) >= 0) { if (!this.local) this.ref.child('actions/' + it.key).remove().catch(() => {}); continue; }
         if (it.key) { S.ak.push(it.key); if (S.ak.length > 80) S.ak.splice(0, S.ak.length - 80); }
-        if (a && a.t) {
+        // 商品の有効・無効などはホストだけが変えられる
+        if (a && a.t && (sim.HOST_ONLY || []).indexOf(a.t) >= 0 && a.by && a.by !== net.uid) sim.fx(S, 'err', 'ホストだけが変更できます', a.by);
+        else if (a && a.t) {
           const res = sim.apply(S, a, g);
           if (res && res.msg) sim.fx(S, res.ok ? 'toast' : 'err', res.msg, a.by);
           if (a.t === 'deco' && res.ok) this.emit('cakeMade', a);
@@ -496,6 +498,7 @@
         return Promise.resolve(res);
       }
       if (!this.ref) return Promise.resolve({ ok: false });
+      if ((sim.HOST_ONLY || []).indexOf(a.t) >= 0) { this.emit('fx', { k: 'err', x: 'ホストだけが変更できます' }); return Promise.resolve({ ok: false, msg: 'ホストだけが変更できます' }); }
       a.ts = net.TS();
       return this.ref.child('actions').push(clean(a)).then(() => ({ ok: true, pending: true })).catch((e) => ({ ok: false, msg: '送信できませんでした' }));
     }

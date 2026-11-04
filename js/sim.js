@@ -39,7 +39,7 @@
     for (const id in start) invAdd(S, id, start[id], D.ING[id].price);
     return S;
   }
-  function blankToday() { return { sales: 0, drinks: 0, cogs: 0, waste: 0, ads: 0, cust: 0, sold: 0, miss: 0, soldout: 0, sat: 0, best: {}, buy: 0, complaints: 0, pcomp: 0, ship: 0, shelved: 0, spoiled: 0, issues: {} }; }
+  function blankToday() { return { sales: 0, drinks: 0, cogs: 0, waste: 0, ads: 0, cust: 0, sold: 0, miss: 0, soldout: 0, sat: 0, best: {}, buy: 0, complaints: 0, pcomp: 0, ship: 0, shelved: 0, spoiled: 0, expired: 0, slow: 0, issues: {} }; }
   const cleanDf = (arr) => { const out = []; (Array.isArray(arr) ? arr : []).forEach((d) => { if (D.DEFECTS[d] && out.indexOf(d) < 0) out.push(d); }); return out; };
   const union = (...arrs) => cleanDf([].concat(...arrs.map((a) => a || [])));
   // 見た目の欠点による「買いたさ」の倍率
@@ -63,7 +63,7 @@
     S.ovens = toArr(S.ovens).map((o) => (o && typeof o === 'object' ? { h: o.h || 0, temp: o.temp || 170, hot: o.hot || 0 } : { h: 0, temp: 170, hot: 0 }));
     while (S.ovens.length < nOven) S.ovens.push({ h: 0, temp: 170, hot: 0 });
     const nCase = upVal('showcase', S.up.showcase || 0);
-    S.showcase = toArr(S.showcase, nCase).map((c) => (c && typeof c === 'object' ? Object.assign(c, { df: toArr(c.df).filter((x) => x) }) : 0));
+    S.showcase = toArr(S.showcase, nCase).map((c) => (c && typeof c === 'object' ? Object.assign(c, { df: toArr(c.df).filter((x) => x), d: c.d > 0 ? c.d : S.day || 1 }) : 0));
     while (S.showcase.length < nCase) S.showcase.push(0);
     for (const id in S.originals) { const o = S.originals[id]; if (!o.tops) o.tops = {}; }
     // 旧データの設備を新しい「設備・家具」に移す
@@ -97,7 +97,7 @@
     const after = shopLevel(S).lv;
     if (after > before) {
       const items = unlockByLevel(S);
-      const ups = D.UPGRADES.filter((u) => (u.req || []).some((r, i) => r === after && (S.up[u.id] || 0) <= i)).map((u) => u.name);
+      const ups = D.UPGRADES.filter((u) => !u.hide && (u.req || []).some((r, i) => r === after && (S.up[u.id] || 0) <= i)).map((u) => u.name);
       for (const k in D.EQUIP) D.EQUIP[k].tiers.forEach((t) => { if (t.lv === after && t.price) ups.push(t.name); });
       for (const k in D.FURN) if (D.FURN[k].lv === after) ups.push(D.FURN[k].name);
       const st = D.STAFF.slots.filter((x) => x.lv === after).length;
@@ -378,7 +378,7 @@
     },
     menuOn(S, a) { if (!S.menu[a.r]) return { ok: false }; S.menu[a.r].on = !!a.on; return { ok: true }; },
     upgrade(S, a) {
-      const u = D.UPGRADES.find((x) => x.id === a.id); if (!u) return { ok: false };
+      const u = D.UPGRADES.find((x) => x.id === a.id); if (!u || u.hide) return { ok: false };
       const lv = S.up[u.id] || 0;
       if (lv >= u.levels.length) return { ok: false, msg: 'これ以上は拡張できません' };
       const cost = u.levels[lv], need = upReq(u, lv);
@@ -478,13 +478,17 @@
     }
     CS.kitchen.tick(S, now);
   }
+  // ケーキの賞味期限：作った日 d を入れて CAKE_DAYS 日。after=1 は「今日が終わったら」で判定（閉店時）
+  function cakeExpDay(d, S) { return (d || (S && S.day) || 1) + (R.CAKE_DAYS || 2) - 1; }
+  function cakeExpired(S, d, after) { return S.day + (after ? 1 : 0) > cakeExpDay(d, S); }
+  function cakeExpText(S, d) { const left = cakeExpDay(d, S) - S.day; return left <= 0 ? '賞味期限 今日まで' : left === 1 ? '賞味期限 明日まで' : '賞味期限 あと' + left + '日'; }
   function rate(S, stars5, w) { S.rep = clamp(S.rep + (stars5 - S.rep) * w, 1, 5); }
 
   function closeDay(S, now) {
     const T = S.today;
     let waste = 0;
-    const keepCold = !!S.up.coldcase;
-    const ageCake = (k) => { if (!keepCold || k.o >= 1) { waste += (k.c / kN(k)) * k.p; return null; } return Object.assign({}, k, { o: (k.o || 0) + 1, q: k.q * 0.8, df: union(k.df, ['stale']) }); };
+    // 商品棚は冷蔵：並べたケーキは賞味期限（作った日を入れて2日）まで翌日も売れる。期限が過ぎたら消える（廃棄）
+    const ageCake = (k) => { if (cakeExpired(S, k.d, 1)) { waste += (k.c / kN(k)) * k.p; S.today.expired = (S.today.expired || 0) + k.p; return null; } return Object.assign({}, k, { o: (k.o || 0) + 1, q: k.q * 0.95 }); };
     S.showcase = S.showcase.map((k) => (k ? ageCake(k) || 0 : 0));
     for (const id in S.stock) { const k = ageCake(S.stock[id]); if (k) S.stock[id] = k; else delete S.stock[id]; }
     waste += CS.kitchen.endDay(S);
@@ -503,7 +507,7 @@
     const profit = revenue - T.cogs - T.waste - fixed - T.ads - (T.lab || 0) - (T.ship || 0);
     const satAvg = T.cust - T.miss > 0 ? T.sat / Math.max(1, T.cust - T.miss) : 0;
     let bestR = null, bestN = 0; for (const r in T.best) if (T.best[r] > bestN) { bestN = T.best[r]; bestR = r; }
-    S.history.push({ spl: T.spoiled || 0, pc: T.pcomp || 0, ship: T.ship || 0, cmp: T.complaints || 0, iss: Object.assign({}, T.issues || {}), d: S.day, sales: revenue, cogs: T.cogs, waste: T.waste, fixed, ads: T.ads + (T.lab || 0), profit, cust: T.cust, sold: T.sold, miss: T.miss, rep: Math.round(S.rep * 100) / 100, sat: Math.round(satAvg * 100) / 100, funds: S.funds, best: bestR || '', buy: T.buy || 0, capex: T.capex || 0, wages });
+    S.history.push({ exp: T.expired || 0, slow: T.slow || 0, spl: T.spoiled || 0, pc: T.pcomp || 0, ship: T.ship || 0, cmp: T.complaints || 0, iss: Object.assign({}, T.issues || {}), d: S.day, sales: revenue, cogs: T.cogs, waste: T.waste, fixed, ads: T.ads + (T.lab || 0), profit, cust: T.cust, sold: T.sold, miss: T.miss, rep: Math.round(S.rep * 100) / 100, sat: Math.round(satAvg * 100) / 100, funds: S.funds, best: bestR || '', buy: T.buy || 0, capex: T.capex || 0, wages });
     while (S.history.length > 30) S.history.shift();
     S.cust = {};
     addXp(S, Math.round(Math.max(0, S.rep - 2) * 12));
@@ -523,7 +527,7 @@
   CS.sim = {
     shopLevel, addXp, upReq, eqv, pieceCount, furnMax, unlockByLevel, newState, normalize, gt, phaseInfo, clockStr, tick, apply, recipe, recipeTags, stars, recipeValue, comboKey, findRecipeByCombo,
     costEstimate, demandEstimate, wtp, cakeMarket, arrivalRate, invCount, hasAll, missing, expSoon, bakeQuality, bakeWindow, ovenDur, coolMs, upVal,
-    DECIDE_MS, LEAVE_MS, clamp, fx, appearance, cleanDf, ACT, working,
-    _: { toArr, uid, union, cleanDf, fx, invCount, invTake, invAdd, hasAll, takeAll, eqv, ovenDur, bakeQuality, bakeWindow, coolMs, findRecipeByCombo, wtp, cakeMarket, appearance, addXp, rate, pick, wpick, gauss, menuRecipes },
+    DECIDE_MS, LEAVE_MS, clamp, fx, appearance, cleanDf, ACT, working, cakeExpDay, cakeExpired, cakeExpText, HOST_ONLY: ['menuOn'],
+    _: { cakeExpired, toArr, uid, union, cleanDf, fx, invCount, invTake, invAdd, hasAll, takeAll, eqv, ovenDur, bakeQuality, bakeWindow, coolMs, findRecipeByCombo, wtp, cakeMarket, appearance, addXp, rate, pick, wpick, gauss, menuRecipes },
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -72,6 +72,17 @@ async def main():
     r = await ev(B, """(()=>{const {W,aim,go}=T; const L=W.L; const a=aim(L.sign[0]-0.2, L.sign[1]+1.4, [L.sign[0],0.55,L.sign[1]]); return a+' -> '+go('p');})()""")
     print('B sign', r, 'applied on A after', await until(A, "CS.ui.room.S.phase==='open'"), 's', 'B sees open after', await until(B, "CS.ui.room.S.phase==='open'"))
     print('phase A/B', await ev(A, "CS.ui.room.S.phase"), await ev(B, "CS.ui.room.S.phase"), 'dayT A', await ev(A, "CS.ui.room.S.dayT"))
+    # 販売する商品の ON/OFF はホストだけ：B（クライアント）は変えられない。直接送っても無視される
+    print('B menuOn', await ev(B, "CS.ui.room.act({t:'menuOn',r:'chocolate',on:false}).then(r=>JSON.stringify(r))"))
+    await ev(B, "CS.ui.room.ref.child('actions').push({t:'menuOn',r:'baked_cheese',on:false,by:CS.net.uid,pid:CS.ui.room.pid})"); await B.wait_for_timeout(1500)
+    print('after B tries: chocolate', await ev(A, "CS.ui.room.S.menu.chocolate.on"), 'baked_cheese', await ev(A, "CS.ui.room.S.menu.baked_cheese.on"), 'B sees', await ev(B, "CS.ui.room.S.menu.baked_cheese.on"))
+    await ev(A, "CS.ui.room.act({t:'menuOn',r:'chocolate',on:false})")
+    print('A (host) turns chocolate OFF -> B sees after', await until(B, "CS.ui.room.S.menu.chocolate.on===false"), 's')
+    await ev(B, "CS.ui.openSettings(true)"); await B.wait_for_timeout(600)
+    await ev(B, "(()=>{const t=[...document.querySelectorAll('.sh-tabs button, [role=tab]')].find(b=>/お店/.test(b.textContent)); if(t) t.click();})()"); await B.wait_for_timeout(800)
+    print('B settings toggles disabled', await ev(B, "[...document.querySelectorAll('[data-mon]')].every(x=>x.disabled)"), await ev(B, "document.querySelectorAll('[data-mon]').length"))
+    await B.screenshot(path=f'{OUT}/mp2_B_settings.png')
+    await ev(B, "CS.ui.closeSheet()")
     await B.screenshot(path=f'{OUT}/mp2_B_view.png')
     # ホストが抜ける → B がホストに
     await ev(A, "CS.game.leave(false)"); await A.wait_for_timeout(500)

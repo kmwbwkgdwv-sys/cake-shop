@@ -31,6 +31,7 @@
       if (it.t === 'deco' || it.tp) it.tp = _.toArr(it.tp).filter((x) => x).map((x) => _.toArr(x));
       if (it.t === 'deco' && (!it.tops || typeof it.tops !== 'object')) it.tops = {};
       if (it.at == null) it.at = freeSpot(S, 'sp') || 'sp:0';
+      if (it.t === 'cake' && !(it.d > 0)) it.d = S.day || 1;
     }
     ['mix', 'whip'].forEach((st) => { k[st] = _.toArr(k[st]).map((b) => (b && typeof b === 'object' ? Object.assign(b, { ings: _.toArr(b.ings).filter((x) => x), df: _.toArr(b.df).filter((x) => x) }) : { ings: [], st: 'idle' })); while (k[st].length < K.count(S, st)) k[st].push({ ings: [], st: 'idle' }); });
     k.deco = _.toArr(k.deco).map((b) => (b && typeof b === 'object' ? b : { st: 'idle' })); while (k.deco.length < K.count(S, 'deco')) k.deco.push({ st: 'idle' });
@@ -220,7 +221,7 @@
     const i = +a.slot.split(':')[1];
     if (it.t !== 'cake') return ng('ショーケースにはケーキだけ並べられます');
     if (S.showcase[i]) return ng('ここはうまっています');
-    S.showcase[i] = { r: it.r, q: it.q, p: it.p, n: it.n, c: it.c, d: S.day, o: 0, df: it.df || [] };
+    S.showcase[i] = { r: it.r, q: it.q, p: it.p, n: it.n, c: it.c, d: it.d || S.day, o: it.o || 0, df: it.df || [] };
     const wm = Math.round(K.warmMs(it, now)); if (wm) { S.showcase[i].wm = wm; S.showcase[i].sp = it.sp || 0; }
     del(S, hid);
     _.fx(S, 'cake', (sim.recipe(S, it.r) || {}).name + ' を並べた！');
@@ -407,7 +408,7 @@
     const q = clamp(dk.q * 0.35 + (dk.cr ? dk.crq * 0.2 + dk.sq * 0.2 : 0.4) + ts * 0.25, 0, 1);
     const df = _.union(dk.df, ts < 0.45 ? ['messy'] : []);
     del(S, did);
-    const cid = add(S, { t: 'cake', r: rid, q, df, p: n, n, c: Math.round(dk.c || 0), at: 'dt:' + a.i });
+    const cid = add(S, { t: 'cake', r: rid, q, df, p: n, n, c: Math.round(dk.c || 0), d: S.day, at: 'dt:' + a.i });
     carryFresh(S, dk, S.k.items[cid], now);
     _.fx(S, 'cake', r.name + ' が完成！（品質' + Math.round(q * 100) + '）');
     return ok();
@@ -426,7 +427,7 @@
   A.caseTake = function (S, a) {
     if (needHand(S, a)) return needHand(S, a);
     const k = S.showcase[a.ci]; if (!k) return ng();
-    add(S, { t: 'cake', r: k.r, q: k.q, df: k.df || [], p: k.p, n: k.n, c: k.c, wm: k.wm || 0, sp: k.sp || 0, at: 'h:' + a.pid });
+    add(S, { t: 'cake', r: k.r, q: k.q, df: k.df || [], p: k.p, n: k.n, c: k.c, d: k.d || S.day, o: k.o || 0, wm: k.wm || 0, sp: k.sp || 0, at: 'h:' + a.pid });
     S.showcase[a.ci] = 0;
     return ok();
   };
@@ -476,9 +477,11 @@
     const c = S.cust[cid];
     c.st = 'w'; c.no = ++S.k.ordNo; c.tOrd = now;
     const n = Object.values(c.ord).reduce((s, x) => s + x, 0);
-    c.pw = now + R.WAIT_MS + n * 9000;
-    c.say = '注文 #' + c.no;
-    _.fx(S, 'order', '注文 #' + c.no + '：' + K.ordText(S, c.ord));
+    const short = K.shortage(S), mk = Object.keys(c.ord).filter((r) => short._by && short._by[cid] && short[r] > 0);
+    c.make = mk.length ? 1 : 0;
+    c.pw = now + R.WAIT_MS + n * 9000 + (mk.length ? (R.MAKE_MS || 180000) + (mk.length - 1) * 45000 : 0);
+    c.say = c.make ? '作ってもらえるなら待つよ' : '注文 #' + c.no;
+    _.fx(S, 'order', '注文 #' + c.no + '：' + K.ordText(S, c.ord) + (c.make ? '（商品棚に無い → 急いで作ろう！' + K.ordText(S, Object.fromEntries(mk.map((r) => [r, Math.min(c.ord[r], short[r])]))) + '）' : ''));
     return ok();
   }
   K.ordText = (S, ord) => Object.keys(ord).map((r) => ((sim.recipe(S, r) || {}).name || r) + '×' + ord[r]).join('、');
@@ -550,19 +553,31 @@
     let lane = 0, best = 1e9; for (let l = 0; l < lanes; l++) { const n = Object.values(S.cust).filter((c) => c.lane === l && (c.st === 'q' || c.st === 'in')).length; if (n < best) { best = n; lane = l; } }
     S.cust[_.uid(S, 'u')] = { ty: ct.id, v: Math.floor(Math.random() * 4), st: 'in', t0: now, tq: now + R.WALK_MS, lane, seat: -1 };
   };
-  // 並んだら何を買うか決める（ショーケースにあるものから）
+  // 並んだら何を買うか決める：販売中（解放済み・有効）の商品から好きな個数。商品棚に無い物は注文を受けてから作る
+  K.shelfStock = function (S) { const st = {}; S.showcase.forEach((k) => { if (k && k.p > 0) st[k.r] = (st[k.r] || 0) + k.p; }); return st; };
+  // 待っているお客さんの注文に、商品棚の在庫を受付順に割り当てたときの不足（作らないといけない数）
+  K.shortage = function (S) {
+    const left = K.shelfStock(S), short = {};
+    Object.keys(S.cust).filter((id) => S.cust[id].st === 'w').sort((a, b) => (S.cust[a].no || 0) - (S.cust[b].no || 0)).forEach((id) => {
+      const o = S.cust[id].ord || {};
+      for (const r in o) { const use = Math.min(left[r] || 0, o[r]); left[r] = (left[r] || 0) - use; if (o[r] > use) { short[r] = (short[r] || 0) + o[r] - use; (short._by = short._by || {})[id] = 1; } }
+    });
+    return short;
+  };
   function decide(S, c, now) {
     const ct = D.CUSTOMERS.find((x) => x.id === c.ty) || D.CUSTOMERS[0];
     const noise = Math.exp(_.gauss() * 0.15);
     const opts = [];
     let seen = 0, worstP = null;
     const avail = {}; S.showcase.forEach((k) => { if (k && k.p > 0) avail[k.r] = { p: (avail[k.r] ? avail[k.r].p : 0) + k.p, q: k.q, df: k.df }; });
-    for (const rid in avail) {
-      const m = S.menu[rid]; if (!m || !m.on) continue; const r = sim.recipe(S, rid); if (!r) continue;
+    for (const rid of _.menuRecipes(S)) {
+      const m = S.menu[rid], r = sim.recipe(S, rid);
       seen++;
-      const w = _.wtp(S, r, avail[rid].q, ct, noise, rid) * _.appearance(avail[rid].df);
+      const a = avail[rid];
+      // 並んでいる物は見た目で判断。無い物は「このお店ならこのくらい」の期待で選ぶ
+      const w = _.wtp(S, r, a ? a.q : 0.78, ct, noise, rid) * (a ? _.appearance(a.df) : 1);
       const mk = _.cakeMarket(S, rid, r); if (!worstP || m.price / mk > worstP.f) worstP = { rid, f: m.price / mk, mk };
-      if (w > m.price && m.price <= mk * R.PRICE_LIMIT) opts.push({ rid, s: (w - m.price) / m.price, p: avail[rid].p, price: m.price });
+      if (w > m.price && m.price <= mk * R.PRICE_LIMIT) opts.push({ rid, s: (w - m.price) / m.price + (a ? 0.12 : 0) + Math.random() * 0.25, price: m.price });
     }
     if (!opts.length) {
       c.st = 'out'; c.tEnd = now + R.WALK_MS; c.sayT = now; S.today.miss++; S.today.cust++;
@@ -577,9 +592,15 @@
       return;
     }
     opts.sort((a, b) => b.s - a.s);
-    const ord = {}, price = {};
-    const kinds = ct.multi && opts.length > 1 && Math.random() < 0.5 ? 2 : 1;
-    for (let i = 0; i < kinds; i++) { const o = opts[i]; const n = Math.min(o.p, ct.multi ? 1 + Math.floor(Math.random() * 3) : Math.random() < 0.25 ? 2 : 1); ord[o.rid] = n; price[o.rid] = o.price; }
+    // 好きな個数：ふつうは1〜2個、家族・まとめ買いの人は多め（1人6個＝箱いっぱいまで）
+    const ord = {}, price = {}, MAX = R.ORDER_MAX || 6;
+    const kinds = Math.min(opts.length, ct.multi ? (Math.random() < 0.55 ? 2 : Math.random() < 0.4 ? 3 : 1) : Math.random() < 0.2 ? 2 : 1);
+    let total = 0;
+    for (let i = 0; i < kinds && total < MAX; i++) {
+      const o = opts[i], want = ct.multi ? 1 + Math.floor(Math.random() * 3) : Math.random() < 0.3 ? 2 : 1;
+      const n = Math.min(MAX - total, want); if (n <= 0) break;
+      ord[o.rid] = n; price[o.rid] = o.price; total += n;
+    }
     c.ord = ord; c.price = price; c.st = 'q'; c.pq = now + R.QUEUE_MS; c.say = '';
   }
   K.tickCustomers = function (S, now) {
@@ -587,7 +608,7 @@
       const c = S.cust[id];
       if (c.st === 'in' && now >= c.tq) decide(S, c, now);
       else if (c.st === 'q' && now >= c.pq) { c.st = 'out'; c.tEnd = now + R.WALK_MS; c.say = '待ちきれない…'; c.sayT = now; S.today.miss++; S.today.cust++; _.rate(S, 1.6, 0.03); }
-      else if (c.st === 'w' && now >= c.pw) { c.st = 'out'; c.tEnd = now + R.WALK_MS; c.say = 'まだ来ない…もういいです'; c.sayT = now; S.today.miss++; S.today.cust++; _.rate(S, 1.3, 0.05); _.fx(S, 'err', '注文 #' + c.no + ' のお客さんが帰ってしまった…'); }
+      else if (c.st === 'w' && now >= c.pw) { c.st = 'out'; c.tEnd = now + R.WALK_MS; c.say = c.make ? '遅すぎる…もういいです' : 'まだ来ない…もういいです'; c.sayT = now; S.today.miss++; S.today.cust++; S.today.slow = (S.today.slow || 0) + 1; _.rate(S, 1.3, 0.05); _.fx(S, 'err', '注文 #' + c.no + ' のお客さんが待ちきれずに帰ってしまった…'); }
       else if ((c.st === 'out' || c.st === 'eat') && now >= c.tEnd) { if (c.st === 'eat') { c.st = 'out'; c.tEnd = now + R.WALK_MS; c.seat = -1; } else delete S.cust[id]; }
     }
   };
@@ -644,11 +665,10 @@
       }
       if (it.t === 'pan' && it.st === 'empty') { delete S.k.items[id]; continue; }
       if (it.t === 'pan' && it.st === 'baked') { it.q *= inFr ? 0.97 : 0.9; if (String(it.at).startsWith('h:')) it.at = freeSpot(S, 'rk') || freeSpot(S, 'sp') || it.at; continue; }
-      if (inFr && (it.t === 'cream' || it.t === 'cake' || it.t === 'deco') && !it.o && (it.sp || 0) < 2) {
-        it.o = 1; it.q = (it.q || 0.5) * (it.t === 'cream' ? 0.9 : 0.85);
-        if (it.t === 'cake') it.df = _.union(it.df, ['stale']);
-        continue;
-      }
+      // 冷蔵庫のケーキは賞味期限（作った日を入れて2日）まで残る。作りかけ・クリームは1晩まで
+      if (inFr && it.t === 'cake' && (it.sp || 0) < 2 && !_.cakeExpired(S, it.d, 1)) { it.o = (it.o || 0) + 1; it.q = (it.q || 0.5) * 0.95; continue; }
+      if (inFr && it.t === 'cake') S.today.expired = (S.today.expired || 0) + (it.p || 0);
+      if (inFr && (it.t === 'cream' || it.t === 'deco') && !it.o && (it.sp || 0) < 2) { it.o = 1; it.q = (it.q || 0.5) * 0.9; continue; }
       waste += itemCost(it); delete S.k.items[id];
     }
     ['mix', 'whip'].forEach((st) => S.k[st] = S.k[st].map((b) => { waste += b.c || 0; return { ings: [], st: 'idle' }; }));
@@ -723,7 +743,8 @@
       } else if (st.task === 'deco') {
         const ci = S.showcase.findIndex((c) => !c); if (ci < 0) return;
         const di = S.k.deco.findIndex((b, k) => b.st === 'idle' && !K.at(S, 'dt:' + k)); if (di < 0) return;
-        const cand = (st.opt && S.known[st.opt] ? [[st.opt, sim.recipe(S, st.opt)]] : recs).sort((a, b) => S.showcase.filter((c) => c && c.r === a[0]).length - S.showcase.filter((c) => c && c.r === b[0]).length);
+        const short = K.shortage(S), stock = K.shelfStock(S);
+        const cand = (st.opt && S.known[st.opt] ? [[st.opt, sim.recipe(S, st.opt)]] : recs).sort((a, b) => (short[b[0]] || 0) - (short[a[0]] || 0) || (stock[a[0]] || 0) - (stock[b[0]] || 0));
         for (const [rid, r] of cand) {
           const pid = Object.keys(I).filter((id) => free(S, id) && I[id].t === 'pan' && I[id].st === 'baked' && I[id].b === r.base && now >= (I[id].cool || 0) && kindOf(I[id].at) !== 'dt').sort((x, y) => (I[x].df || []).length - (I[y].df || []).length)[0];
           if (!pid) continue;

@@ -185,7 +185,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 28px; }
 .st-lb .dm u { position: absolute; top: -3px; bottom: -3px; border: 1.5px solid #9BD88A; border-radius: 3px; background: rgba(141, 181, 128, .25); }
 .st-lb .dm b { position: absolute; top: -5px; width: 3px; height: 18px; margin-left: -1.5px; background: #fff; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .6); }
 .tag-lb { background: rgba(20, 16, 13, .78); border: 1px solid rgba(201, 163, 94, .55); color: var(--gold-2); border-radius: 6px; padding: 1px 7px; font-size: 11px; display: grid; justify-items: center; line-height: 1.2; font-variant-numeric: tabular-nums; font-weight: 700; }
-.tag-lb small { font-size: 9px; color: var(--muted); font-weight: 600; }
+.tag-lb small { font-size: 10px; color: var(--muted); font-weight: 600; }
 .nm-lb { background: rgba(20, 16, 13, .7); color: #fff; border-radius: 6px; padding: 0 8px; font-size: 11px; font-weight: 700; }
 .say-lb { background: rgba(250, 246, 240, .95); color: #2A221D; border-radius: 10px; padding: 3px 10px; font-size: 12px; font-weight: 700; animation: fadeIn .25s; z-index: 3; box-shadow: var(--shadow-s); }
 .say-lb.bad { background: rgba(225, 233, 240, .95); }
@@ -598,3 +598,12 @@ kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; 
 .fr-lb.bad { background: rgba(70, 24, 24, .85); color: #F5ABAB; border-color: rgba(224, 106, 106, .7); }
 .held .chip { font-size: 11px; }
 .netwarn { position: absolute; z-index: 7; left: 50%; top: calc(58px + var(--safe-t)); transform: translateX(-50%); padding: 5px 16px; border-radius: 999px; background: rgba(90, 30, 30, .9); border: 1px solid rgba(224, 106, 106, .7); color: #FFE1E1; font: 700 13px var(--body); white-space: nowrap; pointer-events: none; max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis; animation: fadeIn .3s ease; }
+.tag-lb.far { padding: 1px 6px; }
+.tag-lb small.warn { color: #F2CB93; }
+.tag-lb small.cold { color: #BFE6FF; }
+.ord.mk { border-top-color: #D9822B; }
+.ord em { font-style: normal; font-size: 10px; font-weight: 700; color: #8A3E0C; background: rgba(224, 164, 88, .28); border-radius: 4px; padding: 0 4px; margin-left: 2px; white-space: nowrap; }
+.switch.locked { opacity: .55; }
+.switch input:disabled + i, .switch input:disabled ~ i { opacity: .45; filter: grayscale(.7); }
+.switch:has(input:disabled) { cursor: not-allowed; opacity: .6; }
+#ss-menu .item .end { margin-left: auto; }

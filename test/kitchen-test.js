@@ -46,6 +46,7 @@ console.log('finish:', A({ t: 'finish', i: 0 }).ok, S.fx[S.fx.length - 1].x);
 const cake = K.at(S, 'dt:0'); A({ t: 'pick', id: cake }); A({ t: 'put', slot: 'cs:0' });
 console.log('case0', JSON.stringify(S.showcase[0]));
 // OPEN → お客さん → 注文 → 箱詰め → 手渡し
+for (const r in S.menu) A({ t: 'menuOn', r, on: r === 'short' });
 A({ t: 'sign' }); console.log('phase', S.phase);
 K.spawn(S, now); const cid = Object.keys(S.cust)[0]; for (let k = 0; k < 4; k++) { now += 2500; sim.tick(S, now); }
 console.log('cust', S.cust[cid].st, JSON.stringify(S.cust[cid].ord), S.cust[cid].say);
