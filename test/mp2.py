@@ -43,24 +43,27 @@ async def main():
     await dismiss(A); await dismiss(B)
     for pg in (A, B): await ev(pg, HELP)
     print('phase A/B', await ev(A, "CS.ui.room.S.phase"), await ev(B, "CS.ui.room.S.phase"))
-    # B が注文 → 段ボールが両方に見える
-    await ev(B, "CS.ui.room.act({t:'buy',id:'egg',n:10})"); await B.wait_for_timeout(1800)
-    await ev(A, "(()=>{const S=CS.ui.room.S,n=CS.ui.room.now(); S.k.trucks=[n-500]; Object.values(S.k.items).forEach(i=>{ if(i.t==='crate') i.ar=n-500; }); CS.ui.room.pushState(false); CS.ui.room.emit('state', S);})()"); await B.wait_for_timeout(1500)
+    # B がカートで注文（クライアント → ホストで処理）
+    print('B order', await ev(B, "CS.ui.room.act({t:'order',items:['egg','egg','sugar']}).then(r=>JSON.stringify(r))"), 'applied on A after', await until(A, "!!CS.ui.room.S.k.truck"))
+    await ev(A, "(()=>{const S=CS.ui.room.S,n=CS.ui.room.now(); S.k.truck.at=n-500; Object.values(S.k.items).forEach(i=>{ if(i.t==='crate') i.ar=n-500; }); CS.ui.room.pushState(false); CS.ui.room.emit('state', S);})()"); await B.wait_for_timeout(1500)
     print('crates A', await ev(A, "Object.values(CS.ui.room.S.k.items).filter(i=>i.t==='crate').length"), 'B', await ev(B, "Object.values(CS.ui.room.S.k.items).filter(i=>i.t==='crate').length"))
-    # B が照準で段ボールを持つ
-    r = await ev(B, """(()=>{const {W,S,aim,go}=T; const c=Object.entries(S().k.items).find(([id,i])=>i.t==='crate'); const p=W.slotPos(c[1].at); const a=aim(p[0]-1.0,p[2]+0.2,[p[0],p[1]+0.17,p[2]]); return a+' -> '+go('p');})()""")
-    print('B pick', r, 'applied on A after', await until(A, "Object.values(CS.ui.room.S.k.items).some(i=>i.t==='crate'&&String(i.at).startsWith('h:'))"), 's')
-    print('A sees crate at', await ev(A, "Object.values(CS.ui.room.S.k.items).filter(i=>i.t==='crate').map(i=>i.at).join(',')"), 'B pid', await ev(B, "CS.ui.room.pid"))
-    # A から B が見えて、手に段ボールが見える
-    await ev(A, "(()=>{const W=CS.world; W.me.x=-W.dims.RX-4.6; W.me.z=W.L.backDoor[1]+5.0; W.me.yaw=-0.5; W.me.pitch=-0.15;})()")
+    # A（ホスト）と B（クライアント）が同時に同じ段ボールをつかむ → 1人だけが持てて、数は増えない
+    cid = await ev(A, "Object.keys(CS.ui.room.S.k.items).find(id=>CS.ui.room.S.k.items[id].t==='crate'&&CS.ui.room.S.k.items[id].at==='dl:0')")
+    await asyncio.gather(ev(A, f"CS.ui.room.act({{t:'pick',id:'{cid}'}})"), ev(B, f"CS.ui.room.act({{t:'pick',id:'{cid}'}})"), ev(B, f"CS.ui.room.act({{t:'pick',id:'{cid}'}})"))
+    await B.wait_for_timeout(2500)
+    print('after simultaneous pick: crates A', await ev(A, "Object.values(CS.ui.room.S.k.items).filter(i=>i.t==='crate').length"), 'B', await ev(B, "Object.values(CS.ui.room.S.k.items).filter(i=>i.t==='crate').length"), 'holder', await ev(A, f"CS.ui.room.S.k.items['{cid}'].at"), 'A pid', await ev(A, "CS.ui.room.pid"))
+    # B が別の段ボールを持って在庫室で開けて棚へ（同時に A も同じ棚に置こうとしても数が合う）
+    for pg in (A, B):
+      await ev(pg, "(()=>{const R=CS.ui.room,S=R.S; if (CS.kitchen.held(S,R.pid)) return; const id=Object.keys(S.k.items).find(k=>S.k.items[k].t==='crate'&&String(S.k.items[k].at).startsWith('dl:')); R.act({t:'pick',id});})()")
+    print('both holding after', await until(A, "Object.values(CS.ui.room.S.k.items).filter(i=>i.t==='crate'&&String(i.at).startsWith('h:')).length===2"), 's')
+    await ev(A, "(()=>{const W=CS.world; W.me.x=W.L.truck.x-1.6; W.me.z=W.L.truck.z-4.4; W.me.yaw=-2.6; W.me.pitch=-0.12;})()")
     await A.wait_for_timeout(2500)
-    print('A others', await ev(A, "Object.keys(CS.world.others).length"), 'A item vis', await ev(A, "(()=>{const W=CS.world;const e=Object.entries(W.items).find(([id,o])=>o.it.t==='crate');return e?JSON.stringify([e[1].n.vis, e[1].n.p.map(v=>+v.toFixed(2))]):'none'})()"))
     await A.screenshot(path=f'{OUT}/mp2_A_sees_B.png')
-    print('B yaw', await ev(B, "CS.world.me.yaw"), 'A pos[B]', await ev(A, "JSON.stringify(Object.values(CS.ui.room.pos).map(p=>[p.x,p.z,p.r]))"), 'A other.r', await ev(A, "JSON.stringify(Object.values(CS.world.others).map(o=>[o.x,o.z,o.r, o.ch.node.r]))"))
-    # B が在庫棚へ
-    r = await ev(B, """(()=>{const {W,aim,go}=T; const L=W.L; const a=aim(L.shelf[0]+1.5, L.shelf[1], [L.shelf[0]+0.3,1.0,L.shelf[1]]); return a+' -> '+go('p');})()""")
-    print('B stock', r, 'applied on A after', await until(A, "!Object.values(CS.ui.room.S.k.items).some(i=>i.t==='crate')"), 's')
-    print('inv egg A/B', await ev(A, "CS.sim.invCount(CS.ui.room.S,'egg')"), await ev(B, "CS.sim.invCount(CS.ui.room.S,'egg')"))
+    e0 = await ev(A, "CS.sim.invCount(CS.ui.room.S,'egg')")
+    await ev(B, "CS.ui.room.act({t:'openCrate'})"); await ev(A, "CS.ui.room.act({t:'openCrate'})"); await B.wait_for_timeout(1500)
+    await asyncio.gather(ev(A, "CS.ui.room.act({t:'shelve',ing:'egg',all:1})"), ev(B, "CS.ui.room.act({t:'shelve',ing:CS.ui.room.S.k.items[CS.kitchen.held(CS.ui.room.S,CS.ui.room.pid)].ing,all:1})"))
+    print('B stock applied on A after', await until(A, "Object.values(CS.ui.room.S.k.items).filter(i=>i.t==='crate'&&i.n===0).length===2"), 's')
+    print('egg before/after (A view)', e0, await ev(A, "CS.sim.invCount(CS.ui.room.S,'egg')"), 'B view', await ev(B, "CS.sim.invCount(CS.ui.room.S,'egg')"))
     # B がミキサーに卵を入れる → A のボウルに反映
     r = await ev(B, """(()=>{const {W,aim,go}=T; const m=W.L.mix[1]; const bn=m.bins.find(x=>x.ing==='egg'); const a=aim(m.stand[0], m.stand[1], bn.p); return a+' -> '+go('p');})()""")
     print('B addIng', r, 'applied on A after', await until(A, "CS.ui.room.S.k.mix[1].ings.length>0"), 's')

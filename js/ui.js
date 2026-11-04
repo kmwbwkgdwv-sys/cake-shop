@@ -171,10 +171,15 @@
         } else if (tab === 'view') {
           body.innerHTML = `
           <div class="card"><div class="row between"><div><h3>軽量モード</h3><p class="muted small" style="margin:0">3D の解像度を下げ、影・照明の数・遠くの街並み・紙吹雪を減らし、通信の頻度も下げます。古いスマホや電池を節約したいときに。</p></div><label class="switch"><input type="checkbox" id="set-light" ${ST.light ? 'checked' : ''} aria-label="軽量モード"><i></i></label></div></div>
+          <div class="card"><div class="row between"><div><h3>画質の自動調整</h3><p class="muted small" style="margin:0">動きが重い端末では、影や仕上げ処理を自動で減らしてなめらかにします。いまの画質：<b id="set-q-v">${ST.light ? '軽量モード' : ST.autoQ === false ? '標準（固定）' : (CS.world.QNAME || [])[CS.world.qlv || 0] || '標準'}</b></p></div><label class="switch"><input type="checkbox" id="set-autoq" ${ST.autoQ !== false ? 'checked' : ''} aria-label="画質の自動調整"><i></i></label></div>
+            <div class="row"><button class="btn sm ghost" id="set-q-reset">${ic('sync')} 画質を標準に戻す</button></div></div>
           <div class="card"><div class="row between"><div><h3>効果音</h3><p class="muted small" style="margin:0">ほかのアプリの音楽を止めずに、いっしょに鳴ります</p></div><label class="switch"><input type="checkbox" id="set-sound" ${ST.sound ? 'checked' : ''} aria-label="効果音"><i></i></label></div>
             <div class="row"><span class="small">音量</span><input type="range" id="set-vol" min="0" max="1" step="0.05" value="${ST.vol}"></div></div>
           <div class="card"><div class="row between"><div><h3>チュートリアル・ヒント</h3><p class="muted small" style="margin:0">画面右上の「やること」を表示</p></div><label class="switch"><input type="checkbox" id="set-tips" ${ST.tips ? 'checked' : ''} aria-label="ヒント"><i></i></label></div></div>`;
           $('#set-light', body).onchange = (e) => { ST.light = e.target.checked; ST.save(); };
+          const qv = () => { const el = $('#set-q-v', body); if (el) el.textContent = ST.light ? '軽量モード' : ST.autoQ === false ? '標準（固定）' : (CS.world.QNAME || [])[CS.world.qlv || 0] || '標準'; };
+          $('#set-autoq', body).onchange = (e) => { ST.autoQ = e.target.checked; if (!ST.autoQ) { CS.world.qlv = 0; CS.LS.set('cs.qlv', 0); } ST.save(); qv(); };
+          $('#set-q-reset', body).onclick = () => { CS.world.qlv = 0; CS.world.pf = null; CS.world.qT = performance.now(); CS.LS.set('cs.qlv', 0); CS.applySettings(); qv(); UI.toast('画質を標準に戻しました'); };
           $('#set-sound', body).onchange = (e) => { ST.sound = e.target.checked; ST.save(); CS.sound.play('ok'); };
           $('#set-vol', body).oninput = (e) => { ST.vol = +e.target.value; ST.save(); };
           $('#set-vol', body).onchange = () => CS.sound.play('coin');

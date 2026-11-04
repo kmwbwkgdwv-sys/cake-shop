@@ -415,7 +415,7 @@
       this.pushState(true);
       if (!this.local) {
         const aref = this.ref.child('actions');
-        const onA = (s) => { this.queue.push({ key: s.key, a: s.val() }); };
+        const onA = (s) => { if (!this.queue.some((x) => x.key === s.key)) this.queue.push({ key: s.key, a: s.val() }); };
         aref.on('child_added', onA);
         this.offA = () => aref.off('child_added', onA);
       }
@@ -440,6 +440,10 @@
       const q = this.queue.splice(0);
       for (const it of q) {
         const a = it.a;
+        // 同じ操作を二度処理しない（ホスト交代のときに、処理済みの操作がもう一度届いても無視する）
+        S.ak = Array.isArray(S.ak) ? S.ak : [];
+        if (it.key && S.ak.indexOf(it.key) >= 0) { if (!this.local) this.ref.child('actions/' + it.key).remove().catch(() => {}); continue; }
+        if (it.key) { S.ak.push(it.key); if (S.ak.length > 80) S.ak.splice(0, S.ak.length - 80); }
         if (a && a.t) {
           const res = sim.apply(S, a, g);
           if (res && res.msg) sim.fx(S, res.ok ? 'toast' : 'err', res.msg, a.by);
@@ -513,7 +517,7 @@
     chat(text) {
       text = String(text || '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 40);
       if (!text) return;
-      if (this.local || !this.ref) { const m = { pid: this.pid, text, t: Date.now() }; this.chatLog.push(m); this.emit('chat', m, 'l' + Date.now()); return; }
+      if (this.local || !this.ref) { const m = { pid: this.pid, text, t: Date.now() }; this.chatLog.push(m); if (this.chatLog.length > 30) this.chatLog.shift(); this.emit('chat', m, 'l' + Date.now()); return; }
       this.ref.child('chat').push({ by: net.uid, pid: this.pid, text, t: net.TS() }).catch(() => {});
       if (this.isHost && Math.random() < 0.2) this.pruneChat();
     }

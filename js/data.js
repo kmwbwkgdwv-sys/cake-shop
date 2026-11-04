@@ -3,22 +3,22 @@
   'use strict';
   const CS = (G.CS = G.CS || {});
 
-  // ---- 材料 (life = 日持ち日数 / 0 は日持ちする) ----
+  // ---- 材料 (life = 日持ち日数 / 0 は日持ちする・cold = 要冷蔵・warm = 常温に置いて傷むまでの秒数) ----
   const ING = {
     flour:      { name: '小麦粉',       icon: '🌾', price: 60,  life: 0 },
-    egg:        { name: '卵',           icon: '🥚', price: 35,  life: 6 },
+    egg:        { name: '卵',           icon: '🥚', price: 35,  life: 6, cold: 1, warm: 240 },
     sugar:      { name: '砂糖',         icon: '🍬', price: 25,  life: 0 },
-    butter:     { name: 'バター',       icon: '🧈', price: 90,  life: 12 },
-    milk:       { name: '牛乳',         icon: '🥛', price: 45,  life: 4 },
-    cream:      { name: '生クリーム',   icon: '🍦', price: 120,  life: 3 },
-    strawberry: { name: 'いちご',       icon: '🍓', price: 130,  life: 2 },
-    blueberry:  { name: 'ブルーベリー', icon: '🫐', price: 140,  life: 3 },
-    peach:      { name: 'もも',         icon: '🍑', price: 160, life: 2 },
-    lemon:      { name: 'レモン',       icon: '🍋', price: 70,  life: 8 },
+    butter:     { name: 'バター',       icon: '🧈', price: 90,  life: 12, cold: 1, warm: 300 },
+    milk:       { name: '牛乳',         icon: '🥛', price: 45,  life: 4, cold: 1, warm: 180 },
+    cream:      { name: '生クリーム',   icon: '🍦', price: 120,  life: 3, cold: 1, warm: 150 },
+    strawberry: { name: 'いちご',       icon: '🍓', price: 130,  life: 2, cold: 1, warm: 120 },
+    blueberry:  { name: 'ブルーベリー', icon: '🫐', price: 140,  life: 3, cold: 1, warm: 150 },
+    peach:      { name: 'もも',         icon: '🍑', price: 160, life: 2, cold: 1, warm: 120 },
+    lemon:      { name: 'レモン',       icon: '🍋', price: 70,  life: 8, cold: 1, warm: 300 },
     choco:      { name: 'チョコ',       icon: '🍫', price: 100,  life: 0 },
     cocoa:      { name: 'ココア',       icon: '🟤', price: 80,  life: 0 },
     matcha:     { name: '抹茶',         icon: '🍵', price: 160, life: 0 },
-    cheese:     { name: 'クリームチーズ', icon: '🧀', price: 150, life: 8 },
+    cheese:     { name: 'クリームチーズ', icon: '🧀', price: 150, life: 8, cold: 1, warm: 240 },
     chestnut:   { name: '栗',           icon: '🌰', price: 180, life: 15 },
   };
 
@@ -133,9 +133,9 @@
       { name: 'ブラストチラー', desc: '冷ます時間 -80%', price: 150000, lv: 7, cool: 0.2 },
     ] },
     fridge: { name: '冷蔵庫', icon: 'fridge', tiers: [
-      { name: '家庭用冷蔵庫', desc: '材料の日持ちは標準', price: 0, lv: 1, life: 1 },
-      { name: '業務用冷蔵庫', desc: '材料の日持ち ×1.5', price: 35000, lv: 2, life: 1.5 },
-      { name: 'ウォークイン冷蔵庫', desc: '材料の日持ち ×2', price: 140000, lv: 6, life: 2 },
+      { name: '家庭用冷蔵庫', desc: '厨房の冷蔵庫に6個入る・材料の日持ちは標準', price: 0, lv: 1, life: 1, slots: 6 },
+      { name: '業務用冷蔵庫', desc: '厨房の冷蔵庫に9個入る・材料の日持ち ×1.5', price: 35000, lv: 2, life: 1.5, slots: 9 },
+      { name: 'ウォークイン冷蔵庫', desc: '厨房の冷蔵庫に12個入る・材料の日持ち ×2', price: 140000, lv: 6, life: 2, slots: 12 },
     ] },
   };
   // ---- 家具（パソコンで購入。テーブルは増床すると多く置ける） ----
@@ -172,7 +172,7 @@
   // 増床レベルごとの店の大きさ（半幅 rx・半奥行き rz・厨房の奥行き kd、単位 m）
   const SHOP_SIZES = [{ rx: 10.5, rz: 8.5, kd: 8.6 }, { rx: 11.5, rz: 9.2, kd: 9.0 }, { rx: 12.5, rz: 9.9, kd: 9.4 }, { rx: 13.5, rz: 10.6, kd: 9.8 }];
   // 厨房の設備の数（増床レベルごと）と置き場の数
-  const KITCHEN = { mix: [2, 3, 3, 4], whip: [2, 2, 3, 3], deco: [2, 3, 3, 4], reg: [2, 2, 3, 3], rack: 12, deliv: 8, spots: 12, pack: 4 };
+  const KITCHEN = { mix: [2, 3, 3, 4], whip: [2, 2, 3, 3], deco: [2, 3, 3, 4], reg: [2, 2, 3, 3], rack: 12, deliv: 10, spots: 12, pack: 4 };
 
   // ---- 広告 ----
   const ADS = {
@@ -235,14 +235,21 @@
     uneven: { name: '仕上げのムラ', vis: true, wtp: 0.88, sat: 0.08, say: '見た目がいまいち' },
     messy:  { name: 'デコが乱れている', vis: true, wtp: 0.85, sat: 0.08, say: 'ぐちゃっとしてる' },
     stale:  { name: '前日の売れ残り', vis: false, wtp: 0.9, sat: 0.1, say: 'ちょっと乾いてる' },
+    spoil:  { name: '傷んでいた', vis: false, wtp: 0.4, sat: 0.7, say: 'なんだか酸っぱい…傷んでない？' },
   };
   const OVEN_TEMPS = [150, 160, 170, 180, 190, 200];
   const PREHEAT_MS = 9000;
 
+  // 常温に置いたときに傷むまでの秒数（半分を過ぎると「ぬるい」→ だれる・溶ける。冷蔵庫・ショーケース・トラックの荷台は冷えている）
+  const SPOIL = { cream: 240, cake: 300 };
   const RULES = {
     PREP_MS: 90000,      // （旧）開店準備
     OPEN_MS: 480000,     // OPEN のあいだに進む 1 日の長さ (10:00-20:00)。CLOSE 中は止まる
     COOL_MS: 15000,      // スポンジを冷ます時間
+    SHIP: 500,           // 送料（1回の注文ごと）
+    CART_MAX: 10,        // 1回に注文できる箱の数
+    PACK: 10,            // 1箱に入っている数
+    PRICE_LIMIT: 1.3,    // 相場のこの倍を超えると、ほぼ誰も買わない（クレームも出る）
     WALK_MS: 7000,       // 入口からレジまで歩く時間
     QUEUE_MS: 50000,     // 注文を受けてもらえるまで待てる時間
     WAIT_MS: 45000,      // 注文してから受け取りまで待てる時間（＋1個ごとに9秒）
@@ -284,5 +291,5 @@
     apron: 'waist', apronColor: '#2B2523', pattern: 'plain', acc: 'none', accColor: '#B8862E',
   };
 
-  CS.data = { KITCHEN, EQUIP, FURN, STAFF, SHOP_XP, SHOP_SIZES, DEFECTS, OVEN_TEMPS, PREHEAT_MS, ING, BASES, CREAMS, CREAM_YIELD, TOPS, RECIPES, PAIR, UPGRADES, ADS, CUSTOMERS, SAY, WEATHER, DOW, DOW_MULT, HOUR_CURVE, DIFF, RULES, AVATAR, DEFAULT_SKIN };
+  CS.data = { SPOIL, KITCHEN, EQUIP, FURN, STAFF, SHOP_XP, SHOP_SIZES, DEFECTS, OVEN_TEMPS, PREHEAT_MS, ING, BASES, CREAMS, CREAM_YIELD, TOPS, RECIPES, PAIR, UPGRADES, ADS, CUSTOMERS, SAY, WEATHER, DOW, DOW_MULT, HOUR_CURVE, DIFF, RULES, AVATAR, DEFAULT_SKIN };
 })(typeof window !== 'undefined' ? window : globalThis);

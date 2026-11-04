@@ -39,7 +39,7 @@
     for (const id in start) invAdd(S, id, start[id], D.ING[id].price);
     return S;
   }
-  function blankToday() { return { sales: 0, drinks: 0, cogs: 0, waste: 0, ads: 0, cust: 0, sold: 0, miss: 0, soldout: 0, sat: 0, best: {}, buy: 0, complaints: 0, issues: {} }; }
+  function blankToday() { return { sales: 0, drinks: 0, cogs: 0, waste: 0, ads: 0, cust: 0, sold: 0, miss: 0, soldout: 0, sat: 0, best: {}, buy: 0, complaints: 0, pcomp: 0, ship: 0, shelved: 0, spoiled: 0, issues: {} }; }
   const cleanDf = (arr) => { const out = []; (Array.isArray(arr) ? arr : []).forEach((d) => { if (D.DEFECTS[d] && out.indexOf(d) < 0) out.push(d); }); return out; };
   const union = (...arrs) => cleanDf([].concat(...arrs.map((a) => a || [])));
   // 見た目の欠点による「買いたさ」の倍率
@@ -73,6 +73,8 @@
     delete U.proOven; delete U.mixer; delete U.cooler; delete U.fridge; delete U.eatin;
     S.staff = toArr(S.staff, 4).slice(0, 4).map((x) => (x && typeof x === 'object' ? x : 0));
     unlockByLevel(S);
+    if (!S.cmk || typeof S.cmk !== 'object' || !Object.keys(S.cmk).length) { const m0 = S.market, w0 = S.weather, e0 = S.mEvent; genMarket(S, true); if (m0 && Object.keys(m0).length) S.market = m0; S.weather = w0 || 'sun'; S.mEvent = e0 || 0; }
+    S.ak = toArr(S.ak).filter((x) => typeof x === 'string').slice(-80);
     if (CS.kitchen) CS.kitchen.normalize(S);
     return S;
   }
@@ -156,14 +158,28 @@
       S.mEvent = { id, up: up ? 1 : 0 };
     }
     S.market = m;
+    // ケーキの相場（毎日変わる）
+    const cm = {}; S.cEvent = 0;
+    const rids = Object.keys(D.RECIPES).concat(Object.keys(S.originals || {}));
+    rids.forEach((rid) => {
+      const r = recipe(S, rid); if (!r) return;
+      const base = recipeValue(r), prev = (S.cmk && S.cmk[rid]) || base;
+      let p = first ? base : prev * (1 + (Math.random() - 0.5) * 0.16);
+      p += (base - p) * 0.3;
+      cm[rid] = Math.round(clamp(p, base * 0.75, base * 1.35) / 10) * 10;
+    });
+    if (!first && Math.random() < 0.4) { const rid = pick(rids.filter((x) => S.known && S.known[x]).concat(['short'])); if (cm[rid]) { const up = Math.random() < 0.6; cm[rid] = Math.round((cm[rid] * (up ? 1.2 : 0.85)) / 10) * 10; S.cEvent = { r: rid, up: up ? 1 : 0 }; } }
+    S.cmk = cm;
     S.weather = first ? 'sun' : wpick(D.WEATHER).id;
   }
 
   // ===================== 在庫 =====================
   function invCount(S, id) { const l = S.inv[id]; if (!l) return 0; let n = 0; for (const x of l) n += x[0]; return n; }
-  function invAdd(S, id, n, unitCost) {
+  // half：常温でぬるくなっていた分は日持ちが半分に
+  function invAdd(S, id, n, unitCost, half) {
     const life = D.ING[id].life;
-    const exp = life ? S.day + Math.ceil(life * eqv(S, 'fridge').life) : 9999;
+    let exp = life ? S.day + Math.ceil(life * eqv(S, 'fridge').life) : 9999;
+    if (half && life) exp = S.day + Math.floor((exp - S.day) / 2);
     const l = (S.inv[id] = S.inv[id] || []);
     const same = l.find((x) => x[1] === exp && x[2] === unitCost);
     if (same) same[0] += n; else l.push([n, exp, unitCost]);
@@ -221,8 +237,10 @@
   }
 
   // ===================== 需要モデル =====================
-  function wtp(S, r, q, ct, noise) {
-    let v = recipeValue(r) * (0.5 + 0.75 * q) * ct.budget * (0.88 + 0.05 * S.rep);
+  // ケーキの今日の相場
+  function cakeMarket(S, rid, r) { r = r || recipe(S, rid); return (S.cmk && S.cmk[rid]) || (r ? recipeValue(r) : 400); }
+  function wtp(S, r, q, ct, noise, rid) {
+    let v = (rid ? cakeMarket(S, rid, r) : recipeValue(r)) * (0.5 + 0.75 * q) * ct.budget * (0.88 + 0.05 * S.rep);
     const tags = recipeTags(r);
     if (tags.some((t) => ct.likes.includes(t))) v *= 1.18;
     if (ct.picky > 0.6 && q < 0.65) v *= 0.6;
@@ -233,7 +251,7 @@
   function demandEstimate(S, rid, price, q) {
     const r = recipe(S, rid); if (!r) return 0;
     let tot = 0, ok = 0;
-    for (const ct of D.CUSTOMERS) for (let i = -2; i <= 2; i++) { const n = Math.exp(i * 0.15); tot += ct.w; if (wtp(S, r, q, ct, n) >= price) ok += ct.w; }
+    for (const ct of D.CUSTOMERS) for (let i = -2; i <= 2; i++) { const n = Math.exp(i * 0.15); tot += ct.w; if (wtp(S, r, q, ct, n, rid) >= price && price <= cakeMarket(S, rid, r) * R.PRICE_LIMIT) ok += ct.w; }
     return ok / tot;
   }
   function arrivalRate(S, hourIdx) {
@@ -295,18 +313,29 @@
     next(S, a, now) { if (S.phase !== 'report') return { ok: false }; nextDay(S, now); return { ok: true }; },
     endDay(S, a, now) { if (S.phase !== 'prep' || !(S.dayT > 0)) return { ok: false, msg: 'OPEN してから閉店できます' }; closeDay(S, now); return { ok: true }; },
 
-    buy(S, a, now) {
-      const ing = D.ING[a.id]; const n = Math.floor(a.n);
-      if (!ing || !(n > 0 && n <= 99)) return { ok: false, msg: '数量が不正です' };
-      const unit = S.market[a.id] * (n >= 10 ? 0.95 : 1);
-      const cost = Math.round(unit * n);
-      if (S.funds < cost) return { ok: false, msg: '資金が足りません' };
-      if (CS.kitchen.deliveryFree(S) < Math.ceil(n / 10)) return { ok: false, msg: '配達置き場がいっぱいです（段ボールを棚にしまおう）' };
-      S.funds -= cost; S.today.buy += cost;
-      const d = CS.kitchen.deliver(S, a.id, n, Math.round(unit), now);
-      const sec = d.ar && now ? Math.max(1, Math.round((d.ar - now) / 1000)) : 0;
-      return { ok: true, msg: ing.name + '×' + n + ' を注文（¥' + cost.toLocaleString() + '）。' + (sec ? '約' + sec + '秒でトラックが裏口に届けます' : '裏口に届きました') };
+    // 仕入れ：カートの中身（最大10箱）をまとめて発送。送料は1回ごとに固定
+    order(S, a, now) {
+      const items = toArr(a.items).filter((id) => D.ING[id]);
+      if (!items.length) return { ok: false, msg: 'カートが空です' };
+      if (items.length > R.CART_MAX) return { ok: false, msg: '一度に注文できるのは' + R.CART_MAX + '箱までです' };
+      if (S.k && S.k.truck) return { ok: false, msg: 'トラックが配達中です。荷おろしが終わったら次を注文できます' };
+      const P = R.PACK;
+      let cost = R.SHIP; const list = items.map((id) => { const u = S.market[id]; cost += u * P; return { ing: id, n: P, u }; });
+      cost = Math.round(cost);
+      if (S.funds < cost) return { ok: false, msg: '資金が足りません（合計 ¥' + cost.toLocaleString() + '）' };
+      const at = CS.kitchen.deliver(S, list, now);
+      if (!at) return { ok: false, msg: 'トラックが配達中です' };
+      S.funds -= cost; S.today.buy += cost; S.today.ship = (S.today.ship || 0) + R.SHIP;
+      // 仕入れ値は注文のたびに動く（たくさん買った物は少し上がる）
+      for (const id in D.ING) {
+        const base = D.ING[id].price, k = items.filter((x) => x === id).length;
+        let p = S.market[id] * (1 + (Math.random() - 0.5) * 0.06 + k * 0.025);
+        p += (base - p) * 0.04;
+        S.market[id] = Math.round(clamp(p, base * 0.6, base * 1.8));
+      }
+      return { ok: true, msg: items.length + '箱を発送（¥' + cost.toLocaleString() + '・送料込み）。約' + Math.round((at - now) / 1000) + '秒でトラックが裏の路地に着きます' };
     },
+    buy(S, a, now) { const n = Math.max(1, Math.min(R.CART_MAX, Math.ceil((+a.n || 10) / R.PACK))); return ACT.order(S, { items: Array(n).fill(a.id) }, now); },
     buyEq(S, a) {
       const E = D.EQUIP[a.kind]; if (!E) return { ok: false };
       const cur = (S.eq[a.kind] || 0), t = E.tiers[cur + 1];
@@ -471,10 +500,10 @@
     const fixed = R.RENT + (S.up.floor || 0) * (R.RENT_PER_FLOOR || 1500) + (equip + 2) * R.UTIL_PER_EQUIP + wages;
     S.funds -= fixed;
     const revenue = T.sales + T.drinks;
-    const profit = revenue - T.cogs - T.waste - fixed - T.ads - (T.lab || 0);
+    const profit = revenue - T.cogs - T.waste - fixed - T.ads - (T.lab || 0) - (T.ship || 0);
     const satAvg = T.cust - T.miss > 0 ? T.sat / Math.max(1, T.cust - T.miss) : 0;
     let bestR = null, bestN = 0; for (const r in T.best) if (T.best[r] > bestN) { bestN = T.best[r]; bestR = r; }
-    S.history.push({ cmp: T.complaints || 0, iss: Object.assign({}, T.issues || {}), d: S.day, sales: revenue, cogs: T.cogs, waste: T.waste, fixed, ads: T.ads + (T.lab || 0), profit, cust: T.cust, sold: T.sold, miss: T.miss, rep: Math.round(S.rep * 100) / 100, sat: Math.round(satAvg * 100) / 100, funds: S.funds, best: bestR || '', buy: T.buy || 0, capex: T.capex || 0, wages });
+    S.history.push({ spl: T.spoiled || 0, pc: T.pcomp || 0, ship: T.ship || 0, cmp: T.complaints || 0, iss: Object.assign({}, T.issues || {}), d: S.day, sales: revenue, cogs: T.cogs, waste: T.waste, fixed, ads: T.ads + (T.lab || 0), profit, cust: T.cust, sold: T.sold, miss: T.miss, rep: Math.round(S.rep * 100) / 100, sat: Math.round(satAvg * 100) / 100, funds: S.funds, best: bestR || '', buy: T.buy || 0, capex: T.capex || 0, wages });
     while (S.history.length > 30) S.history.shift();
     S.cust = {};
     addXp(S, Math.round(Math.max(0, S.rep - 2) * 12));
@@ -493,8 +522,8 @@
 
   CS.sim = {
     shopLevel, addXp, upReq, eqv, pieceCount, furnMax, unlockByLevel, newState, normalize, gt, phaseInfo, clockStr, tick, apply, recipe, recipeTags, stars, recipeValue, comboKey, findRecipeByCombo,
-    costEstimate, demandEstimate, wtp, arrivalRate, invCount, hasAll, missing, expSoon, bakeQuality, bakeWindow, ovenDur, coolMs, upVal,
+    costEstimate, demandEstimate, wtp, cakeMarket, arrivalRate, invCount, hasAll, missing, expSoon, bakeQuality, bakeWindow, ovenDur, coolMs, upVal,
     DECIDE_MS, LEAVE_MS, clamp, fx, appearance, cleanDf, ACT, working,
-    _: { toArr, uid, union, cleanDf, fx, invCount, invTake, invAdd, hasAll, takeAll, eqv, ovenDur, bakeQuality, bakeWindow, coolMs, findRecipeByCombo, wtp, appearance, addXp, rate, pick, wpick, gauss, menuRecipes },
+    _: { toArr, uid, union, cleanDf, fx, invCount, invTake, invAdd, hasAll, takeAll, eqv, ovenDur, bakeQuality, bakeWindow, coolMs, findRecipeByCombo, wtp, cakeMarket, appearance, addXp, rate, pick, wpick, gauss, menuRecipes },
   };
 })(typeof window !== 'undefined' ? window : globalThis);

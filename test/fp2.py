@@ -16,6 +16,7 @@ async def main():
   async with async_playwright() as p:
     b = await p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'])
     ctx = await b.new_context(viewport={'width': 1280, 'height': 720})
+    await ctx.add_init_script("if(!localStorage.getItem('cs.settings'))localStorage.setItem('cs.settings',JSON.stringify({autoQ:false}))")
     pg = await ctx.new_page(); logs = []; pg.set_default_timeout(40000)
     pg.on('pageerror', lambda e: logs.append('PAGEERROR: ' + str(e)))
     js = lambda c: pg.evaluate(c)
@@ -34,26 +35,37 @@ async def main():
     await step("go('p')"); await pg.wait_for_timeout(700)
     await pg.screenshot(path=f'{OUT}/fp2_pc.png')
     print('sheet', await js("CS.ui.sheet && CS.ui.sheet.o.title"))
+    # カートに入れて発送
+    await js("CS.game.mkView='list'; CS.game.cart=['egg','sugar','flour','butter','cream','strawberry']; CS.game.mkView='cart'; CS.ui.renderSheet(true)"); await pg.wait_for_timeout(600)
+    await pg.screenshot(path=f'{OUT}/fp2_cart.png')
+    await js("document.getElementById('mk-send').click()"); await pg.wait_for_timeout(800)
     await js("CS.ui.closeSheet()")
-    for ing, n in [('egg', 10), ('sugar', 10), ('flour', 10), ('butter', 5), ('cream', 10), ('strawberry', 10)]:
-      await js(f"CS.ui.room.act({{t:'buy', id:'{ing}', n:{n}}})")
     print('crates', await step("return Object.values(S().k.items).filter(i=>i.t==='crate').map(i=>i.ing+':'+i.at).join(' ')"))
-    print('truck', await step("return JSON.stringify([S().k.trucks, R().now()])"))
+    print('truck', await step("return JSON.stringify([S().k.truck, R().now(), S().funds])"))
+    await step("W.me.x=-W.dims.RX-2.0; W.me.z=W.L.backDoor[1]-3.5; W.me.yaw=Math.PI*0.9; W.me.pitch=-0.12;")
     await pg.wait_for_timeout(2500)
     await pg.screenshot(path=f'{OUT}/fp2_truck_coming.png')
-    # 到着まで早送り（トラックの到着時刻を今に）
-    await step("const n=R().now(); S().k.trucks=[n-500]; Object.values(S().k.items).forEach(i=>{ if(i.t==='crate') i.ar=n-500; }); R().emit('state', S()); W.me.x=-W.dims.RX-1.6; W.me.z=W.L.backDoor[1]+0.2; W.me.yaw=Math.PI*0.95; W.me.pitch=-0.25;")
-    await pg.wait_for_timeout(2500)
+    # 到着まで早送り
+    await step("const n=R().now(); S().k.truck.at=n-500; Object.values(S().k.items).forEach(i=>{ if(i.t==='crate') i.ar=n-500; }); R().emit('state', S()); W.me.x=W.L.truck.x+0.3; W.me.z=W.L.truck.z-3.4; W.me.yaw=Math.PI+0.1; W.me.pitch=-0.3;")
+    await pg.wait_for_timeout(3000)
     await pg.screenshot(path=f'{OUT}/fp2_truck_parked.png')
-    await pg.wait_for_timeout(600)
-    # 段ボールを棚へ
+    # 荷台から取る → 在庫室へ → 開ける → 棚に置く → 空箱を回収
     for k in range(8):
       r = await step("""const L=W.L; const c=Object.entries(S().k.items).find(([id,i])=>i.t==='crate'&&String(i.at).startsWith('dl:')); if(!c) return 'done';
-        const p=W.slotPos(c[1].at); const a1=aim(p[0]-1.0, p[2]+0.2, [p[0],p[1]+0.17,p[2]]); const r1=go('p');
-        const a2=aim(L.shelf[0]+1.5, L.shelf[1], [L.shelf[0]+0.3,1.0,L.shelf[1]]); const r2=go('p'); return [a1, r1, a2, r2].join(' / ');""")
+        const p=W.slotPos(c[1].at); const a1=aim(L.truck.x + (p[0] < L.truck.x ? -0.4 : 0.4), L.truck.z-3.3, [p[0],p[1]+0.17,p[2]]); const r1=go('p');
+        const st=L.stock[c[1].ing]; const sp=[st.p[0], st.p[2]+st.f*1.0];
+        const a2=aim(sp[0], sp[1], [st.p[0],st.p[1]+0.12,st.p[2]+st.f*0.08]); const r2=go('s');
+        const a3=aim(sp[0], sp[1], [st.p[0],st.p[1]+0.12,st.p[2]+st.f*0.08]); const r3=go('p'); const r4=go('s');
+        return [a1, r1, a2, r2, a3, r3, r4].join(' / ');""")
       print('crate', r)
       if r == 'done': break
-      await pg.wait_for_timeout(200)
+      await pg.wait_for_timeout(300)
+      if k == 0: await pg.screenshot(path=f'{OUT}/fp2_storage.png')
+      r = await step("""const L=W.L; const b=L.trash[2]; const a=aim(b[0]+1.0, b[1]-0.3, [b[0],0.6,b[1]]); return a+' -> '+go('p')""")
+      print('  recycle', r)
+    await pg.wait_for_timeout(1500)
+    print('truck after', await step("return JSON.stringify(S().k.truck)"))
+    await pg.screenshot(path=f'{OUT}/fp2_storage2.png')
     print('inv', await step("return JSON.stringify(Object.fromEntries(Object.keys(S().inv).map(k=>[k,CS.sim.invCount(S(),k)])))"))
     # 生地：卵3 砂糖2 小麦粉2 バター1
     for ing, n in [('egg', 3), ('sugar', 2), ('flour', 2), ('butter', 1)]:
@@ -92,7 +104,18 @@ async def main():
     print('toTT', await step("const d=W.L.deco[0]; const a=aim(d.stand[0], d.stand[1], [d.tt[0],1.02,d.tt[2]]); return a+' -> '+go('p')"))
     print('scoop', await step("const m=W.L.whip[0]; const a=aim(m.stand[0], m.stand[1], [m.bowl[0],1.02,m.bowl[2]]); return a+' -> '+go('p')"))
     print('spread', await step("const d=W.L.deco[0]; const a=aim(d.stand[0], d.stand[1], [d.tt[0],1.02,d.tt[2]]); return a+' -> '+go('s')"))
-    print('spreadStop', await js("T.waitStop('deco', 0, () => { const d=T.W.L.deco[0]; T.aim(d.stand[0], d.stand[1], [d.tt[0],1.02,d.tt[2]]); })"))
+    await pg.wait_for_timeout(1200)
+    # 指でなぞる（円を何周も）
+    await js("""(async()=>{const cv=document.getElementById('sp-cv'); const r=cv.getBoundingClientRect(); const cx=r.left+r.width/2, cy=r.top+r.height/2;
+      const ev=(t,x,y)=>cv.dispatchEvent(new PointerEvent(t,{clientX:x,clientY:y,pointerId:1,bubbles:true,pointerType:'touch'}));
+      for (const rr of [0.05,0.12,0.19,0.26,0.32,0.36]) { ev('pointerdown', cx+rr*r.width, cy); for(let a=0;a<=Math.PI*2+0.3;a+=0.12){ ev('pointermove', cx+Math.cos(a)*rr*r.width, cy+Math.sin(a)*rr*r.width); } ev('pointerup', cx, cy); }
+    })()""")
+    await pg.wait_for_timeout(800)
+    await pg.screenshot(path=f'{OUT}/fp2_spread.png')
+    print('spread score', await js("document.getElementById('sp-q').textContent"))
+    await js("document.getElementById('sp-done').click()")
+    await pg.wait_for_timeout(500)
+    print('spreadDone', await step("const dk=S().k.items[K.at(S(),'dt:0')]; return JSON.stringify([S().k.deco[0], dk.sq, dk.df])"))
     print('putCream', await step("const h=held(); if(!h) return 'empty hands'; const p=W.L.deco[0].side[0]; const a=aim(p[0]-0.2, p[2]+1.0, [p[0],p[1]+0.05,p[2]]); return a+' -> '+go('p')"))
     for k, (x, z) in enumerate([(0.0, -0.45), (0.4, 0.25), (-0.4, 0.25)]):
       r1 = await step("const d=W.L.deco[0]; const b=d.bins.find(x=>x.ing==='strawberry'); const a=aim(d.stand[0], d.stand[1], [b.p[0],0.98,b.p[2]]); return a+' -> '+go('p')")

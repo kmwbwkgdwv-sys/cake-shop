@@ -30,6 +30,8 @@
   window.addEventListener('pagehide', () => { CS.save.flush(); if (UI.room) UI.room.saveLocal(); });
   window.addEventListener('online', () => CS.save.refresh());
   document.addEventListener('pointerdown', () => CS.sound.unlock(), { once: true });
+  // iPhone の Safari：2本指で画面が拡大されて操作できなくなるのを防ぐ
+  ['gesturestart', 'gesturechange'].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault(), { passive: false }));
 
   if (!CS.save.data.edited || !CS.save.data.edited.name) await UI.welcome();
 

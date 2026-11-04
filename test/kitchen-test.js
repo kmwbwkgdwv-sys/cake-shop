@@ -8,10 +8,18 @@ const A = (a) => { const r = sim.apply(S, Object.assign({ pid: 'p1' }, a), now);
 console.log('ovens', S.ovens.length, 'case', S.showcase.length, 'mix', S.k.mix.length, 'deco', S.k.deco.length);
 A({ t: 'start' });
 // 仕入れ → 段ボール → 棚へ
-A({ t: 'buy', id: 'strawberry', n: 12 });
+console.log('order:', A({ t: 'order', items: ['strawberry', 'strawberry', 'cream'] }).msg, 'funds', S.funds);
+console.log('order again (truck busy):', A({ t: 'order', items: ['egg'] }).msg);
 let crates = Object.keys(S.k.items).filter((id) => S.k.items[id].t === 'crate');
 console.log('crates', crates.map((id) => S.k.items[id].at + ':' + S.k.items[id].n));
-console.log('pick before truck:', A({ t: 'pick', id: crates[0] }).msg); now += 9500; console.log('trucks', JSON.stringify(S.k.trucks)); A({ t: 'pick', id: crates[0] }); A({ t: 'stock' });
+console.log('pick before truck:', A({ t: 'pick', id: crates[0] }).msg); now += 9500; console.log('truck', JSON.stringify(S.k.truck));
+A({ t: 'pick', id: crates[0] }); console.log('shelve closed:', A({ t: 'shelve', ing: 'strawberry' }).msg); A({ t: 'openCrate' });
+console.log('wrong shelf:', A({ t: 'shelve', ing: 'egg' }).msg); A({ t: 'shelve', ing: 'strawberry' }); A({ t: 'shelve', ing: 'strawberry', all: 1 });
+console.log('crate left', S.k.items[crates[0]].n, 'trash:', A({ t: 'trash' }).msg);
+for (const id of crates.slice(1)) { A({ t: 'pick', id }); A({ t: 'openCrate' }); A({ t: 'shelve', ing: S.k.items[id].ing, all: 1 }); A({ t: 'trash' }); }
+sim.tick(S, now); console.log('truck after unload', JSON.stringify(S.k.truck)); now += 12000; sim.tick(S, now); console.log('truck gone', S.k.truck);
+console.log('order after:', A({ t: 'order', items: ['egg'] }).ok, 'market egg', S.market.egg, 'shelved', S.today.shelved);
+now += 9500; for (const id of Object.keys(S.k.items).filter((id) => S.k.items[id].t === 'crate')) { A({ t: 'pick', id }); A({ t: 'openCrate' }); A({ t: 'shelve', ing: 'egg', all: 1 }); A({ t: 'trash' }); } sim.tick(S, now); now += 12000; sim.tick(S, now);
 console.log('strawberry inv', sim.invCount(S, 'strawberry'));
 // 生地：卵→砂糖→小麦粉→バター（plain: egg3 sugar2 flour2 butter1）
 ['egg', 'egg', 'egg', 'sugar', 'sugar', 'flour', 'flour', 'butter'].forEach((ing) => A({ t: 'addIng', st: 'mix', i: 0, ing }));
@@ -31,7 +39,7 @@ A({ t: 'run', st: 'whip', i: 0 }); now += K.gauge(S, 'whip').sec * 1000; console
 A({ t: 'scoop', i: 0 }); const crId = K.held(S, 'p1'); A({ t: 'put', slot: 'sp:0' });
 // デコ
 A({ t: 'pick', id: pan }); A({ t: 'put', slot: 'dt:0' });
-A({ t: 'pick', id: crId }); A({ t: 'run', st: 'deco', i: 0 }); now += K.gauge(S, 'deco').sec * 1000; console.log('spread:', A({ t: 'run', st: 'deco', i: 0 }).msg);
+A({ t: 'pick', id: crId }); console.log('spread start:', A({ t: 'run', st: 'deco', i: 0 }).ok, S.k.deco[0].st); console.log('other player:', sim.apply(S, { t: 'spreadDone', i: 0, q: 1, pid: 'p2' }, now).msg); console.log('spread:', A({ t: 'spreadDone', i: 0, q: 0.93 }).msg);
 A({ t: 'put', slot: 'sp:1' });
 for (let k = 0; k < 3; k++) { A({ t: 'takeTop', k: 'strawberry' }); const a = (k / 3) * Math.PI * 2; A({ t: 'topPlace', i: 0, x: Math.cos(a) * 0.55, z: Math.sin(a) * 0.55 }); }
 console.log('finish:', A({ t: 'finish', i: 0 }).ok, S.fx[S.fx.length - 1].x);

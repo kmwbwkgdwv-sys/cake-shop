@@ -87,6 +87,7 @@
         <div class="chat-float" id="chatFloat" aria-live="polite"></div>
         <div class="prompt" id="prompt" aria-live="polite"></div>
         <div class="held" id="held" hidden></div>
+        <div class="netwarn" id="netwarn" hidden></div>
         <div class="lockhint" id="lockhint" ${T || CS.LS.get('cs.mh', false) ? 'hidden' : ''}>${ic('hand')} マウスを動かすと見回せます（ボタンは押さなくてOK）・WASD＝移動・クリック＝つかむ／置く・右クリック＝使う</div>
         <div class="fabs" id="fabs">
           <div class="mv joy" data-id="joy" id="joy" ${T ? '' : 'hidden'}><i></i></div>
@@ -113,7 +114,9 @@
     const press = (id, fn) => { const b = $(id); b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); if (game.editingFabs) return; b.classList.add('pressed'); fn(); }); const up = () => b.classList.remove('pressed'); b.addEventListener('pointerup', up); b.addEventListener('pointerleave', up); b.addEventListener('pointercancel', up); };
     if (!W.init($('#world'))) UI.toast('3D 表示が使えない端末です', 'err');
     W.bindJoystick($('#joy'));
-    press('#b-act', () => W.primary()); press('#b-sec', () => W.secondary()); press('#b-del', () => W.discard());
+    press('#b-act', () => { W.primary(); W.primaryHold(true); }); press('#b-sec', () => W.secondary()); press('#b-del', () => W.discard());
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => $('#b-act').addEventListener(ev, () => W.primaryHold(false)));
+    W.onSpread = (i) => game.openSpread(i);
     W.onTarget = (t, held) => game.renderPrompt(t, held);
     W.onUI = (k) => { if (k === 'pc') game.openPC(); else if (k === 'menu') game.openMenu('sell'); };
     { const used = {}; W.onMouseUsed = (k) => { used[k] = 1; if (used.move && used.click) { const h = $('#lockhint'); if (h && !h.hidden) { h.hidden = true; CS.LS.set('cs.mh', true); } } }; }
@@ -137,8 +140,9 @@
     const T = touch();
     const pri = t && t.pri, sec = t && t.sec, del = t && t.del;
     const hName = held ? CS.world.itemName(held, s) : '';
-    const delLabel = del ? del.label : held ? (held.t === 'crate' ? '' : '捨てる') : '';
-    const key = JSON.stringify([t && t.name, pri && pri.label, sec && sec.label, delLabel, hName, t && t.aimOK, T]);
+    const delLabel = del ? del.label : held ? (held.t === 'crate' && !((held.sp || 0) >= 2 && held.n > 0) ? '' : '捨てる') : '';
+    const fr = held ? CS.kitchen.fresh(s, held, game.room.now()) : null;
+    const key = JSON.stringify([t && t.name, pri && pri.label, sec && sec.label, delLabel, hName, t && t.aimOK, T, fr && [fr.stage, fr.cold, Math.ceil(fr.left / 5)], held && held.df]);
     if (game._prompt === key) return;
     game._prompt = key;
     const el = $('#prompt'); if (!el) return;
@@ -151,7 +155,10 @@
       el.hidden = false;
     } else el.hidden = true;
     const hd = $('#held');
-    if (held) { hd.hidden = false; hd.innerHTML = `${ic('hand')}<span>${esc(hName)}</span>${held.df && held.df.length ? `<span class="chip bad">${esc(held.df.map((d) => (D.DEFECTS[d] || {}).name || d).join('・'))}</span>` : ''}`; } else hd.hidden = true;
+    if (held) {
+      const ft = !fr ? '' : fr.stage >= 2 ? `<span class="chip bad">傷んでいる</span>` : `<span class="chip ${fr.stage ? 'bad' : 'warn'}">${ic('snow')} 要冷蔵 あと${CS.world.mmss(fr.left)}</span>`;
+      hd.hidden = false; hd.innerHTML = `${ic('hand')}<span>${esc(hName)}</span>${held.df && held.df.length ? `<span class="chip bad">${esc(held.df.map((d) => (D.DEFECTS[d] || {}).name || d).join('・'))}</span>` : ''}${ft}`;
+    } else hd.hidden = true;
     const setB = (id, a, fallback) => { const b = $(id); if (!b) return; const lab = a ? a.label || a : fallback; b.querySelector('.ab-t').textContent = lab || fallback || ''; b.classList.toggle('on', !!a); b.classList.toggle('off', !a); };
     setB('#b-act', pri, held ? '置く' : 'つかむ');
     setB('#b-sec', sec, '使う');
@@ -208,12 +215,12 @@
   // =====================================================================
   game.onState = function () {
     const s = S(); if (!s) return;
-    CS.world.sync(s, game.room);
+    try { CS.world.sync(s, game.room); } catch (e) { console.error('[sync]', e); }
     game.renderHud(s);
     game.renderOverlay();
-    game.renderOrders(s);
-    game.tutCheck(s);
-    UI.renderSheet(false);
+    const t = performance.now();
+    if (!game._tutT || t - game._tutT > 400) { game._tutT = t; game.tutCheck(s); }
+    if (!game._shT || t - game._shT > 700) { game._shT = t; UI.renderSheet(false); }
   };
   game.renderHud = function (s) {
     const w = D.WEATHER.find((x) => x.id === s.weather) || D.WEATHER[0];
@@ -251,21 +258,42 @@
     $$('.ord[data-c]', el).forEach((d) => { const c = s.cust[d.dataset.c]; if (!c) return; const left = Math.max(0, Math.ceil(((c.pw || 0) - g) / 1000)); const t = left + 's'; const i = d.lastChild; if (i.textContent !== t) i.textContent = t; d.classList.toggle('late', left < 12); });
   };
   // ---------- 毎フレーム ----------
+  // 次のフレームは先に予約する：1フレームでエラーが出ても、画面が止まったままにならないように
   game.frame = function () {
     const r = game.room;
-    if (!r || !r.S) return;
-    const s = r.S, g = r.now();
-    CS.world.hudH = (game._hudH = game._hudH || ($('.hud') ? $('.hud').offsetHeight : 52));
-    CS.world.frame();
-    const pi = sim.phaseInfo(s, g);
-    const ph = $('#h-phase');
-    if (ph) {
-      ph.textContent = pi.label; ph.className = 'phase ' + pi.phase;
-      $('#h-clock').textContent = sim.clockStr(pi.min);
-      $('#h-bar').style.width = pi.f * 100 + '%';
-    }
-    if (!game._ordT || performance.now() - game._ordT > 500) { game._ordT = performance.now(); game.renderOrders(s); }
+    if (!r) return;
     game.raf = requestAnimationFrame(game.frame);
+    if (!r.S) return;
+    try {
+      const s = r.S, g = r.now();
+      CS.world.hudH = (game._hudH = game._hudH || ($('.hud') ? $('.hud').offsetHeight : 52));
+      CS.world.frame();
+      const pi = sim.phaseInfo(s, g);
+      const ph = $('#h-phase');
+      if (ph) {
+        const lb = pi.label, cl = 'phase ' + pi.phase, ck = sim.clockStr(pi.min), bw = Math.round(pi.f * 1000) / 10 + '%';
+        if (ph.textContent !== lb) ph.textContent = lb; if (ph.className !== cl) ph.className = cl;
+        const c = $('#h-clock'); if (c.textContent !== ck) c.textContent = ck;
+        const b = $('#h-bar'); if (b.style.width !== bw) b.style.width = bw;
+      }
+      if (!game._ordT || performance.now() - game._ordT > 500) { game._ordT = performance.now(); game.renderOrders(s); game.renderNet(r); }
+      game._ferr = 0;
+    } catch (e) {
+      game._ferr = (game._ferr || 0) + 1;
+      if (game._ferr === 1 || game._ferr % 300 === 0) console.error('[frame]', e);
+      // エラーが続くときは 3D の描画を作り直す
+      if (game._ferr === 45 && CS.world.recover) CS.world.recover(true);
+    }
+  };
+  // 通信が切れて時間が止まっているときは、そう表示する（固まったと思わないように）
+  game.renderNet = function (r) {
+    const el = $('#netwarn'); if (!el) return;
+    let t = '';
+    if (!r.local) {
+      if (!net.connected) t = '通信が切れています。つながるまで時間が止まります…';
+      else if (!r.isHost && r.meta && r.meta.host && !(r.devices[r.meta.host] && r.devices[r.meta.host].on)) t = 'ホストの端末と通信できません。少しするとほかの人がホストになります…';
+    }
+    if (el._t !== t) { el._t = t; el.textContent = t; el.hidden = !t; }
   };
   // =====================================================================
   //  オーバーレイ（ロビー・日報・倒産）
@@ -316,6 +344,8 @@
       const best = h.best ? sim.recipe(s, h.best) : null;
       const tips = [];
       if (h.cmp) tips.push('失敗したケーキでクレームが ' + h.cmp + ' 件（' + Object.keys(h.iss || {}).map((k) => D.DEFECTS[k].name + '×' + h.iss[k]).join('、') + '）。評判が大きく下がりました。');
+      if (h.spl) tips.push('常温に置きっぱなしで傷ませた物が ' + h.spl + ' 件。生クリーム・ケーキ・焼いたスポンジは厨房の冷蔵庫へ、要冷蔵の段ボールはすぐ在庫室の冷蔵ケースへ。');
+      if (h.pc) tips.push('「高すぎる」というクレームが ' + h.pc + ' 件。パソコンの「販売価格」で今日の相場と比べて値段を見直そう。');
       if (h.miss > h.cust * 0.3) tips.push('買わずに帰ったお客さんが ' + h.miss + ' 人。売り切れや値段の高さが原因かも。');
       if (h.waste > h.sales * 0.12) tips.push('廃棄が多めです。作る量や仕入れを見直そう。');
       if (h.sat && h.sat < 0.45) tips.push('満足度が低め。品質を上げるか、少し値下げしてみよう。');
@@ -325,7 +355,7 @@
       if (!tips.length) tips.push('いい調子！この調子でお店を大きくしよう。');
       const stat = (l, v, cls) => `<div class="stat"><small>${l}</small><b class="${cls || ''}">${v}</b></div>`;
       ov.innerHTML = `<div class="panel ov-card"><h2>${h.d}日目の営業結果</h2>
-        <div class="report-grid">${stat('来店', h.cust + '人')}${stat('販売', h.sold + '個')}${stat('売上', yen(h.sales))}${stat('原価', yen(h.cogs))}${stat('廃棄', yen(h.waste), h.waste ? 'neg' : '')}${stat('家賃・光熱費・人件費', yen(h.fixed))}${stat('広告・試作', yen(h.ads))}${stat('利益', yen(h.profit), h.profit >= 0 ? 'pos' : 'neg')}${stat('クレーム', (h.cmp || 0) + '件', h.cmp ? 'neg' : '')}${stat('評判', '★' + h.rep.toFixed(1) + (repD ? (repD > 0 ? ' ↑' : ' ↓') : ''), repD > 0 ? 'pos' : repD < 0 ? 'neg' : '')}</div>
+        <div class="report-grid">${stat('来店', h.cust + '人')}${stat('販売', h.sold + '個')}${stat('売上', yen(h.sales))}${stat('原価', yen(h.cogs))}${stat('送料', yen(h.ship || 0))}${stat('廃棄', yen(h.waste), h.waste ? 'neg' : '')}${stat('家賃・光熱費・人件費', yen(h.fixed))}${stat('広告・試作', yen(h.ads))}${stat('利益', yen(h.profit), h.profit >= 0 ? 'pos' : 'neg')}${stat('クレーム', (h.cmp || 0) + '件' + (h.pc ? '（値段 ' + h.pc + '）' : ''), h.cmp ? 'neg' : '')}${stat('評判', '★' + h.rep.toFixed(1) + (repD ? (repD > 0 ? ' ↑' : ' ↓') : ''), repD > 0 ? 'pos' : repD < 0 ? 'neg' : '')}</div>
         ${best ? `<div class="banner pink">${ic('star')} 一番人気：${esc(best.name)}</div>` : ''}
         <div class="banner sky" style="display:grid;gap:2px">${tips.map((t) => '<span>・' + esc(t) + '</span>').join('')}</div>
         <div class="row between small"><span>現在の資金</span><b class="num">${yen(s.funds)}</b></div>
@@ -399,11 +429,12 @@
     r.setStation('pc');
     UI.openSheet({
       title: 'パソコン', live: true, key: 'pc', tab: tab || game.pcTab || 'ing',
-      tabs: [{ id: 'ing', label: '材料の注文' }, { id: 'eq', label: '設備' }, { id: 'furn', label: '家具' }, { id: 'staff', label: 'アルバイト' }, { id: 'up', label: '拡張' }, { id: 'ad', label: '広告' }, { id: 'today', label: '収支' }, { id: 'level', label: 'レベル' }],
+      tabs: [{ id: 'ing', label: '材料の注文' }, { id: 'sell', label: '販売価格' }, { id: 'eq', label: '設備' }, { id: 'furn', label: '家具' }, { id: 'staff', label: 'アルバイト' }, { id: 'up', label: '拡張' }, { id: 'ad', label: '広告' }, { id: 'today', label: '収支' }, { id: 'level', label: 'レベル' }],
       onClose: () => r.setStation(''),
       render(body, t) {
         const s = S(); game.pcTab = t;
         if (t === 'ing') return game.renderMarket(body, s);
+        if (t === 'sell') return game.renderSell(body);
         if (t === 'eq') return game.renderEquip(body, s);
         if (t === 'furn') return game.renderFurn(body, s);
         if (t === 'staff') return game.renderStaff(body, s);
@@ -411,43 +442,59 @@
       },
     });
   };
-  // ---------- 材料の注文（裏口に段ボールで届く） ----------
+  // ---------- 材料の注文：商品をえらんでカートへ → カートで確認（1つずつキャンセル可）→ 発送 ----------
+  game.cart = game.cart || [];
+  const truckState = (s) => {
+    const tk = s.k && s.k.truck, g = game.room.now();
+    if (!tk) return { busy: false, text: '待機中（すぐ発送できます）' };
+    if (g < tk.at) return { busy: true, text: '配達中…あと' + Math.ceil((tk.at - g) / 1000) + '秒で到着' };
+    if (!tk.out) return { busy: true, text: '裏の路地に到着中。荷台から段ボールを下ろそう' };
+    return { busy: true, text: '帰っていくところ' };
+  };
   game.renderMarket = function (body, s) {
+    const P = R.PACK, cart = game.cart, ts = truckState(s);
+    const sub = cart.reduce((a, id) => a + Math.round(s.market[id] * P), 0), total = cart.length ? sub + R.SHIP : 0;
+    const head = `<div class="row between wrap"><span class="small">資金 <b class="num">${yen(s.funds)}</b></span><span class="chip ${ts.busy ? 'warn' : 'ok'}">${ic('box')} トラック：${esc(ts.text)}</span></div>`;
+    if (game.mkView === 'cart') {
+      body.innerHTML = `${head}<div class="card"><div class="row between"><h3>${ic('cart')} カート（${cart.length} / ${R.CART_MAX}箱）</h3><button class="btn sm ghost" id="mk-back">${ic('back')} 商品をえらぶ</button></div>
+        ${cart.length ? `<div class="list">${cart.map((id, k) => `<div class="item"><div class="ico">${D.ING[id].icon}</div><div class="mid"><b>${esc(D.ING[id].name)} ×${P}</b><small>1箱 ${yen(Math.round(s.market[id] * P))}（いまの値段）</small></div><div class="end"><button class="btn sm ghost" data-cancel="${k}">${ic('close')} キャンセル</button></div></div>`).join('')}</div>` : '<p class="muted small" style="margin:0">カートは空です。「商品をえらぶ」から入れよう</p>'}
+        <dl class="kv"><dt>商品の合計</dt><dd>${yen(sub)}</dd><dt>送料（1回の注文ごと）</dt><dd>${cart.length ? yen(R.SHIP) : '—'}</dd><dt class="tot">お支払い</dt><dd class="tot">${yen(total)}</dd></dl>
+        <button class="btn big pink wide" id="mk-send" ${cart.length && !ts.busy && s.funds >= total ? '' : 'disabled'}>${ic('box')} 発送する</button>
+        ${ts.busy ? '<p class="muted small" style="margin:0">トラックが配達中です。荷おろしが終わると次の注文を発送できます。</p>' : s.funds < total ? '<p class="neg small" style="margin:0">資金が足りません</p>' : '<p class="muted small" style="margin:0">仕入れ値は注文のたびに少しずつ変わります（発送したときの値段で買います）。</p>'}</div>`;
+      $('#mk-back', body).onclick = () => { game.mkView = 'list'; UI.renderSheet(true); };
+      $$('[data-cancel]', body).forEach((b) => (b.onclick = () => { game.cart.splice(+b.dataset.cancel, 1); CS.sound.play('tap'); UI.renderSheet(true); }));
+      const send = $('#mk-send', body);
+      send.onclick = async () => {
+        const items = game.cart.slice();
+        CS.sound.play('coin'); send.disabled = true;
+        const r = await act({ t: 'order', items });
+        if (r && r.ok === false) { send.disabled = false; return; }
+        game.cart = []; game.mkView = 'list'; UI.renderSheet(true);
+      };
+      return;
+    }
     const ev = s.mEvent && s.mEvent.id ? `<div class="banner ${s.mEvent.up ? 'pink' : 'mint'}">${D.ING[s.mEvent.id].icon} 今日は${esc(D.ING[s.mEvent.id].name)}が${s.mEvent.up ? '高騰中！' : '特売中！'}</div>` : '';
-    const free = CS.kitchen.deliveryFree(s);
-    body.innerHTML = `${ev}<div class="row between wrap"><span class="small">資金 <b class="num">${yen(s.funds)}</b>・裏口の置き場 あと<b>${free}</b>箱</span><button class="btn sm mint" id="mk-bulk">${ic('cart')} 販売中メニュー2台分をまとめて注文</button></div>
-      <div class="banner sky">${ic('box')}<span>注文した材料は<b>トラック</b>で届きます。到着したら<b>裏口（左奥）から外に出て</b>、段ボール（1箱10個まで）を持って店の中の<b>在庫の棚</b>にしまうと使えるようになります。</span></div>
+    body.innerHTML = `${head}${ev}<div class="row between wrap"><button class="btn mint" id="mk-cart">${ic('cart')} カートを見る（${cart.length} / ${R.CART_MAX}）</button><button class="btn sm ghost" id="mk-bulk">${ic('plus')} 販売中メニューに足りない分を入れる</button></div>
+      <p class="muted small" style="margin:0">1箱＝${P}個。1回の注文は${R.CART_MAX}箱まで・送料 ${yen(R.SHIP)}。届いたら裏口から外に出て、トラックの荷台から段ボールを在庫室へ運び、開けて棚に並べます。<b>要冷蔵</b>の材料は常温に置いておくと傷むので、すぐ冷蔵ケースへ。</p>
       <div class="list">${Object.keys(D.ING).map((id) => {
-        const ing = D.ING[id]; const p = s.market[id]; const n = game.mq[id] || 5; const have = sim.invCount(s, id);
-        const ch = Math.round((p / ing.price - 1) * 100);
-        const exp = sim.expSoon(s, id);
-        const unit = p * (n >= 10 ? 0.95 : 1); const cost = Math.round(unit * n);
-        return `<div class="item mk"><div class="ico">${ing.icon}</div><div class="mid"><b>${esc(ing.name)} <span class="chip ${have ? '' : 'bad'}">在庫 ${have}</span></b><small>${yen(p)}/個 <span class="${ch > 3 ? 'neg' : ch < -3 ? 'pos' : ''}">${ch > 3 ? '▲' + ch + '%' : ch < -3 ? '▼' + -ch + '%' : '±0'}</span>・${ing.life ? (exp !== null ? 'いちばん古いのはあと' + Math.max(0, exp) + '日' : '日持ち' + Math.round(ing.life * sim.eqv(s, 'fridge').life) + '日') : '日持ちする'}</small></div>
-          <div class="end"><div class="step"><button data-q="${id}" data-d="-1" aria-label="減らす">${ic('minus')}</button><output>${n}</output><button data-q="${id}" data-d="1" aria-label="増やす">${ic('plus')}</button></div><button class="btn sm yellow num" data-buy="${id}" ${s.funds >= cost && free >= Math.ceil(n / 10) ? '' : 'disabled'}>${yen(cost)}</button></div></div>`;
-      }).join('')}</div>
-      <p class="muted small" style="margin:0">10個以上で5%オフ。生ものは期限が来ると閉店時に廃棄されます。</p>`;
-    const hold = (b) => {
-      let t = null, n = 0;
-      const stepOnce = () => { const id = b.dataset.q; const v = clamp((game.mq[id] || 5) + +b.dataset.d * (n > 6 ? 5 : 1), 1, 40); game.mq[id] = v; n++; const o = b.parentNode.querySelector('output'); o.textContent = v; const s2 = S(); const cost = Math.round(s2.market[id] * (v >= 10 ? 0.95 : 1) * v); const bb = body.querySelector('[data-buy="' + id + '"]'); bb.textContent = yen(cost); bb.disabled = s2.funds < cost || CS.kitchen.deliveryFree(s2) < Math.ceil(v / 10); };
-      b.onpointerdown = (e) => { e.preventDefault(); n = 0; stepOnce(); t = setInterval(stepOnce, 140); UI.busyUntil = Date.now() + 1500; const stop = () => { clearInterval(t); document.removeEventListener('pointerup', stop); }; document.addEventListener('pointerup', stop); };
-    };
-    $$('[data-q]', body).forEach(hold);
-    $$('[data-buy]', body).forEach((b) => (b.onclick = () => { CS.sound.play('coin'); act({ t: 'buy', id: b.dataset.buy, n: game.mq[b.dataset.buy] || 5 }); game.tutMark('order'); }));
+        const ing = D.ING[id], p = s.market[id], box = Math.round(p * P), have = sim.invCount(s, id), inCart = cart.filter((x) => x === id).length;
+        const ch = Math.round((p / ing.price - 1) * 100), exp = sim.expSoon(s, id);
+        return `<div class="item mk"><div class="ico">${ing.icon}</div><div class="mid"><b>${esc(ing.name)} <span class="chip ${have ? '' : 'bad'}">在庫 ${have}</span>${ing.cold ? ` <span class="chip cold">${ic('snow')} 要冷蔵</span>` : ''}${inCart ? ` <span class="chip pink">カート ${inCart}</span>` : ''}</b><small>1箱 ${yen(box)} <span class="${ch > 3 ? 'neg' : ch < -3 ? 'pos' : ''}">${ch > 3 ? '▲' + ch + '%' : ch < -3 ? '▼' + -ch + '%' : '±0'}</span>・${ing.life ? (exp !== null ? '古いのはあと' + Math.max(0, exp) + '日' : '日持ち' + Math.round(ing.life * sim.eqv(s, 'fridge').life) + '日') : '日持ちする'}</small></div>
+          <div class="end"><button class="btn sm yellow" data-add="${id}" ${cart.length < R.CART_MAX ? '' : 'disabled'}>${ic('cart')} 入れる</button></div></div>`;
+      }).join('')}</div>`;
+    $('#mk-cart', body).onclick = () => { game.mkView = 'cart'; UI.renderSheet(true); };
+    $$('[data-add]', body).forEach((b) => (b.onclick = () => { if (game.cart.length >= R.CART_MAX) return UI.toast('1回の注文は' + R.CART_MAX + '箱までです', 'err'); game.cart.push(b.dataset.add); CS.sound.play('pop'); UI.toast(D.ING[b.dataset.add].name + 'をカートに入れた（' + game.cart.length + '/' + R.CART_MAX + '）'); UI.renderSheet(true); }));
     $('#mk-bulk', body).onclick = () => game.bulkBuy();
   };
-  game.bulkBuy = async function () {
+  // 販売中メニューの材料で、足りない分をカートに入れる
+  game.bulkBuy = function () {
     const s = S(); const need = {};
     const add = (req, k) => { for (const id in req) need[id] = (need[id] || 0) + req[id] * k; };
     Object.keys(s.menu).filter((rid) => s.menu[rid].on && s.known[rid]).forEach((rid) => { const r = sim.recipe(s, rid); add(D.BASES[r.base].ing, 2); if (r.cream !== 'none') add(D.CREAMS[r.cream].ing, 1); add(r.tops || {}, 2); });
-    const buy = []; let total = 0, boxes = 0;
-    for (const id in need) { const n = Math.ceil(need[id] - sim.invCount(s, id)); if (n > 0) { const c = Math.round(s.market[id] * (n >= 10 ? 0.95 : 1) * n); buy.push({ id, n, c }); total += c; boxes += Math.ceil(n / 10); } }
-    if (!buy.length) return UI.toast('いまの在庫で足りています', 'good');
-    const free = CS.kitchen.deliveryFree(s);
-    const ok = await UI.confirm('まとめて注文', `<span style="display:grid;gap:4px">${buy.map((b) => `<span>${D.ING[b.id].icon} ${esc(D.ING[b.id].name)} ×${b.n}　<b class="num">${yen(b.c)}</b></span>`).join('')}<b style="border-top:1px solid var(--line);padding-top:4px">合計 ${yen(total)}・段ボール ${boxes}箱</b>${boxes > free ? `<span class="neg">裏口の置き場が足りません（あと${free}箱）。先に段ボールを棚にしまおう</span>` : ''}</span>`, '注文する');
-    if (!ok) return;
-    if (S().funds < total) return UI.toast('資金が足りません', 'err');
-    for (const b of buy) await act({ t: 'buy', id: b.id, n: b.n });
-    CS.sound.play('coin'); game.tutMark('order');
+    let added = 0;
+    for (const id in need) { let n = Math.ceil((need[id] - sim.invCount(s, id) - game.cart.filter((x) => x === id).length * R.PACK) / R.PACK); while (n-- > 0 && game.cart.length < R.CART_MAX) { game.cart.push(id); added++; } }
+    if (!added) return UI.toast(game.cart.length >= R.CART_MAX ? 'カートがいっぱいです' : 'いまの在庫で足りています', 'good');
+    UI.toast(added + '箱をカートに入れました'); CS.sound.play('pop'); game.mkView = 'cart'; UI.renderSheet(true);
   };
   // ---------- 経営のタブ（収支・拡張・広告・レベル） ----------
   game.renderBizTab = function (body, s, t) {
@@ -494,13 +541,20 @@
       render(body) {
         const s = S();
         const howTo = `<div class="card soft"><h3>作り方（ショートケーキの例）</h3><ol class="howto">
-          <li><b>型</b>：左奥の棚で「型を取る」</li>
+          <li><b>仕入れ</b>：事務室のパソコンで材料をカートに入れて「発送」→ トラックが裏の路地に来たら、在庫室の裏口から出て荷台の段ボールを運ぶ → 在庫室で「開ける」→ 同じ材料の棚に「置く」</li>
+          <li><b>型</b>：オーブンの右の棚で「型を取る」</li>
           <li><b>生地</b>：ミキサー上の材料を<b>順番どおり</b>に入れる → ミキサーを回し、ゲージが<b class="pos">緑</b>で止める → 型を持ってミキサーをねらい「型に流す」</li>
           <li><b>焼く</b>：オーブンに入れて電源ON（温度は生地ごとの適温）→ ゲージの緑で「取り出す」</li>
           <li><b>冷ます</b>：右の冷却ラックに置いて冷めるまで待つ</li>
           <li><b>クリーム</b>：クリーム台に材料を入れて泡立て、緑で止める → 「クリームを取る」</li>
-          <li><b>デコ</b>：冷めた型をデコ台にのせる → クリームを持って「塗る」（緑で止める）→ トッピングを取ってケーキの上に1つずつ置く → 「仕上げる」</li>
-          <li><b>販売</b>：ショーケースに並べる → 外の看板を OPEN → レジで注文を受ける → 箱を取ってショーケースから入れる → お客さんに渡す</li></ol></div>`;
+          <li><b>デコ</b>：冷めた型をデコ台にのせる → クリームを持って「塗る」→ 画面を押したまま指でなぞって、上と側面をまんべんなく（はみ出し・ムラは減点）→ トッピングを取ってケーキの上に1つずつ置く → 「仕上げる」</li>
+          <li><b>販売</b>：ショーケースに並べる → 外の看板を OPEN → レジで注文を受ける → 箱を取ってショーケースから入れる → お客さんに渡す</li></ol></div>
+          <div class="card soft"><h3>${ic('snow')} 冷蔵のルール</h3><ul class="howto">
+          <li><b>要冷蔵の材料</b>（卵・バター・牛乳・生クリーム・チーズ・果物）は、段ボールのまま常温に置くと2〜5分で傷みます。トラックの荷台は冷蔵なので大丈夫。下ろしたら<b>すぐ在庫室の冷蔵ケース</b>へ</li>
+          <li>半分を過ぎると「ぬるい」状態に。そのまま棚に置くと<b>日持ちが半分</b>になります。傷んだら使えないので捨てる（廃棄）しかありません</li>
+          <li><b>生クリーム</b>（約${Math.round(D.SPOIL.cream / 60)}分）・<b>クリームを塗ったケーキ</b>（約${Math.round(D.SPOIL.cake / 60)}分）も常温だと「だれる・溶ける」→「傷む」。使うまでは<b>厨房の冷蔵庫</b>（奥の壁・ガラス扉）へ。ショーケースも冷えています</li>
+          <li>傷んだクリームやケーキを売ると、お客さんがお腹をこわして<b>★1の口コミ</b>。評判が大きく下がります</li>
+          <li>厨房の冷蔵庫に入れた物は<b>翌日も使えます</b>（1晩まで）。冷蔵庫は「設備」で大きくすると入る数が増えます</li></ul></div>`;
         const comp = (r) => `${esc(D.BASES[r.base].short)}生地 ＋ ${r.cream === 'none' ? 'クリームなし' : esc(D.CREAMS[r.cream].short)}${Object.keys(r.tops || {}).length ? ' ＋ ' + Object.keys(r.tops).map((k) => D.ING[k].icon + '×' + r.tops[k]).join(' ') : ''}`;
         const ingTxt = (req, order) => (order || Object.keys(req)).map((k) => D.ING[k].icon + esc(D.ING[k].name) + '×' + req[k]).join(' → ');
         const known = Object.keys(D.RECIPES).filter((k) => s.known[k]);
@@ -530,21 +584,24 @@
   game.renderSell = function (body) {
     const s = S();
     const rids = Object.keys(s.known).filter((rid) => s.menu[rid]).sort((a, b) => (D.RECIPES[a] ? 0 : 1) - (D.RECIPES[b] ? 0 : 1));
-    body.innerHTML = `<div class="banner sky">売れ行き予想は「品質80」のケーキを並べたときの目安。評判が上がると高くても売れるようになります。</div>` + rids.map((rid) => {
+    const ce = s.cEvent && s.cEvent.r && sim.recipe(s, s.cEvent.r);
+    body.innerHTML = `<div class="banner sky">ケーキの相場は毎日変わります。値段は自由に決められますが、相場より高すぎる（${Math.round(R.PRICE_LIMIT * 100)}%超）とほとんど売れず「高すぎる」とクレームが来ます。売れ行き予想は品質80のときの目安です。</div>${ce ? `<div class="banner ${s.cEvent.up ? 'pink' : 'mint'}">今日は「${esc(ce.name)}」の相場が${s.cEvent.up ? '上がっています（人気！）' : '下がっています'}</div>` : ''}` + rids.map((rid) => {
       const r = sim.recipe(s, rid); const m = s.menu[rid];
       const cost = sim.costEstimate(s, r) / sim.pieceCount(r);
       return `<div class="card menu-card" data-r="${rid}"><div class="pic">${cakeImg(r)}</div><div class="ctl">
         <div class="row between"><b>${esc(r.name)}</b><label class="switch" title="販売する"><input type="checkbox" data-on="${rid}" ${m.on ? 'checked' : ''} aria-label="${esc(r.name)}を販売"><i></i></label></div>
-        <div class="row small"><span class="stars">${'★'.repeat(Math.round(sim.stars(r)))}</span><span class="muted">相場 ${yen(sim.recipeValue(r))}</span>${r.orig ? `<button class="btn sm ghost" data-del="${rid}" style="margin-left:auto">${ic('trash')}</button>` : ''}</div>
+        <div class="row small"><span class="stars">${'★'.repeat(Math.round(sim.stars(r)))}</span><span class="muted">今日の相場 <b class="num">${yen(sim.cakeMarket(s, rid, r))}</b></span>${r.orig ? `<button class="btn sm ghost" data-del="${rid}" style="margin-left:auto">${ic('trash')}</button>` : ''}</div>
         <div class="price-row"><div class="step"><button data-pd="-10" aria-label="10円下げる">${ic('minus')}</button><output class="price-val" data-pv>${yen(m.price)}</output><button data-pd="10" aria-label="10円上げる">${ic('plus')}</button></div></div>
-        <input type="range" min="100" max="1500" step="10" value="${m.price}" data-pr="${rid}" aria-label="価格">
+        <input type="range" min="100" max="${Math.max(1500, Math.round(sim.cakeMarket(s, rid, r) * 2 / 10) * 10)}" step="10" value="${m.price}" data-pr="${rid}" aria-label="価格">
         <div class="row between small"><span>原価 ${yen(cost)}/切れ</span><span data-pf>利益 ${yen(m.price - cost)}（${Math.round((1 - cost / m.price) * 100)}%）</span></div>
-        <div class="demand" data-dm></div></div></div>`;
+        <div class="demand" data-dm></div><div class="small" data-mk></div></div></div>`;
     }).join('');
     const upd = (card, price) => {
       const rid = card.dataset.r; const s2 = S(); const r = sim.recipe(s2, rid); const cost = sim.costEstimate(s2, r) / sim.pieceCount(r);
       $('[data-pv]', card).textContent = yen(price);
       $('[data-pf]', card).textContent = `利益 ${yen(price - cost)}（${Math.round((1 - cost / price) * 100)}%）`;
+      const mkp = sim.cakeMarket(s2, rid, r), f = price / mkp;
+      $('[data-mk]', card).innerHTML = f > R.PRICE_LIMIT ? `<span class="neg">${ic('megaphone')} 相場の${Math.round(f * 100)}%：高すぎてクレームが来ます</span>` : f > 1.12 ? `<span style="color:var(--warn)">相場の${Math.round(f * 100)}%：やや高め（味がいまいちだと文句が出るかも）</span>` : f < 0.85 ? `<span style="color:var(--info)">相場の${Math.round(f * 100)}%：安め（よく売れるが利益は少なめ）</span>` : `<span class="pos">相場の${Math.round(f * 100)}%：ちょうどいい</span>`;
       const p = sim.demandEstimate(s2, rid, price, 0.8); const [mk, col] = markOf(p);
       $('[data-dm]', card).innerHTML = `<span>売れ行き</span><span class="bar"><u style="width:${Math.round(p * 100)}%;background:${col}"></u></span><span class="mark" style="color:${col}">${mk}</span>`;
     };
@@ -743,15 +800,132 @@
     const q = $('#ss-quit', body);
     if (q) q.onclick = async () => { if (await UI.confirm('メンバーから抜ける', '席が空き、ほかの人が参加できるようになります。お店はほかのメンバーが続けられます。', '抜ける', true)) game.leave(true); };
   };
+  // =====================================================================
+  //  クリームを塗る（指・マウスを押したまま、なぞって塗る。回転台はゆっくり回る）
+  //  上面と側面をまんべんなく・厚さをそろえて・はみ出さないほど高得点
+  // =====================================================================
+  game.spreadMem = {};
+  game.openSpread = function (i) {
+    const mg = $('#mg'); if (!mg || !mg.hidden) return;
+    const s = S(); if (!s) return;
+    const did = CS.kitchen.at(s, 'dt:' + i), dk = did && s.k.items[did];
+    if (!dk || dk.t !== 'deco') return;
+    const hid = CS.kitchen.held(s, game.room.pid), held = hid && s.k.items[hid];
+    const creamK = (held && held.t === 'cream' && held.k) || dk.cr || 'whip';
+    const Bs = D.BASES[dk.b] || D.BASES.plain, tart = !!Bs.tart;
+    const creamCol = (D.CREAMS[creamK] || {}).color || '#FFFDF7';
+    if (document.pointerLockElement) document.exitPointerLock();
+    mg.hidden = false; mg.className = 'spread-ov';
+    mg.innerHTML = `<div class="sp-wrap panel"><canvas id="sp-cv" aria-label="ケーキ"></canvas>
+      <div class="sp-side"><b class="sp-title">クリームを塗る</b><span class="small muted">画面を<b>押したまま</b>なぞって塗ろう。回転台はゆっくり回ります。上面と${tart ? '' : 'まわり（側面）を'}まんべんなく、はみ出さないように。</span>
+        <div class="sp-m"><span>塗れた面積</span><i class="bar"><u id="sp-cov"></u></i><b id="sp-covn">0%</b></div>
+        <div class="sp-m"><span>なめらかさ</span><i class="bar"><u id="sp-ev"></u></i><b id="sp-evn">-</b></div>
+        <div class="sp-m"><span>はみ出し</span><i class="bar bad"><u id="sp-ms"></u></i><b id="sp-msn">0</b></div>
+        <div class="sp-score">いまの点数 <b id="sp-q">0</b></div>
+        <button class="btn big pink wide" id="sp-done">${ic('check')} 塗り終える</button>
+        <button class="btn sm ghost" id="sp-later">あとで続ける</button></div></div>`;
+    const cv = $('#sp-cv'), g = cv.getContext('2d');
+    const size = Math.round(Math.min(innerHeight * 0.86, innerWidth * 0.6, 560)), dpr = Math.min(2, devicePixelRatio || 1);
+    cv.style.width = cv.style.height = size + 'px'; cv.width = cv.height = Math.round(size * dpr);
+    const W2 = cv.width, C0 = W2 / 2, Rr = W2 * 0.3, Rs = tart ? Rr : Rr * 1.24, Rm = Rr * 1.36;
+    // 前回の続き（同じケーキ）
+    const memKey = did + ':' + i;
+    const mem = game.spreadMem[memKey] || (game.spreadMem[memKey] = { N: 44, cnt: new Float32Array(44 * 44), mess: 0, layer: null, ang: 0 });
+    const N = mem.N, cnt = mem.cnt;
+    if (!mem.layer) { mem.layer = document.createElement('canvas'); mem.layer.width = mem.layer.height = W2; }
+    const lay = mem.layer, lg = lay.getContext('2d');
+    const cellR = (cx, cy) => { const x = ((cx + 0.5) / N) * 2 - 1, y = ((cy + 0.5) / N) * 2 - 1; return Math.hypot(x, y) * Rm; };
+    const cells = []; for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const r = cellR(x, y); if (r <= Rs) cells.push(y * N + x); }
+    const rgbS = (h, a) => { const c = CS.gl.rgb(h); return `rgba(${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)},${a})`; };
+    const brush = Rr * 0.13;
+    let down = false, px = 0, py = 0, last = null, dead = false;
+    // 画面座標 → ケーキの座標（回転を戻す）
+    const toLocal = (x, y) => { const dx = x - C0, dy = y - C0, a = -mem.ang; return [dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a)]; };
+    const stamp = (lx, ly) => {
+      const r = Math.hypot(lx, ly);
+      if (r > Rs * 1.06) { mem.mess += 1; }
+      // 当たり判定の格子
+      const gx0 = Math.floor(((lx - brush) / Rm + 1) / 2 * N), gx1 = Math.floor(((lx + brush) / Rm + 1) / 2 * N), gy0 = Math.floor(((ly - brush) / Rm + 1) / 2 * N), gy1 = Math.floor(((ly + brush) / Rm + 1) / 2 * N);
+      for (let y = Math.max(0, gy0); y <= Math.min(N - 1, gy1); y++) for (let x = Math.max(0, gx0); x <= Math.min(N - 1, gx1); x++) {
+        const cx = (((x + 0.5) / N) * 2 - 1) * Rm, cy = (((y + 0.5) / N) * 2 - 1) * Rm;
+        const d = Math.hypot(cx - lx, cy - ly); if (d < brush) cnt[y * N + x] = Math.min(9, cnt[y * N + x] + 0.35 * (1 - d / brush) + 0.12);
+      }
+      // 見た目（クリームの層に重ねる）
+      const gr = lg.createRadialGradient(C0 + lx, C0 + ly, 0, C0 + lx, C0 + ly, brush);
+      gr.addColorStop(0, rgbS(creamCol, 0.5)); gr.addColorStop(0.7, rgbS(creamCol, 0.32)); gr.addColorStop(1, rgbS(creamCol, 0));
+      lg.fillStyle = gr; lg.beginPath(); lg.arc(C0 + lx, C0 + ly, brush, 0, Math.PI * 2); lg.fill();
+    };
+    const paintTo = (x, y) => {
+      const p = toLocal(x, y);
+      if (last) { const dx = p[0] - last[0], dy = p[1] - last[1], d = Math.hypot(dx, dy), n = Math.max(1, Math.ceil(d / (brush * 0.35))); for (let k = 1; k <= n; k++) stamp(last[0] + (dx * k) / n, last[1] + (dy * k) / n); }
+      else stamp(p[0], p[1]);
+      last = p;
+    };
+    const score = () => {
+      let cov = 0, sum = 0, sum2 = 0, n = 0;
+      cells.forEach((c) => { const v = cnt[c]; if (v >= 0.6) { cov++; const t = Math.min(v, 6); sum += t; sum2 += t * t; n++; } });
+      const covF = cov / cells.length, mean = n ? sum / n : 0, sd = n ? Math.sqrt(Math.max(0, sum2 / n - mean * mean)) : 0;
+      const even = n ? clamp(1 - (sd / Math.max(0.5, mean)) * 0.8, 0, 1) : 0;
+      const messF = clamp(mem.mess / 260, 0, 1);
+      const q = clamp(Math.pow(covF, 1.5) * (0.55 + 0.45 * even) - messF * 0.35, 0, 1);
+      return { covF, even, messF, q };
+    };
+    const draw = () => {
+      g.clearRect(0, 0, W2, W2);
+      // 回転台・お皿
+      g.fillStyle = '#C9CDD2'; g.beginPath(); g.arc(C0, C0, Rm * 1.06, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#F4F2EE'; g.beginPath(); g.arc(C0, C0, Rm * 0.98, 0, Math.PI * 2); g.fill();
+      g.save(); g.translate(C0, C0); g.rotate(mem.ang); g.translate(-C0, -C0);
+      // スポンジ（側面＝外側の輪、上面＝内側）
+      if (!tart) { g.fillStyle = Bs.crumb || '#C98D45'; g.beginPath(); g.arc(C0, C0, Rs, 0, Math.PI * 2); g.fill(); for (let k = 0; k < 36; k++) { const a = (k / 36) * Math.PI * 2; g.strokeStyle = 'rgba(0,0,0,.06)'; g.lineWidth = W2 * 0.004; g.beginPath(); g.moveTo(C0 + Math.cos(a) * Rr, C0 + Math.sin(a) * Rr); g.lineTo(C0 + Math.cos(a) * Rs, C0 + Math.sin(a) * Rs); g.stroke(); } }
+      g.fillStyle = Bs.color || '#EFC77C'; g.beginPath(); g.arc(C0, C0, Rr, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(0,0,0,.12)'; g.lineWidth = W2 * 0.004; g.beginPath(); g.arc(C0, C0, Rr, 0, Math.PI * 2); g.stroke();
+      g.drawImage(lay, 0, 0);
+      g.restore();
+      // ガイド（側面の境目）
+      if (!tart) { g.setLineDash([W2 * 0.01, W2 * 0.012]); g.strokeStyle = 'rgba(120,100,80,.35)'; g.lineWidth = W2 * 0.003; g.beginPath(); g.arc(C0, C0, Rs, 0, Math.PI * 2); g.stroke(); g.setLineDash([]); }
+      // 指（パレットナイフ）
+      if (down) { g.fillStyle = 'rgba(220,224,228,.9)'; g.strokeStyle = 'rgba(80,80,80,.5)'; g.lineWidth = 2; g.beginPath(); g.ellipse(px, py, brush * 0.95, brush * 0.35, 0.6, 0, Math.PI * 2); g.fill(); g.stroke(); }
+      const sc = score();
+      $('#sp-cov').style.width = Math.round(sc.covF * 100) + '%'; $('#sp-covn').textContent = Math.round(sc.covF * 100) + '%';
+      $('#sp-ev').style.width = Math.round(sc.even * 100) + '%'; $('#sp-evn').textContent = sc.covF > 0.05 ? Math.round(sc.even * 100) + '%' : '-';
+      $('#sp-ms').style.width = Math.round(sc.messF * 100) + '%'; $('#sp-msn').textContent = Math.round(sc.messF * 100) + '%';
+      $('#sp-q').textContent = Math.round(sc.q * 100);
+    };
+    const pos = (e) => { const r = cv.getBoundingClientRect(); return [((e.clientX - r.left) / r.width) * W2, ((e.clientY - r.top) / r.height) * W2]; };
+    cv.addEventListener('pointerdown', (e) => { e.preventDefault(); down = true; try { cv.setPointerCapture(e.pointerId); } catch (err) { /* noop */ } [px, py] = pos(e); last = null; paintTo(px, py); });
+    cv.addEventListener('pointermove', (e) => { if (!down) return; [px, py] = pos(e); paintTo(px, py); });
+    const up = () => { down = false; last = null; };
+    cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+    let t0 = performance.now(), opened = performance.now();
+    const close = () => { dead = true; mg.hidden = true; mg.innerHTML = ''; mg.className = ''; };
+    const loop = () => {
+      if (dead) return;
+      try {
+        if (!game.room || !mg.isConnected || mg.hidden) { close(); return; }
+        const now = performance.now(), dt = Math.min(0.05, (now - t0) / 1000); t0 = now;
+        if (down) { mem.ang += dt * 0.9; last = null; paintTo(px, py); }
+        draw();
+        // ほかの人に取られた・終わっていたら閉じる
+        const s2 = S(), b = s2 && s2.k.deco[i];
+        if (now - opened > 3000 && (!b || b.st !== 'spread' || b.by !== game.room.pid)) { close(); if (b && b.st === 'spread') UI.toast('ほかの人が塗っています', 'err'); return; }
+      } catch (e) { console.error('[spread]', e); close(); return; }
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+    $('#sp-done').onclick = () => { const sc = score(); act({ t: 'spreadDone', i, q: Math.round(sc.q * 100) / 100 }); delete game.spreadMem[memKey]; CS.sound.play(sc.q > 0.8 ? 'ok' : 'tap'); close(); };
+    $('#sp-later').onclick = () => close();
+  };
+
   // ---------- チュートリアル（最初に1回。画面右上のチェックリスト） ----------
   const TUT = [
-    { id: 'order', t: 'パソコンで材料を注文', d: '右の壁ぎわのパソコンをねらって使う。卵・砂糖・小麦粉・バター・生クリーム・いちごを注文しよう（「まとめて注文」が便利）', ok: (s) => (s.today.buy || 0) > 0 || s.history.length > 0 },
-    { id: 'stock', t: 'トラックの段ボールを運び入れる', d: 'トラックが来たら裏口（左奥）から外に出て、段ボールを持って店の中の「在庫の棚」にしまう', ok: (s) => ((s.today.buy || 0) > 0 || s.history.length > 0) && !Object.values(s.k.items).some((it) => it.t === 'crate') },
+    { id: 'order', t: 'パソコンで材料を注文', d: '右の事務室のパソコンで、材料を「カートに入れる」→ カートを見る →「発送する」（「足りない分を入れる」が便利）', ok: (s) => (s.today.buy || 0) > 0 || s.history.length > 0 },
+    { id: 'stock', t: '段ボールを運んで棚に並べる', d: 'トラックが来たら在庫室の裏口から外へ。荷台の段ボールを持って在庫室へ戻り「開ける」→ 同じ材料の棚に「置く」。卵・乳製品・果物は常温だと傷むので、すぐ冷蔵ケースへ', ok: (s) => (s.today.shelved || 0) > 0 || s.history.length > 0 },
     { id: 'mix', t: 'ミキサーで生地を作る', d: '奥のミキサーの上の材料を順番に入れる（卵→砂糖→小麦粉→バター）→ 回して緑で止める', ok: (s) => s.k.mix.some((b) => b.st === 'done' && b.k) || Object.values(s.k.items).some((it) => it.t === 'pan' && it.st !== 'empty') },
     { id: 'bake', t: '型に流してオーブンへ', d: '左奥の棚で型を取り、ミキサーをねらって「型に流す」→ オーブンに入れて電源を入れる', ok: (s) => Object.values(s.k.items).some((it) => it.t === 'pan' && (it.st === 'baking' || it.st === 'baked')) || Object.values(s.k.items).some((it) => it.t === 'deco' || it.t === 'cake') },
     { id: 'cool', t: '焼けたら取り出して冷ます', d: 'ゲージが緑のうちに取り出し、右の冷却ラックに置く', ok: (s) => Object.values(s.k.items).some((it) => (it.t === 'pan' && it.st === 'baked' && !String(it.at).startsWith('ov:')) || it.t === 'deco' || it.t === 'cake') },
-    { id: 'whip', t: 'クリームを泡立てる', d: 'クリーム台に生クリーム×2・砂糖×1を入れて泡立て、緑で止めて「クリームを取る」', ok: (s) => Object.values(s.k.items).some((it) => it.t === 'cream' || (it.t === 'deco' && it.cr) || it.t === 'cake') },
-    { id: 'deco', t: 'デコして仕上げる', d: '冷めた型をデコ台にのせる → クリームを塗る → いちごを3つ置く → 仕上げる', ok: (s) => Object.values(s.k.items).some((it) => it.t === 'cake') || s.showcase.some((c) => c) },
+    { id: 'whip', t: 'クリームを泡立てる', d: 'クリーム台に生クリーム×2・砂糖×1を入れて泡立て、緑で止めて「クリームを取る」。すぐ使わないときは奥の冷蔵庫へ（常温だと傷む）', ok: (s) => Object.values(s.k.items).some((it) => it.t === 'cream' || (it.t === 'deco' && it.cr) || it.t === 'cake') },
+    { id: 'deco', t: 'デコして仕上げる', d: '冷めた型をデコ台にのせる → クリームを持って「塗る」（指でなぞってまんべんなく）→ いちごを3つ置く → 仕上げる', ok: (s) => Object.values(s.k.items).some((it) => it.t === 'cake') || s.showcase.some((c) => c) },
     { id: 'case', t: 'ショーケースに並べる', d: 'できたケーキを持って、ショーケースの空いている台に「並べる」', ok: (s) => s.showcase.some((c) => c) },
     { id: 'open', t: '看板を OPEN にする', d: '入口の外にある看板をねらって OPEN に。お客さんが来て時間が進みます', ok: (s) => s.phase === 'open' || s.today.sold > 0 },
     { id: 'serve', t: '接客して売る', d: 'レジで注文を受ける → 箱を取り、ショーケースから注文の数だけ入れる → 待っているお客さんに渡す', ok: (s) => s.today.sold > 0 || s.history.length > 0 },

@@ -505,6 +505,12 @@ void main(){
       return { p: buf(g.p, Float32Array), n: buf(g.n, Float32Array), o: buf(g.o, Float32Array), c: buf(c, Float32Array), uv: buf(g.uv, Float32Array), m: buf(m, Float32Array), i: buf(g.i, Uint16Array, gl.ELEMENT_ARRAY_BUFFER), count: g.i.length };
     }
     mesh(g, color, opt) { const b = new Builder(); b.add(g, M.ident(), color ? rgb(color) : [1, 1, 1], opt); return b.build(this); }
+    // GPU のバッファを返す（作り直した物を捨てるとき。共有キャッシュの物は keep で残す）
+    free(meshes) {
+      const gl = this.gl; if (!meshes) return;
+      (Array.isArray(meshes) ? meshes : [meshes]).forEach((m) => { if (!m || m.keep || m.dead) return; ['p', 'n', 'o', 'c', 'uv', 'm', 'i'].forEach((k) => { if (m[k]) gl.deleteBuffer(m[k]); }); m.dead = true; m.count = 0; });
+    }
+    freeTree(n) { if (!n) return; this.free(n.meshes); for (const k of n.kids) this.freeTree(k); }
     texFromCanvas(cv, repeat) {
       const gl = this.gl, t = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, t);
@@ -522,6 +528,7 @@ void main(){
     shadowTarget() {
       if (this.sm && this.sm.size === this.smSize) return this.sm;
       const gl = this.gl, size = this.smSize;
+      if (this.sm) { gl.deleteTexture(this.sm.tex); gl.deleteFramebuffer(this.sm.fb); if (this.sm.rb) gl.deleteRenderbuffer(this.sm.rb); this.sm = null; }
       const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
       [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach((k) => gl.texParameteri(gl.TEXTURE_2D, k, gl.NEAREST));
@@ -531,7 +538,7 @@ void main(){
       const rb = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, rb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, size, size);
       gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      return (this.sm = { tex, fb, size });
+      return (this.sm = { tex, fb, rb, size });
     }
     // 仕上げ用のフレームバッファ（作れない端末では自動でオフ）
     ensurePost() {
@@ -563,6 +570,7 @@ void main(){
         return true;
       } catch (e) { this.post = false; this.pp = null; return false; }
     }
+    dropPost() { const gl = this.gl; if (this.pp) [this.pp.scene, this.pp.a, this.pp.b].forEach((f) => { gl.deleteTexture(f.tex); gl.deleteFramebuffer(f.fb); if (f.rb) gl.deleteRenderbuffer(f.rb); }); this.pp = null; }
     postProcess() {
       const gl = this.gl, P = this.pprog, pp = this.pp;
       gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.depthMask(false);
@@ -609,7 +617,10 @@ void main(){
     }
     render(scene) {
       const gl = this.gl, L = this.loc, E = this.env, cam = this.cam;
+      if (gl.isContextLost()) return;
       this.resize();
+      if (!this.post && this.pp) this.dropPost();
+      if (!this.shadows && this.sm) { gl.deleteTexture(this.sm.tex); gl.deleteFramebuffer(this.sm.fb); if (this.sm.rb) gl.deleteRenderbuffer(this.sm.rb); this.sm = null; }
       const out = { op: [], tr: [] };
       this.collect(scene, null, out);
       this.stats.draws = 0;
@@ -631,7 +642,7 @@ void main(){
         gl.useProgram(this.dprog); gl.enableVertexAttribArray(this.dattr);
         Object.values(this.attr).forEach((l) => { if (l >= 0 && l !== this.dattr) gl.disableVertexAttribArray(l); });
         gl.uniformMatrix4fv(this.dloc.uLVP, false, this.lvp);
-        for (const n of out.op) { if (!n.cast) continue; gl.uniformMatrix4fv(this.dloc.uM, false, n.world); for (const m of n.meshes) { this.bind(m, true); gl.drawElements(gl.TRIANGLES, m.count, gl.UNSIGNED_SHORT, 0); this.stats.draws++; } }
+        for (const n of out.op) { if (!n.cast) continue; gl.uniformMatrix4fv(this.dloc.uM, false, n.world); for (const m of n.meshes) { if (m.dead) continue; this.bind(m, true); gl.drawElements(gl.TRIANGLES, m.count, gl.UNSIGNED_SHORT, 0); this.stats.draws++; } }
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       }
       // ---- 本描画 ----
@@ -658,7 +669,7 @@ void main(){
         gl.uniform1f(L.uRK, n.rk); gl.uniform1f(L.uMK, n.mk); gl.uniform1f(L.uAO, n.ao);
         gl.uniform1f(L.uOut, outline ? this.outline * (n.outlineW || 1) : 0);
         gl.uniform1f(L.uUseTex, n.tex ? 1 : 0); gl.bindTexture(gl.TEXTURE_2D, n.tex || this.white);
-        for (const m of n.meshes) { this.bind(m); gl.drawElements(gl.TRIANGLES, m.count, gl.UNSIGNED_SHORT, 0); this.stats.draws++; }
+        for (const m of n.meshes) { if (m.dead) continue; this.bind(m); gl.drawElements(gl.TRIANGLES, m.count, gl.UNSIGNED_SHORT, 0); this.stats.draws++; }
       };
       for (const n of out.op) { if (n.twoSide) gl.disable(gl.CULL_FACE); draw(n, false); if (n.twoSide) gl.enable(gl.CULL_FACE); }
       if (this.outline > 0) { gl.cullFace(gl.FRONT); for (const n of out.op) if (n.outline) draw(n, true); gl.cullFace(gl.BACK); }
@@ -684,5 +695,7 @@ void main(){
   function dist2(m, p) { const dx = m[12] - p[0], dy = m[13] - p[1], dz = m[14] - p[2]; return dx * dx + dy * dy + dz * dz; }
   function norm(v) { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; }
 
-  CS.gl = { M, Geo, Builder, Node, Engine, rgb, mix, quad, geo, computeNormals };
+  // 共有キャッシュのメッシュに印をつける（free で消さない）
+  const keep = (ms) => { (Array.isArray(ms) ? ms : [ms]).forEach((m) => { if (m) m.keep = true; }); return ms; };
+  CS.gl = { M, Geo, Builder, Node, Engine, rgb, mix, quad, geo, computeNormals, keep };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -4,7 +4,7 @@
   const CS = (G.CS = G.CS || {});
 
   // ---------- 設定（端末ごとに保存。スマホとPCで別々にできる） ----------
-  const DEF = { light: false, camSens: 1, invertY: false, fov: 72, bob: true, lockMouse: false, btnScale: 1, hand: 'right', fab: null, sound: true, vol: 0.6, tips: true };
+  const DEF = { light: false, autoQ: true, camSens: 1, invertY: false, fov: 72, bob: true, lockMouse: false, btnScale: 1, hand: 'right', fab: null, sound: true, vol: 0.6, tips: true };
   const settings = Object.assign({}, DEF, (CS.LS && CS.LS.get('cs.settings', {})) || {});
   settings.save = function () { const o = {}; for (const k in DEF) o[k] = settings[k]; CS.LS.set('cs.settings', o); CS.applySettings && CS.applySettings(); };
   settings.reset = function (keys) { (keys || Object.keys(DEF)).forEach((k) => (settings[k] = DEF[k])); settings.save(); };

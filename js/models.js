@@ -247,6 +247,7 @@
       apr = A.build(eng);
     }
     const out = { hip: HIP.build(eng), tor: TOR.build(eng), head: HD.build(eng), ua: UA.build(eng), faL: mkFA(-1, s.acc === 'watch').build(eng), faR: mkFA(1, false).build(eng), th: TH.build(eng), sh: SH.build(eng), apr, aprTex: s.apron !== 'none' ? apronTex(eng, s) : null, bw, hs: { s: 0.95, m: 1, l: 1.05 }[s.height] || 1 };
+    ['hip', 'tor', 'head', 'ua', 'faL', 'faR', 'th', 'sh', 'apr'].forEach((k) => out[k] && CS.gl.keep(out[k]));
     partCache[key] = out;
     return out;
   }
@@ -476,7 +477,7 @@
     // お皿
     B.put(Geo.cyl(0.115, 0.1, 0.008, 36), [0, -0.004, 0], 0, 1, rgb('#F6F4F0'), GL.plate);
     B.put(Geo.torus(0.108, 0.003, 6, 36), [0, 0.0, 0], [PI / 2, 0, 0], 1, rgb('#C9A96E'), { rough: 0.25, metal: 1 });
-    const meshes = B.build(eng);
+    const meshes = CS.gl.keep(B.build(eng));
     cakeCache[key] = meshes;
     const n = new Node(meshes);
     if (scale) n.s = [scale, scale, scale];
