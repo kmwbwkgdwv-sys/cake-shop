@@ -82,12 +82,15 @@ async def main():
       ('memo', "CS.game.memoShow('short'); const W=CS.world; W.me.x=2.5; W.me.z=W.dims.CZ-1.0; W.me.yaw=0.5; W.me.pitch=-0.1"),
       ('floor_crates', "const S=T.S(), K=CS.kitchen, P=CS.plan; const g=P.geomOf(S); [['egg',1],['flour',0],['sugar',0]].forEach(([ing,op],i)=>{ const it={t:'crate',ing,n:10-i*4,u:40,open:op,ar:0,pl:1}; K.toFloor(S,it,[-g.RX+2.2,g.backDoor.z+1.8]); S.k.items['fc'+i]=it; }); const fb={t:'fcrate',k:'oven',ar:0,pl:1}; K.toFloor(S,fb,[-g.RX+3,g.backDoor.z+2.5]); S.k.items.fbx=fb; T.emit(); const W=CS.world; W.me.x=-g.RX+4.6; W.me.z=g.backDoor.z+2.0; W.me.yaw=Math.PI/2; W.me.pitch=-0.4"),
       ('crack', "const S=T.S(), K=CS.kitchen, P=CS.plan; const id=K.placeNew(S,'crack',[-6,-9]); P.slots(S,id).slice(0,3).forEach((sl,i)=>{ S.k.items['ck'+i]={t:'crate',ing:['egg','flour','box'][i],n:10,u:40,open:i===1?1:0,ar:0,at:sl,pl:1}; }); T.emit(); const W=CS.world, f=S.fu[id], st=P.stand(f,1.5); W.me.x=st[0]; W.me.z=st[1]; W.me.yaw=Math.atan2(-(f.x-st[0]),-(f.z-st[1])); W.me.pitch=-0.3"),
-      ('storage3', "const S=T.S(); S.up.storage=3; CS.kitchen.normalize(S); T.emit(); const W=CS.world, g=CS.plan.geomOf(S); W.me.x=g.store.door+0.3; W.me.z=g.store.z1+3.0; W.me.yaw=0.15; W.me.pitch=-0.12"),
+      ('pc_ing', "CS.game.openPC('ing'); setTimeout(()=>{ const b=document.querySelector('#sheet .sh-body, #sheet .sh .body, #sheet [class*=body]'); if(b) b.scrollTop=99999; }, 500)"),
+      ('pc_staff', "CS.ui.closeSheet(); const S=T.S(); S.xp=900; CS.ui.room.act({t:'hire',slot:0}).then(()=>CS.ui.room.act({t:'hire',slot:1})).then(()=>CS.ui.room.act({t:'staffTask',slot:0,task:'chef',opt:'short'})).then(()=>CS.ui.room.act({t:'staffTask',slot:1,task:'stock',opt:''})).then(()=>CS.game.openPC('staff'))"),
+      ('storage3', "CS.ui.closeSheet(); 0 || (()=>{})();"),
+      ('storage3b', "const S=T.S(); S.up.storage=3; CS.kitchen.normalize(S); T.emit(); const W=CS.world, g=CS.plan.geomOf(S); W.me.x=g.store.door+0.3; W.me.z=g.store.z1+3.0; W.me.yaw=0.15; W.me.pitch=-0.12"),
     ]
     MODE = sys.argv[4] if len(sys.argv) > 4 else 'all'
     if MODE == 'act': views = []
     if MODE == 'mobile': views = [v for v in views if v[0] in ('kitchen', 'store', 'pcase_aim', 'sink', 'guide', 'memo')]
-    if MODE == 'fix': views = [v for v in views if v[0] in ('kitchen', 'floor_crates', 'crack', 'storage3')]
+    if MODE == 'fix': views = [v for v in views if v[0] in ('kitchen', 'floor_crates', 'crack', 'pc_ing', 'pc_staff', 'storage3', 'storage3b')]
     for name, code in views:
       await js("(()=>{" + code + "})()")
       await pg.wait_for_timeout(1300)

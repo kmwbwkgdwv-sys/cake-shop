@@ -224,8 +224,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 28px; }
 @keyframes sheetIn { from { transform: translateY(30%); opacity: .3; } }
 .sh-head { display: flex; align-items: center; gap: 10px; padding: 14px var(--safe-r) 10px var(--safe-l); border-bottom: 1px solid var(--line); }
 .sh-head h2 { font-size: 20px; flex: 1; min-width: 0; }
-.sh-tabs { display: flex; gap: 2px; padding: 8px var(--safe-r) 0 var(--safe-l); overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--line); }
-.sh-tabs button { flex: none; min-height: 40px; padding: 0 14px; border: 0; border-bottom: 2px solid transparent; background: none; font-weight: 700; cursor: pointer; color: var(--muted); }
+.sh-tabs { display: flex; flex-wrap: wrap; gap: 2px 0; padding: 6px var(--safe-r) 0 var(--safe-l); border-bottom: 1px solid var(--line); } /* タブは折り返して全部見えるように（パソコンでも横スクロールしなくていい） */
+.sh-tabs button { flex: none; min-height: 36px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: none; font-weight: 700; cursor: pointer; color: var(--muted); }
 .sh-tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
 .sh-body { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 14px var(--safe-r) 22px var(--safe-l); display: grid; gap: 12px; align-content: start; }
 @media (min-width: 960px) {

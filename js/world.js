@@ -1514,7 +1514,7 @@
       const G2 = W.ghost; G2.n.vis = true; G2.n.p = [up.x, 0, up.z]; G2.n.r = [0, P.dirs(up.r).a, 0];
       const v = up.why ? 5 : 4; if (G2.v !== v) { G2.v = v; G2.n.kids.forEach((k) => { if (!k.op || k.op >= 1) setTint(k, v); }); }
     } else if (gh) gh.n.vis = false;
-    const mv = W.mv && s.fu[W.mv.id] ? W.mv : null, dg = W.dropG, cur = mv ? { k: s.fu[mv.id].k, x: mv.x, z: mv.z, r: mv.r, why: mv.why } : up || dg;
+    const mv = W.mv && s.fu[W.mv.id] ? W.mv : null, dg = W.dropG && W.dropG.show ? W.dropG : null, cur = mv ? { k: s.fu[mv.id].k, x: mv.x, z: mv.z, r: mv.r, why: mv.why } : up || dg;
     if (!cur) { ft.vis = false; return; }
     const [w, d] = cur.it ? (() => { const b = P.floorBox(cur.it, cur.x, cur.z, cur.r); return [b[2] - b[0], b[3] - b[1]]; })() : P.size(cur.k, cur.r);
     ft.vis = true; ft.p = [cur.x, 0.012, cur.z]; ft.s = [w + 0.06, 1, d + 0.06]; ft.color = cur.why ? rgb('#E2574C') : rgb('#5BD18B');
@@ -1583,14 +1583,14 @@
     }
   };
   // ---------- アルバイト ----------
-  const TASK_KIND = { mix: 'mixer', bake: 'oven', whip: 'whip', deco: 'deco', wash: 'sink' };
+  const TASK_KIND = { mix: 'mixer', bake: 'oven', whip: 'whip', deco: 'deco', wash: 'sink', chef: 'mixer' };
   function staffSpot(s, m) {
     const L = W.L, j = m.job;
     const at = (fid, d) => { const f = fOf(s, fid); if (!f) return null; const q = P.stand(f, d || 0.5); return { x: q[0], z: q[1], fx: f.x, fz: f.z }; };
     if (m.task === 'stock') {
       const cr = j && j.id && s.k.items[j.id];
       if (cr && W.room) { const half = (j.t0 + j.end) / 2; if (W.room.now() < half && String(cr.at).startsWith('dl:')) return { x: L.truck.x, z: L.truck.z - 3.3, fx: L.truck.x, fz: L.truck.z, pick: true }; }
-      const sh = cr && P.list(s, D.ING[cr.ing] && D.ING[cr.ing].cold ? 'cshelf' : 'shelf')[0];
+      const sh = cr && (j.dest && s.fu[j.dest] ? j.dest : P.list(s, D.ING[cr.ing] && D.ING[cr.ing].cold ? 'cshelf' : 'shelf')[0]);
       if (sh) { const q = at(sh, 0.6); if (q) return Object.assign(q, { carry: true }); }
       return { x: L.store.x0 + 2.2, z: L.store.z0 + 2.0, fx: L.store.x0, fz: L.store.z0 + 2.0 };
     }
@@ -1903,13 +1903,19 @@
     }
     cands.sort((a, b) => a.dist - b.dist);
     let t = cands[0] || null;
-    // 段ボール（空でもOK）を持っていて、ほかに何もねらっていない → 床に置く（緑＝置ける／赤＝置けない）
-    if (held && held.t === 'crate' && !t && d[1] < -0.08) {
-      const [x, z] = W.floorAim(o, d), r = Math.abs(Math.sin(W.me.yaw)) > 0.7 ? 1 : 0, far = Math.hypot(x - o[0], z - o[2]) > 3.0;
-      const bx = P.floorBox(held, x, z, r), nearMe = Math.hypot(W.me.x - clamp(W.me.x, bx[0], bx[2]), W.me.z - clamp(W.me.z, bx[1], bx[3])) < 0.3;
-      const why = far ? 'もう少し近くの床をねらおう' : nearMe ? '足もとすぎます（少し先の床をねらおう）' : P.floorOk(s, held, x, z, r, hid);
-      W.dropG = { it: held, x, z, r, why };
-      t = { name: '床' + (why ? '：' + why : '（段ボールを置ける）'), dist: 1, p: [x, 0, z], floor: 1, pri: why ? null : { label: held.n > 0 ? '段ボールを床に置く' : '空の段ボールを床に置く', a: { t: 'floor', x, z, r } } };
+    // 段ボール（空でもOK）を持っているとき → 床に置ける（床をねらう／前を向いていれば足もとの少し先）
+    if (held && held.t === 'crate') {
+      const aimF = d[1] < -0.08, fl = aimF ? W.floorAim(o, d) : [Math.round((W.me.x - Math.sin(W.me.yaw) * 0.9) * 20) / 20, Math.round((W.me.z - Math.cos(W.me.yaw) * 0.9) * 20) / 20];
+      const r = Math.abs(Math.sin(W.me.yaw)) > 0.7 ? 1 : 0, far = Math.hypot(fl[0] - o[0], fl[1] - o[2]) > 3.0;
+      const tryAt = (x, z) => { const bx = P.floorBox(held, x, z, r), nearMe = Math.hypot(W.me.x - clamp(W.me.x, bx[0], bx[2]), W.me.z - clamp(W.me.z, bx[1], bx[3])) < 0.3; return nearMe ? '足もとすぎます（少し先の床をねらおう）' : P.floorOk(s, held, x, z, r, hid); };
+      let x = fl[0], z = fl[1], why = far ? 'もう少し近くの床をねらおう' : tryAt(x, z);
+      // 少しずらせば置けるなら、そこに
+      if (why && !far) for (const [dx, dz] of [[0.15, 0], [-0.15, 0], [0, 0.15], [0, -0.15], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]]) { if (!tryAt(x + dx, z + dz)) { x = Math.round((x + dx) * 100) / 100; z = Math.round((z + dz) * 100) / 100; why = ''; break; } }
+      const label = held.n > 0 ? '段ボールを床に置く' : '空の段ボールを床に置く', act = { t: 'floor', x, z, r };
+      W.dropG = { it: held, x, z, r, why, show: !t && aimF };
+      if (!t && aimF) t = { name: '床' + (why ? '：' + why : '（段ボールを置ける）'), dist: 1, p: [x, 0, z], floor: 1, pri: why ? null : { label, a: act } };
+      else if (t && !t.del && !why) t.del = { label, a: act };
+      else if (!t && !why) t = { name: W.itemName(held, s), dist: 0, p: o, del: { label: label + '（前）', a: act } };
     }
     // 段ボールを持っているときは、どこでも「開ける／閉じる」ができる
     if (held && held.t === 'crate' && !(t && t.sec)) { t = t || { name: W.itemName(held, s), dist: 0, p: o }; t.sec = held.open ? { label: '段ボールを閉じる', a: { t: 'openCrate', close: 1 } } : { label: '段ボールを開ける', a: { t: 'openCrate' } }; }
@@ -2225,7 +2231,7 @@
     // トッピングの照準
     if (W.aim) { const el = lab('aim', 'aim-lb' + (W.aim.ok ? ' ok' : '')); setHTML(el, ''); const p = W.eng.project([W.aim.x, W.aim.y, W.aim.z]); if (p) { el.hidden = false; el.style.transform = `translate(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px) translate(-50%,-50%)`; } }
     // チュートリアルの目印（見えていればその上に、画面の外なら端に矢印）
-    if (W.guide && !W.bm) { const gp = W.guidePos(s, W.guide); if (gp) guideMark(gp, W.guide.label || ''); }
+    if (W.guide && !W.bm && !W.blocked()) { const gp = W.guidePos(s, W.guide); if (gp) guideMark(gp, W.guide.label || ''); }
     for (const k in W.lbl) if (!W.lbl[k]._used) { W.lbl[k].remove(); delete W.lbl[k]; }
   };
   // 目印の場所：{ item } 物 / { fid, y } 家具 / { p } 座標 / { at } 置き場所 / { pc } パソコン / { sign } 看板 / { truck } トラック / { cust } お客さん

@@ -28,7 +28,7 @@
       market: {}, mEvent: 0,
       stock: {}, k: null, dayT: 0, v: 2,
       menu: {}, known: {}, originals: {}, tested: {},
-      up: {}, eq: {}, furn: { table: 2 }, staff: [0, 0, 0, 0], ad: 'none', weather: 'sun',
+      up: {}, eq: {}, furn: { table: 2 }, staff: [0, 0, 0, 0, 0, 0, 0, 0], ad: 'none', weather: 'sun',
       xp: 0, today: blankToday(), history: [], cust: {}, fx: [], fxi: 0, seq: 0, np: 1, bankrupt: 0,
     };
     for (const id in D.RECIPES) if ((D.RECIPES[id].lv || 1) <= 1) addKnown(S, id);
@@ -63,7 +63,8 @@
     if (U.proOven && !S.eq.oven) S.eq.oven = 2; if (U.mixer && !S.eq.mixer) S.eq.mixer = 1; if (U.cooler && !S.eq.cooler) S.eq.cooler = 1; if (U.fridge && !S.eq.fridge) S.eq.fridge = 1;
     if (U.eatin && !S.furn.table) { S.furn.table = 3; S.furn.coffee = 1; }
     delete U.proOven; delete U.mixer; delete U.cooler; delete U.fridge; delete U.eatin;
-    S.staff = toArr(S.staff, 4).slice(0, 4).map((x) => (x && typeof x === 'object' ? x : 0));
+    S.staff = toArr(S.staff, 8).slice(0, 8).map((x) => (x && typeof x === 'object' ? x : 0));
+    S.staff.forEach((x, i) => { if (x && !(x.sp > 0)) x.sp = (D.STAFF.slots[i] || {}).sp || 1; });
     unlockByLevel(S);
     for (const id in D.ING) if (!(S.market[id] > 0)) S.market[id] = D.ING[id].price;
     if (!S.cmk || typeof S.cmk !== 'object' || !Object.keys(S.cmk).length) { const m0 = S.market, w0 = S.weather, e0 = S.mEvent; genMarket(S, true); if (m0 && Object.keys(m0).length) S.market = m0; S.weather = w0 || 'sun'; S.mEvent = e0 || 0; }
@@ -94,7 +95,9 @@
     S.xp = (S.xp || 0) + n;
     const after = shopLevel(S).lv;
     if (after > before) {
+      const ing0 = unlockedIngs(S);
       const items = unlockByLevel(S);
+      const newIng = Object.keys(unlockedIngs(S)).filter((k) => !ing0[k]).map((k) => D.ING[k].name);
       const ups = D.UPGRADES.filter((u) => !u.hide && (u.req || []).some((r, i) => r === after && (S.up[u.id] || 0) <= i)).map((u) => u.name);
       for (const k in D.EQUIP) D.EQUIP[k].tiers.forEach((t) => { if (t.lv === after && t.price) ups.push(t.name); });
       for (const k in D.FURN) if (D.FURN[k].lv === after) ups.push(D.FURN[k].name);
@@ -103,11 +106,22 @@
       if (items.length) parts.push('新商品「' + items.join('」「') + '」');
       if (ups.length) parts.push('「' + ups.join('」「') + '」');
       if (st) parts.push('アルバイト枠 +1');
+      if (newIng.length) parts.push('材料「' + newIng.join('」「') + '」');
       fx(S, 'up', 'お店のレベルが Lv' + after + ' に上がった！' + (parts.length ? ' ' + parts.join('・') + ' が解放。' : '') + ' お客さんの数 ×' + rush(S).rate.toFixed(2) + (rush(S).size > rush({ xp: T_XP(after - 1) }).size ? '・まとめ買いが増えます' : ''));
     }
   }
   const T_XP = (lv) => D.SHOP_XP[Math.max(0, lv - 1)] || 0;
   function upReq(u, lv) { return (u.req || [])[lv] || 1; }
+  // 材料の解放：作れる（解放済みの）お菓子に使う材料だけ買える。ケーキの箱はいつでも
+  function recipeIngs(r) { const out = []; if (!r) return out; const B = D.BASES[r.base], C = D.CREAMS[r.cream || 'none']; [B && B.ing, C && C.ing, r.tops].forEach((g) => { for (const k in g || {}) out.push(k); }); return out; }
+  function unlockedIngs(S) {
+    const u = { box: 1 };
+    for (const rid in S.known || {}) if (S.known[rid]) recipeIngs(recipe(S, rid)).forEach((k) => (u[k] = 1));
+    return u;
+  }
+  function ingUnlocked(S, id) { return !!unlockedIngs(S)[id]; }
+  // その材料が解放されるお菓子（いちばん早いレベル）
+  function ingUnlockBy(id) { let best = null; for (const rid in D.RECIPES) { const r = D.RECIPES[rid]; if (recipeIngs(r).includes(id) && (!best || (r.lv || 1) < (best.lv || 1))) best = Object.assign({ id: rid }, r); } return best; }
   // 店舗レベルで解放される商品
   function unlockByLevel(S) {
     const lv = shopLevel(S).lv, got = [];
@@ -309,6 +323,8 @@
     order(S, a, now) {
       const items = toArr(a.items).filter((id) => D.ING[id]);
       if (!items.length) return { ok: false, msg: 'カートが空です' };
+      const locked = items.filter((id) => !ingUnlocked(S, id));
+      if (locked.length) { const by = ingUnlockBy(locked[0]); return { ok: false, msg: '「' + D.ING[locked[0]].name + '」はまだ仕入れられません' + (by ? '（店舗Lv' + (by.lv || 1) + '「' + by.name + '」で解放）' : '') }; }
       if (items.length > R.CART_MAX) return { ok: false, msg: '一度に注文できるのは' + R.CART_MAX + '箱までです' };
       if (S.k && S.k.truck && !(now < S.k.truck.at)) return { ok: false, msg: 'トラックが来ています。荷おろしが終わって帰ったら次を注文できます' };
       const P = R.PACK;
@@ -352,7 +368,7 @@
       const sl = D.STAFF.slots[a.slot]; if (!sl) return { ok: false };
       if (shopLevel(S).lv < sl.lv) return { ok: false, msg: '店舗レベル ' + sl.lv + ' で雇えるようになります' };
       if (S.staff[a.slot]) return { ok: false, msg: 'もう雇っています' };
-      S.staff[a.slot] = { name: sl.name, lv: sl.start, xp: D.STAFF.xp[sl.start - 1], task: ['mix', 'bake', 'deco', 'whip'][a.slot] || 'mix', opt: '', skin: sl.skin, days: 0 };
+      S.staff[a.slot] = { name: sl.name, lv: sl.start, xp: D.STAFF.xp[sl.start - 1], sp: sl.sp || 1, task: ['chef', 'stock', 'chef', 'cashier', 'bake', 'wash', 'chef', 'deco'][a.slot] || 'chef', opt: '', skin: sl.skin, days: 0 };
       fx(S, 'info', sl.name + ' さんがアルバイトに来てくれた！');
       return { ok: true };
     },
@@ -401,6 +417,8 @@
       for (const k in a.tops || {}) { const n = clamp(Math.floor(a.tops[k]), 0, 3); if (D.TOPS[k] && n > 0) { tops[k] = n; total += n; } }
       if (Object.keys(tops).length > 3 || total > 5) return { ok: false, msg: 'トッピングは3種類・5個まで' };
       const r = { base: a.base, cream: a.cream || 'none', tops };
+      const lockedI = recipeIngs(r).filter((k) => !ingUnlocked(S, k));
+      if (lockedI.length) return { ok: false, msg: '「' + D.ING[lockedI[0]].name + '」はまだ解放されていない材料です' };
       const cost = Math.round(costEstimate(S, r) * (S.up.lab ? 0.5 : 1));
       if (S.funds < cost) return { ok: false, msg: '資金が足りません' };
       S.funds -= cost; S.today.lab = (S.today.lab || 0) + cost;
@@ -493,7 +511,7 @@
     waste = Math.round(waste);
     T.waste += waste;
     let equip = 0; for (const u of D.UPGRADES) equip += S.up[u.id] || 0;
-    let wages = 0; S.staff.forEach((st) => { if (st) { wages += D.STAFF.wage(st.lv); st.job = null; st.days = (st.days || 0) + 1; } });
+    let wages = 0; S.staff.forEach((st) => { if (st) { wages += D.STAFF.wage(st.lv, st.sp); st.job = null; st.days = (st.days || 0) + 1; } });
     T.wages = wages;
     const fixed = R.RENT + (S.up.floor || 0) * (R.RENT_PER_FLOOR || 1500) + (equip + 2) * R.UTIL_PER_EQUIP + wages;
     S.funds -= fixed;
@@ -519,7 +537,7 @@
   }
 
   CS.sim = {
-    shopLevel, rush, wholeable, holeMarket, holeWtp, addXp, upReq, eqv, pieceCount, furnMax, unlockByLevel, newState, normalize, gt, phaseInfo, clockStr, tick, apply, recipe, recipeTags, stars, recipeValue, comboKey, findRecipeByCombo,
+    shopLevel, rush, unlockedIngs, ingUnlocked, ingUnlockBy, recipeIngs, wholeable, holeMarket, holeWtp, addXp, upReq, eqv, pieceCount, furnMax, unlockByLevel, newState, normalize, gt, phaseInfo, clockStr, tick, apply, recipe, recipeTags, stars, recipeValue, comboKey, findRecipeByCombo,
     costEstimate, demandEstimate, wtp, cakeMarket, arrivalRate, invCount, hasAll, missing, expSoon, bakeQuality, bakeWindow, ovenDur, coolMs, upVal,
     DECIDE_MS, LEAVE_MS, clamp, fx, appearance, cleanDf, ACT, working, cakeExpDay, cakeExpired, cakeExpText, HOST_ONLY: ['menuOn'],
     _: { cakeExpired, toArr, uid, union, cleanDf, fx, invCount, invTake, invAdd, hasAll, takeAll, eqv, ovenDur, bakeQuality, bakeWindow, coolMs, findRecipeByCombo, wtp, cakeMarket, appearance, addXp, rate, pick, wpick, gauss, menuRecipes },

@@ -149,25 +149,32 @@
   };
   // ---- アルバイト（1人1業務・日給制。働くほどレベルが上がって速くなる） ----
   const STAFF = {
+    // 雇える人（店舗Lv1 ではまだ雇えない。最大8人）。sp = 手際（人によって作業の速さが違う）
     slots: [
-      { lv: 2, start: 1, name: 'さくら', skin: { hair: 'pony', hairColor: '#3B2A20', skin: '#F2D3B8', clothes: 'shirt', clothesColor: '#F7F5F0', apron: 'bib', apronColor: '#7A1F2B', hat: 'none', eyes: 'round', mouth: 'smile' } },
-      { lv: 4, start: 2, name: 'ゆうと', skin: { hair: 'short', hairColor: '#1F1A17', skin: '#E9C3A0', clothes: 'polo', clothesColor: '#2F4858', apron: 'waist', apronColor: '#2A2420', hat: 'cap', hatColor: '#2F4858', eyes: 'normal', mouth: 'neutral' } },
-      { lv: 6, start: 4, name: 'みお', skin: { hair: 'bob', hairColor: '#6B4A35', skin: '#F5DCC6', clothes: 'coat', clothesColor: '#F7F5F0', apron: 'waist', apronColor: '#3B4B63', hat: 'chefS', hatColor: '#F7F5F0', eyes: 'droop', mouth: 'smile' } },
-      { lv: 9, start: 8, name: 'けんじ', skin: { hair: 'crew', hairColor: '#8A8580', skin: '#D9AE8A', clothes: 'coat', clothesColor: '#F7F5F0', apron: 'waist', apronColor: '#1F1F22', hat: 'chef', hatColor: '#F7F5F0', beard: 'mustache', eyes: 'narrow', mouth: 'neutral', body: 'sturdy' } },
+      { lv: 2, start: 1, sp: 1.0, name: 'さくら', skin: { hair: 'pony', hairColor: '#3B2A20', skin: '#F2D3B8', clothes: 'shirt', clothesColor: '#F7F5F0', apron: 'bib', apronColor: '#7A1F2B', hat: 'none', eyes: 'round', mouth: 'smile' } },
+      { lv: 3, start: 1, sp: 1.25, name: 'ゆうと', skin: { hair: 'short', hairColor: '#1F1A17', skin: '#E9C3A0', clothes: 'polo', clothesColor: '#2F4858', apron: 'waist', apronColor: '#2A2420', hat: 'cap', hatColor: '#2F4858', eyes: 'normal', mouth: 'neutral' } },
+      { lv: 4, start: 2, sp: 0.85, name: 'みお', skin: { hair: 'bob', hairColor: '#6B4A35', skin: '#F5DCC6', clothes: 'coat', clothesColor: '#F7F5F0', apron: 'waist', apronColor: '#3B4B63', hat: 'chefS', hatColor: '#F7F5F0', eyes: 'droop', mouth: 'smile' } },
+      { lv: 5, start: 2, sp: 1.1, name: 'あおい', skin: { hair: 'long', hairColor: '#2A1E18', skin: '#F0CDB0', clothes: 'knit', clothesColor: '#9DB4C0', apron: 'bib', apronColor: '#E8A0B4', hat: 'none', eyes: 'round', mouth: 'smile' } },
+      { lv: 6, start: 3, sp: 0.95, name: 'はると', skin: { hair: 'crew', hairColor: '#3A2A22', skin: '#E2B796', clothes: 'shirt', clothesColor: '#DCE6F2', apron: 'waist', apronColor: '#4F6B4A', hat: 'cap', hatColor: '#4F6B4A', eyes: 'narrow', mouth: 'neutral' } },
+      { lv: 7, start: 4, sp: 1.35, name: 'ひなた', skin: { hair: 'bun', hairColor: '#8A5A3C', skin: '#F5DCC6', clothes: 'coat', clothesColor: '#F7F5F0', apron: 'bib', apronColor: '#C9A35E', hat: 'chefS', hatColor: '#F7F5F0', eyes: 'round', mouth: 'grin' } },
+      { lv: 8, start: 5, sp: 1.15, name: 'そうた', skin: { hair: 'wavy', hairColor: '#1F1A17', skin: '#D9AE8A', clothes: 'polo', clothesColor: '#7A1F2B', apron: 'waist', apronColor: '#2A2420', hat: 'none', eyes: 'normal', mouth: 'smile' } },
+      { lv: 9, start: 8, sp: 1.2, name: 'けんじ', skin: { hair: 'crew', hairColor: '#8A8580', skin: '#D9AE8A', clothes: 'coat', clothesColor: '#F7F5F0', apron: 'waist', apronColor: '#1F1F22', hat: 'chef', hatColor: '#F7F5F0', beard: 'mustache', eyes: 'narrow', mouth: 'neutral', body: 'sturdy' } },
     ],
     tasks: {
+      chef: { name: 'お菓子係', desc: '指定したお菓子を、生地 → 焼く → クリーム → 仕上げまで1人で作ってショーケースに並べる（「おまかせ」なら足りない物）', opt: 'recipe' },
       mix: { name: '生地係', desc: 'ミキサー台で生地を作る', opt: 'base' },
       bake: { name: 'オーブン係', desc: '予熱・焼成・取り出し', opt: null },
       whip: { name: 'クリーム係', desc: 'クリームを泡立てる', opt: 'cream' },
       deco: { name: '仕上げ係', desc: 'デコ台でケーキを仕上げる', opt: 'recipe' },
-      stock: { name: '仕入れ係', desc: '届いた段ボールを棚にしまい、少なくなった材料・箱を買い足す', opt: null },
+      stock: { name: '仕入れ係', desc: 'トラックや床の段ボールを運んで、指定した場所（棚・冷蔵棚・在庫棚・机）に入れる。少なくなった材料・箱を買い足す', opt: 'place' },
       wash: { name: '洗い場係', desc: '汚れたお皿・ケーキ型を洗って棚にしまう', opt: null },
       cashier: { name: 'レジ・接客', desc: '注文・箱詰め・お皿出し・お会計。席のお客さんにドリンクをすすめる', opt: null },
     },
     // 仕事の速さ（1.0 ＝ 慣れた人）。Lv1 はとても遅い
     speed: [0.3, 0.38, 0.48, 0.6, 0.74, 0.9, 1.08, 1.3, 1.6, 2.0],
     xp: [0, 5, 12, 22, 35, 52, 74, 100, 132, 170],
-    wage: (lv) => 1200 + 450 * (lv - 1),
+    // 日給（手際がいい人ほど少し高い）
+    wage: (lv, sp) => Math.round(((1200 + 450 * (lv - 1)) * (0.6 + 0.4 * (sp || 1))) / 10) * 10,
     jobSec: { mix: 20, whip: 14, deco: 24, in: 5, out: 4, stock: 8, order: 5, serve: 4, wash: 10 },
   };
   // 店舗レベル（売った数・お客さんの満足・評判で経験値がたまる）

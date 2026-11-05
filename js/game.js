@@ -518,12 +518,15 @@
     const ev = s.mEvent && s.mEvent.id ? `<div class="banner ${s.mEvent.up ? 'pink' : 'mint'}">${D.ING[s.mEvent.id].icon} 今日は${esc(D.ING[s.mEvent.id].name)}が${s.mEvent.up ? '高騰中！' : '特売中！'}</div>` : '';
     body.innerHTML = `${head}${ev}<div class="row between wrap"><button class="btn mint" id="mk-cart">${ic('cart')} カートを見る（${cart.length} / ${R.CART_MAX}）</button><button class="btn sm ghost" id="mk-bulk">${ic('plus')} 販売中メニューに足りない分を入れる</button></div>
       <p class="muted small" style="margin:0">1箱＝${P}個。1回の注文は${R.CART_MAX}箱まで・送料 ${yen(R.SHIP)}。届いたら倉庫の裏口から外に出て、トラックの荷台から段ボールを運び、開けて好きな棚に並べます（同じ物は同じ所に重なる・<b>1枠10個まで</b>。段ボールのままは棚に入らない）。運びきれない段ボールは床や机に置いておけます。<b>要冷蔵</b>の材料は常温だと傷むので、すぐ<b>冷蔵棚</b>へ。ケーキを入れる<b>箱</b>も仕入れが必要です。</p>
-      <div class="list">${Object.keys(D.ING).map((id) => {
+      <div class="list">${Object.keys(D.ING).filter((id) => sim.ingUnlocked(s, id)).map((id) => {
         const ing = D.ING[id], p = s.market[id], box = Math.round(p * P), have = sim.invCount(s, id), inCart = cart.filter((x) => x === id).length;
         const ch = Math.round((p / ing.price - 1) * 100), exp = sim.expSoon(s, id);
         return `<div class="item mk"><div class="ico">${ing.icon}</div><div class="mid"><b>${esc(ing.name)} <span class="chip ${have ? '' : 'bad'}">在庫 ${have}</span>${ing.cold ? ` <span class="chip cold">${ic('snow')} 要冷蔵</span>` : ''}${inCart ? ` <span class="chip pink">カート ${inCart}</span>` : ''}</b><small>1箱 ${yen(box)} <span class="${ch > 3 ? 'neg' : ch < -3 ? 'pos' : ''}">${ch > 3 ? '▲' + ch + '%' : ch < -3 ? '▼' + -ch + '%' : '±0'}</span>・${ing.life ? (exp !== null ? '古いのはあと' + Math.max(0, exp) + '日' : '日持ち' + Math.round(ing.life * sim.eqv(s, 'fridge').life) + '日') : '日持ちする'}</small></div>
           <div class="end"><button class="btn sm yellow" data-add="${id}" ${cart.length < R.CART_MAX ? '' : 'disabled'}>${ic('cart')} 入れる</button></div></div>`;
-      }).join('')}</div>`;
+      }).join('')}</div>${(() => {
+        const lk = Object.keys(D.ING).filter((id) => !sim.ingUnlocked(s, id));
+        return lk.length ? `<div class="card soft"><h3>${ic('lock')} まだ仕入れられない材料</h3><p class="muted small" style="margin:0">その材料を使うお菓子が解放されると買えるようになります</p><div class="list">${lk.map((id) => { const by = sim.ingUnlockBy(id); return `<div class="row between small"><span>${D.ING[id].icon} ${esc(D.ING[id].name)}</span><span class="chip">${by ? '店舗Lv' + (by.lv || 1) + '「' + esc(by.name) + '」で解放' : '—'}</span></div>`; }).join('')}</div></div>` : '';
+      })()}`;
     $('#mk-cart', body).onclick = () => { game.mkView = 'cart'; UI.renderSheet(true); };
     $$('[data-add]', body).forEach((b) => (b.onclick = () => { if (game.cart.length >= R.CART_MAX) return UI.toast('1回の注文は' + R.CART_MAX + '箱までです', 'err'); game.cart.push(b.dataset.add); CS.sound.play('pop'); UI.toast(D.ING[b.dataset.add].name + 'をカートに入れた（' + game.cart.length + '/' + R.CART_MAX + '）'); UI.renderSheet(true); }));
     $('#mk-bulk', body).onclick = () => game.bulkBuy();
@@ -535,7 +538,7 @@
     Object.keys(s.menu).filter((rid) => s.menu[rid].on && s.known[rid]).forEach((rid) => { const r = sim.recipe(s, rid); add(D.BASES[r.base].ing, 2); if (r.cream !== 'none') add(D.CREAMS[r.cream].ing, 1); add(r.tops || {}, 2); });
     if (D.ING.box) need.box = Math.max(need.box || 0, R.PACK); // ケーキの箱も
     let added = 0;
-    for (const id in need) { let n = Math.ceil((need[id] - sim.invCount(s, id) - game.cart.filter((x) => x === id).length * R.PACK) / R.PACK); while (n-- > 0 && game.cart.length < R.CART_MAX) { game.cart.push(id); added++; } }
+    for (const id in need) { if (!sim.ingUnlocked(s, id)) continue; let n = Math.ceil((need[id] - sim.invCount(s, id) - game.cart.filter((x) => x === id).length * R.PACK) / R.PACK); while (n-- > 0 && game.cart.length < R.CART_MAX) { game.cart.push(id); added++; } }
     if (!added) return UI.toast(game.cart.length >= R.CART_MAX ? 'カートがいっぱいです' : 'いまの在庫で足りています', 'good');
     UI.toast(added + '箱をカートに入れました'); CS.sound.play('pop'); game.mkView = 'cart'; UI.renderSheet(true);
   };
@@ -545,7 +548,7 @@
     if (t === 'today') {
       const T = s.today;
       let equip = 0; for (const u of D.UPGRADES) equip += s.up[u.id] || 0;
-      const wages = s.staff.reduce((a, st) => a + (st ? D.STAFF.wage(st.lv) : 0), 0);
+      const wages = s.staff.reduce((a, st) => a + (st ? D.STAFF.wage(st.lv, st.sp) : 0), 0);
       const rentU = R.RENT + (s.up.floor || 0) * (R.RENT_PER_FLOOR || 1500) + (equip + 2) * R.UTIL_PER_EQUIP;
       const fixed = s.phase === 'report' && s.history.length ? s.history[s.history.length - 1].fixed : rentU + wages;
       const rev = T.sales + T.drinks;
@@ -702,6 +705,9 @@
   };
   game.renderLab = function (body) {
     const s = S(); const L = game.lab;
+    const okI = (g) => Object.keys(g || {}).every((k) => sim.ingUnlocked(s, k));
+    const okB = (k) => okI(D.BASES[k].ing), okC = (k) => okI(D.CREAMS[k].ing), okT = (k) => sim.ingUnlocked(s, k);
+    if (!okB(L.base)) L.base = 'plain'; if (!okC(L.cream)) L.cream = 'none'; for (const k in L.tops) if (!okT(k)) delete L.tops[k];
     const r = { name: '試作', base: L.base, cream: L.cream, tops: Object.assign({}, L.tops) };
     const key = sim.comboKey(r.base, r.cream, r.tops);
     const tested = s.tested[key];
@@ -714,9 +720,9 @@
     else if (tested) res = `<div class="card"><div class="row between"><b>試作の評価</b><span class="stars" style="font-size:20px">${'★'.repeat(Math.round(tested))}${'☆'.repeat(5 - Math.round(tested))}</span></div>${already ? '<p class="muted small" style="margin:0">この組み合わせはメニューに登録済みです</p>' : `<label class="field"><span>名前をつけてメニューに追加（${Object.keys(s.originals).length}/${R.MAX_ORIGINALS}）</span><input class="input" id="lb-name" maxlength="16" placeholder="例：ふわふわピーチカスタード"></label><button class="btn pink" id="lb-reg">${ic('plus')} メニューに追加</button>`}</div>`;
     else if (s.up.lab) res = `<div class="banner sky">${ic('flask')} 研究室の予想：★${sim.stars(r)} くらい</div>`;
     body.innerHTML = `<div class="lab-preview"><div>${cakeImg(r, 6, [], 'big')}</div><div style="display:grid;gap:6px"><b>生地・クリーム・トッピングを組み合わせて試作しよう</b><span class="small muted">隠しレシピと同じ組み合わせなら新レシピ発見！ほかの組み合わせはオリジナルとして登録できます。</span></div></div>
-      <div class="card soft"><h3>生地</h3><div class="pick">${Object.keys(D.BASES).map((k) => `<button data-b="${k}" aria-pressed="${L.base === k}"><span class="sw" style="background:${D.BASES[k].color}"></span>${esc(D.BASES[k].short)}</button>`).join('')}</div></div>
-      <div class="card soft"><h3>クリーム</h3><div class="pick">${Object.keys(D.CREAMS).map((k) => `<button data-c="${k}" aria-pressed="${L.cream === k}">${D.CREAMS[k].color ? `<span class="sw" style="background:${D.CREAMS[k].color}"></span>` : ''}${esc(D.CREAMS[k].short)}</button>`).join('')}</div></div>
-      <div class="card soft"><h3>トッピング（3種類・5個まで）</h3><div class="list">${Object.keys(D.TOPS).map((k) => `<div class="row between"><span>${D.ING[k].icon} ${esc(D.ING[k].name)}</span><div class="step"><button data-t="${k}" data-d="-1" aria-label="減らす">${ic('minus')}</button><output>${L.tops[k] || 0}</output><button data-t="${k}" data-d="1" aria-label="増やす">${ic('plus')}</button></div></div>`).join('')}</div></div>
+      <div class="card soft"><h3>生地</h3><div class="pick">${Object.keys(D.BASES).map((k) => `<button data-b="${k}" aria-pressed="${L.base === k}" ${okB(k) ? '' : 'disabled title="材料がまだ解放されていません"'}>${okB(k) ? `<span class="sw" style="background:${D.BASES[k].color}"></span>` : ic('lock')}${esc(D.BASES[k].short)}</button>`).join('')}</div></div>
+      <div class="card soft"><h3>クリーム</h3><div class="pick">${Object.keys(D.CREAMS).map((k) => `<button data-c="${k}" aria-pressed="${L.cream === k}" ${okC(k) ? '' : 'disabled title="材料がまだ解放されていません"'}>${!okC(k) ? ic('lock') : D.CREAMS[k].color ? `<span class="sw" style="background:${D.CREAMS[k].color}"></span>` : ''}${esc(D.CREAMS[k].short)}</button>`).join('')}</div></div>
+      <div class="card soft"><h3>トッピング（3種類・5個まで）</h3><div class="list">${Object.keys(D.TOPS).map((k) => okT(k) ? `<div class="row between"><span>${D.ING[k].icon} ${esc(D.ING[k].name)}</span><div class="step"><button data-t="${k}" data-d="-1" aria-label="減らす">${ic('minus')}</button><output>${L.tops[k] || 0}</output><button data-t="${k}" data-d="1" aria-label="増やす">${ic('plus')}</button></div></div>` : `<div class="row between small muted"><span>${ic('lock')} ${esc(D.ING[k].name)}</span><span>まだ解放されていません</span></div>`).join('')}</div></div>
       ${res}
       <button class="btn big lilac wide" id="lb-try" ${match && s.known[match] ? 'disabled' : ''}>${ic('flask')} 試作する（${yen(cost)}）</button>`;
     $$('[data-b]', body).forEach((b) => (b.onclick = () => { L.base = b.dataset.b; UI.renderSheet(true); }));
@@ -771,18 +777,24 @@
     const SL = sim.shopLevel(s).lv, T = D.STAFF.tasks;
     const optSel = (st, i) => {
       const o = T[st.task].opt; if (!o) return '';
-      const list = o === 'base' ? Object.keys(D.BASES).map((k) => [k, D.BASES[k].name]) : o === 'cream' ? Object.keys(D.CREAMS).filter((k) => k !== 'none').map((k) => [k, D.CREAMS[k].name]) : Object.keys(s.known).filter((k) => s.menu[k]).map((k) => [k, sim.recipe(s, k).name]);
-      return `<label class="small">作るもの <select data-sopt="${i}"><option value="">おまかせ（足りない物）</option>${list.map(([k, n]) => `<option value="${k}" ${st.opt === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>`;
+      const P = CS.plan, fname = (fid) => { const k = s.fu[fid].k, same = P.list(s, k); return P.KINDS[k].name + (same.length > 1 ? (same.indexOf(fid) + 1) : ''); };
+      const list = o === 'base' ? Object.keys(D.BASES).filter((k) => Object.keys(D.BASES[k].ing).every((x) => sim.ingUnlocked(s, x))).map((k) => [k, D.BASES[k].name])
+        : o === 'cream' ? Object.keys(D.CREAMS).filter((k) => k !== 'none' && Object.keys(D.CREAMS[k].ing).every((x) => sim.ingUnlocked(s, x))).map((k) => [k, D.CREAMS[k].name])
+        : o === 'place' ? ['crack', 'cshelf', 'shelf', 'table'].reduce((a, k) => a.concat(P.list(s, k).map((f) => [f, fname(f) + (k === 'crack' ? '（段ボールのまま）' : '')])), [])
+        : Object.keys(s.known).filter((k) => s.menu[k]).map((k) => [k, sim.recipe(s, k).name]);
+      const lbl = o === 'place' ? '運ぶ場所' : '作るもの', auto = o === 'place' ? 'おまかせ（要冷蔵は冷蔵棚・ほかは棚）' : 'おまかせ（足りない物）';
+      return `<label class="small">${lbl} <select data-sopt="${i}"><option value="">${auto}</option>${list.map(([k, n]) => `<option value="${k}" ${st.opt === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>`;
     };
-    body.innerHTML = `<div class="banner sky">${ic('user')} アルバイトは1人1つの業務を担当。最初はとても遅いけど、働くほどレベルが上がって速く・上手になります。日給は閉店時に支払い。</div><div class="list">${D.STAFF.slots.map((sl, i) => {
+    const stars = (sp) => '★'.repeat(Math.max(1, Math.min(5, Math.round((sp - 0.7) / 0.15)))) + '☆'.repeat(5 - Math.max(1, Math.min(5, Math.round((sp - 0.7) / 0.15))));
+    body.innerHTML = `<div class="banner sky">${ic('user')}<span>アルバイトは1人1つの業務を担当（最大8人。店舗Lv2から雇える）。人によって<b>手際</b>がちがい、作業の速さが変わります。働くほどレベルが上がって速く・上手に。「お菓子係」は作るお菓子を指定でき、生地から仕上げまで1人で作ります。「仕入れ係」はトラックの段ボールを指定の場所へ運びます。日給は閉店時に支払い。</span></div><div class="list">${D.STAFF.slots.map((sl, i) => {
       const st = s.staff[i];
       if (!st) {
-        const lock = SL < sl.lv, sp = D.STAFF.speed[sl.start - 1];
-        return `<div class="card staff ${lock ? 'locked' : ''}"><div class="sf-pic">${lock ? ic('lock') : CS.models.img(CS.models.thumb.face(Object.assign({}, D.DEFAULT_SKIN, sl.skin)), 'thumb')}</div><div class="mid"><b>${lock ? '？？？' : esc(sl.name)} <small class="muted">${i + 1}人目</small></b><small>${lock ? '店舗Lv' + sl.lv + ' で募集できます' : `Lv${sl.start}・作業スピード ${Math.round(sp * 100)}%・日給 ${yen(D.STAFF.wage(sl.start))}`}</small></div>${lock ? '' : `<button class="btn sm pink" data-hire="${i}">${ic('plus')} 雇う</button>`}</div>`;
+        const lock = SL < sl.lv, sp = D.STAFF.speed[sl.start - 1] * (sl.sp || 1);
+        return `<div class="card staff ${lock ? 'locked' : ''}"><div class="sf-pic">${lock ? ic('lock') : CS.models.img(CS.models.thumb.face(Object.assign({}, D.DEFAULT_SKIN, sl.skin)), 'thumb')}</div><div class="mid"><b>${lock ? '？？？' : esc(sl.name)} <small class="muted">${i + 1}人目</small></b><small>${lock ? '店舗Lv' + sl.lv + ' で募集できます' : `Lv${sl.start}・手際 <span class="stars">${stars(sl.sp || 1)}</span>・作業スピード ${Math.round(sp * 100)}%・日給 ${yen(D.STAFF.wage(sl.start, sl.sp))}`}</small></div>${lock ? '' : `<button class="btn sm pink" data-hire="${i}">${ic('plus')} 雇う</button>`}</div>`;
       }
-      const sp = D.STAFF.speed[st.lv - 1], nx = D.STAFF.xp[st.lv];
+      const sp = D.STAFF.speed[st.lv - 1] * (st.sp || 1), nx = D.STAFF.xp[st.lv];
       return `<div class="card staff"><div class="sf-pic">${CS.models.img(CS.models.thumb.face(Object.assign({}, D.DEFAULT_SKIN, st.skin)), 'thumb')}</div><div class="mid" style="display:grid;gap:4px">
-          <b>${esc(st.name)} <span class="chip ok">Lv${st.lv}</span> <small class="muted">日給 ${yen(D.STAFF.wage(st.lv))}</small></b>
+          <b>${esc(st.name)} <span class="chip ok">Lv${st.lv}</span> <small class="muted">手際 <span class="stars">${stars(st.sp || 1)}</span>・日給 ${yen(D.STAFF.wage(st.lv, st.sp))}</small></b>
           <small>作業スピード ${Math.round(sp * 100)}%・こなした仕事 ${st.done || 0}${nx ? `・次のLvまで ${nx - (st.xp || 0)}` : '（最大）'}${st.job ? '・<b class="pos">作業中</b>' : ''}</small>
           <div class="seg sm" role="group" aria-label="担当">${Object.keys(T).map((k) => `<button data-stask="${i}" data-k="${k}" aria-pressed="${st.task === k}">${esc(T[k].name)}</button>`).join('')}</div>
           <small class="muted">${esc(T[st.task].desc)}</small>${optSel(st, i)}

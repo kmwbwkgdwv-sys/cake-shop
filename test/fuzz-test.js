@@ -13,7 +13,7 @@ const ings = Object.keys(D.ING);
 for (const k of ings) K.invAdd(S, k, 20, D.ING[k].price);
 const fids = () => Object.keys(S.fu);
 const allSlots = () => fids().reduce((a, f) => a.concat(P.slots(S, f)), []).concat(['f:zz:0', 'f:' + fids()[0] + ':99', 'dl:0', 'xx:1']);
-const verbs = ['pick', 'take', 'take', 'put', 'put', 'put', 'trash', 'drop', 'addIng', 'addIng', 'run', 'run', 'pour', 'scoop', 'dump', 'oven', 'spreadDone', 'topPlace', 'topTake', 'finish', 'slice', 'unslice', 'caseTake', 'cut', 'cut', 'hole', 'unhole', 'openCrate', 'openCrate', 'floor', 'floor', 'shelve', 'shelve', 'washStart', 'wash', 'order', 'sign', 'takeOrder', 'serve', 'pay', 'fmove', 'fbuy', 'unpack', 'unpack', 'tbuy', 'endDay', 'next', 'start', 'price', 'upgrade'];
+const verbs = ['pick', 'take', 'take', 'put', 'put', 'put', 'trash', 'drop', 'addIng', 'addIng', 'run', 'run', 'pour', 'scoop', 'dump', 'oven', 'spreadDone', 'topPlace', 'topTake', 'finish', 'slice', 'unslice', 'caseTake', 'cut', 'cut', 'hole', 'unhole', 'openCrate', 'openCrate', 'floor', 'floor', 'shelve', 'shelve', 'washStart', 'wash', 'order', 'sign', 'takeOrder', 'serve', 'pay', 'fmove', 'fbuy', 'unpack', 'unpack', 'tbuy', 'endDay', 'next', 'start', 'price', 'upgrade', 'hire', 'staffTask', 'staffTask'];
 function randomAction() {
   const pid = pick(pids), items = Object.keys(S.k.items);
   const t = pick(verbs);
@@ -32,6 +32,8 @@ function randomAction() {
     case 'takeOrder': case 'serve': case 'pay': a.c = pick(Object.keys(S.cust).concat(['zz'])); a.ch = Math.floor(rnd() * 3000); break;
     case 'fmove': { const g = P.geomOf(S); a.id = fid; a.x = -g.RX + rnd() * g.RX * 2; a.z = -g.RZ + rnd() * (g.CZ + g.RZ); a.r = Math.floor(rnd() * 5); break; }
     case 'fbuy': a.k = pick(Object.keys(P.KINDS).concat(['zz'])); break;
+    case 'hire': a.slot = Math.floor(rnd() * 9); break;
+    case 'staffTask': a.slot = Math.floor(rnd() * 8); a.task = pick(Object.keys(D.STAFF.tasks).concat(['zz'])); a.opt = pick(['', 'short', 'chocolate', 'zz'].concat(fids())); break;
     case 'upgrade': a.id = pick(['storage', 'storage', 'floor']); break;
     case 'openCrate': a.close = rnd() < 0.4 ? 1 : 0; break;
     case 'floor': { const g = P.geomOf(S); a.x = -g.RX - 5 + rnd() * (g.RX * 2 + 5); a.z = -g.RZ + rnd() * (g.CZ + g.RZ); a.r = Math.floor(rnd() * 2); break; }
