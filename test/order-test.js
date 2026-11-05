@@ -29,7 +29,7 @@ ok(card > n * 0.25 && card < n * 0.7, 'card and cash both used (' + card + '/' +
 // 商品棚に無い物の注文 → 作るまで待ってくれる（長め）→ 作って箱で渡す → お会計
 for (const r in S.menu) A({ t: 'menuOn', r, on: r === 'short' });
 S.cust = {}; S.k.ordNo = 0; S.furn.table = 0;
-K.spawn(S, now); const cid = Object.keys(S.cust)[0]; now += R.WALK_MS + 100; K.tickCustomers(S, now);
+let cid = null; for (let k = 0; k < 30 && !cid; k++) { S.cust = {}; K.spawn(S, now); const id = Object.keys(S.cust)[0]; now += R.WALK_MS + 100; K.tickCustomers(S, now); if (S.cust[id] && S.cust[id].st === 'q') cid = id; } // 値段しだいで買わずに帰る人もいるので、並んだ人で
 const c = S.cust[cid]; console.log('cust', c.st, JSON.stringify(c.ord), c.pm);
 A({ t: 'takeOrder', c: cid });
 ok(c.st === 'w' && c.make === 1 && c.pw - now >= R.MAKE_MS, 'not on shelf → make-to-order, waits ' + Math.round((c.pw - now) / 1000) + 's: ' + S.fx[S.fx.length - 1].x);
@@ -46,15 +46,15 @@ if (c.pm === 'cash') { const need = K.change(c); ok(need >= 0 && c.tend >= c.due
 else A({ t: 'pay', c: cid });
 ok(S.today.sales > sales0 && c.paid > 0, 'paid ' + c.paid + ' "' + c.say + '"');
 // 在庫がある物 → ふつうの待ち時間
-K.spawn(S, now); const c2id = Object.keys(S.cust).find((id) => S.cust[id].st === 'in'); now += R.WALK_MS + 100; K.tickCustomers(S, now);
-if (S.cust[c2id].st === 'q') { A({ t: 'takeOrder', c: c2id }); const c2 = S.cust[c2id]; ok(!c2.make && c2.pw - now < R.MAKE_MS, 'in stock → normal wait ' + Math.round((c2.pw - now) / 1000) + 's'); }
+let c2id = null; for (let k = 0; k < 30 && !c2id; k++) { K.spawn(S, now); const id = Object.keys(S.cust).find((x) => S.cust[x].st === 'in'); now += R.WALK_MS + 100; K.tickCustomers(S, now); if (S.cust[id] && S.cust[id].st === 'q') c2id = id; else delete S.cust[id]; }
+if (S.cust[c2id].st === 'q') { S.cust[c2id].ord = { short: 1 }; S.cust[c2id].price = { short: S.menu.short.price }; A({ t: 'takeOrder', c: c2id }); const c2 = S.cust[c2id]; ok(!c2.make && c2.pw - now < R.MAKE_MS, 'in stock → normal wait ' + Math.round((c2.pw - now) / 1000) + 's'); }
 // お会計をしないでいると、商品を置いて帰る
 cur = c2id; box(); A({ t: 'serve', c: c2id });
 const w0 = S.today.waste; now += R.PAY_MS + 1000; sim.tick(S, now);
 ok(S.cust[c2id].st === 'out' && S.today.waste > w0, 'not paid in time → customer leaves the box (waste +' + (S.today.waste - w0) + ')');
 // 遅すぎると帰る
 const tr = K.at(S, sl('scase', 0)); if (tr) delete S.k.items[tr];
-K.spawn(S, now); const c3id = Object.keys(S.cust).find((id) => S.cust[id].st === 'in'); now += R.WALK_MS + 100; K.tickCustomers(S, now);
+let c3id = null; for (let k = 0; k < 30 && !c3id; k++) { K.spawn(S, now); const id = Object.keys(S.cust).find((x) => S.cust[x].st === 'in'); now += R.WALK_MS + 100; K.tickCustomers(S, now); if (S.cust[id] && S.cust[id].st === 'q') c3id = id; else delete S.cust[id]; }
 A({ t: 'takeOrder', c: c3id }); const slow0 = S.today.slow || 0;
 now += R.MAKE_MS + R.WAIT_MS + 60000; sim.tick(S, now);
 ok(S.cust[c3id] && S.cust[c3id].st === 'out' && S.today.slow >= slow0 + 1, 'too slow → customer leaves: "' + (S.cust[c3id] || {}).say + '"');

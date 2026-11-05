@@ -517,7 +517,7 @@
     }
     const ev = s.mEvent && s.mEvent.id ? `<div class="banner ${s.mEvent.up ? 'pink' : 'mint'}">${D.ING[s.mEvent.id].icon} 今日は${esc(D.ING[s.mEvent.id].name)}が${s.mEvent.up ? '高騰中！' : '特売中！'}</div>` : '';
     body.innerHTML = `${head}${ev}<div class="row between wrap"><button class="btn mint" id="mk-cart">${ic('cart')} カートを見る（${cart.length} / ${R.CART_MAX}）</button><button class="btn sm ghost" id="mk-bulk">${ic('plus')} 販売中メニューに足りない分を入れる</button></div>
-      <p class="muted small" style="margin:0">1箱＝${P}個。1回の注文は${R.CART_MAX}箱まで・送料 ${yen(R.SHIP)}。届いたら倉庫の裏口から外に出て、トラックの荷台から段ボールを運び、開けて好きな棚に並べます（同じ物は同じ所に重なる）。<b>要冷蔵</b>の材料は常温だと傷むので、すぐ<b>冷蔵棚</b>へ。ケーキを入れる<b>箱</b>も仕入れが必要です。</p>
+      <p class="muted small" style="margin:0">1箱＝${P}個。1回の注文は${R.CART_MAX}箱まで・送料 ${yen(R.SHIP)}。届いたら倉庫の裏口から外に出て、トラックの荷台から段ボールを運び、開けて好きな棚に並べます（同じ物は同じ所に重なる・<b>1枠10個まで</b>。段ボールのままは棚に入らない）。運びきれない段ボールは床や机に置いておけます。<b>要冷蔵</b>の材料は常温だと傷むので、すぐ<b>冷蔵棚</b>へ。ケーキを入れる<b>箱</b>も仕入れが必要です。</p>
       <div class="list">${Object.keys(D.ING).map((id) => {
         const ing = D.ING[id], p = s.market[id], box = Math.round(p * P), have = sim.invCount(s, id), inCart = cart.filter((x) => x === id).length;
         const ch = Math.round((p / ing.price - 1) * 100), exp = sim.expSoon(s, id);
@@ -1195,13 +1195,13 @@
     },
     {
       id: 'stock', t: '材料の段ボールを棚に並べる', ok: (s) => (!items(s).some((it) => it.t === 'crate' && it.n > 0) && ((s.today.shelved || 0) > 0 || Object.keys(BASE().ing).every((k) => sim.invCount(s, k) > 0))) || sold(s),
-      d: (s, c) => { const h = c.held; if (h && h.t === 'crate') return !h.open ? '「段ボールを開ける」（使うボタン）' : (D.ING[h.ing] && D.ING[h.ing].cold ? '「' + nmI(h.ing) + '」は要冷蔵。冷蔵棚の空いている所に「全部置く」' : '棚の空いている所に「全部置く」') + '（空の段ボールはゴミ箱へ）'; return '荷台の段ボールを持って、棚まで運ぶ。卵・乳製品・いちごは冷蔵棚へ'; },
+      d: (s, c) => { const h = c.held; if (h && h.t === 'crate') return !h.open ? '「段ボールを開ける」（使うボタン）' : (D.ING[h.ing] && D.ING[h.ing].cold ? '「' + nmI(h.ing) + '」は要冷蔵。冷蔵棚の空いている所に「置けるだけ置く」' : '棚の空いている所に「置けるだけ置く」') + '（1枠10個まで。空の段ボールはゴミ箱か床へ）'; return '荷台の段ボールを持って、棚まで運ぶ（段ボールは棚には入らないので、開けて中身を並べる）。卵・乳製品・いちごは冷蔵棚へ。運びきれないときは床に置いておける'; },
       g: (s, c) => {
         const h = c.held;
         if (h && h.t === 'crate') {
           if (!(h.n > 0)) return { fid: fid1(s, 'trash'), label: 'ゴミ箱' };
           const cold = D.ING[h.ing] && D.ING[h.ing].cold, kinds = cold ? ['cshelf'] : ['shelf', 'cshelf'];
-          for (const k of kinds) for (const f of PL().list(s, k)) for (const sl of PL().slots(s, f)) { const ex = CS.kitchen.inSlot(s, sl).map((x) => s.k.items[x]); if (!ex.length || (ex[0].t === 'ing' && ex[0].ing === h.ing)) return { at: sl, label: cold ? '冷蔵棚' : '棚' }; }
+          for (const k of kinds) for (const f of PL().list(s, k)) for (const sl of PL().slots(s, f)) { const ex = CS.kitchen.inSlot(s, sl).map((x) => s.k.items[x]); if (!ex.length || (ex[0].t === 'ing' && ex[0].ing === h.ing && ex[0].n < CS.kitchen.STACK_CAP.ing)) return { at: sl, label: cold ? '冷蔵棚' : '棚' }; }
           return null;
         }
         const id = nearItem(s, (it) => it.t === 'crate' && it.n > 0 && !(String(it.at).startsWith('dl:') && s.k.truck && c.now < s.k.truck.at)); if (id) return { item: id, label: '段ボール' };

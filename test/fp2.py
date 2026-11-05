@@ -71,6 +71,20 @@ async def main():
     for j in range(n_crates):
       r = await step(f"const L=W.L; const it=Object.entries(S().k.items).find(([k,i])=>i.t==='crate'&&String(i.at).startsWith('dl:')); if(!it) return 'none'; const p=W.truckSlot(+it[1].at.split(':')[1]); return aim(L.truck.x+0.2, L.truck.z-3.6, [p[0],p[1]+0.17,p[2]])+' -> '+go('p')")
       ing = await js("T.held() && T.held().ing")
+      if j == 0:
+        # 段ボールは床にも置ける（足もとの少し先をねらう）→ 拾い直す。開けたら閉じられる
+        r3 = await step("const g=P.geomOf(S()); const x=-g.RX+2.6, z=g.backDoor.z+1.0; return aim(x+1.5, z, [x,0,z])+' -> '+go('p')", 400)
+        print('floor', r3)
+        chk(await js("Object.values(T.S().k.items).some(i=>i.t==='crate'&&i.at==='fl')"), 'crate put on the floor by aiming at it')
+        await pg.screenshot(path=f'{OUT}/fp2_floor.png')
+        r4 = await step("const it=Object.values(S().k.items).find(i=>i.t==='crate'&&i.at==='fl'); return aim(it.fx+1.3, it.fz, [it.fx,0.2,it.fz])+' -> '+go('p')", 400)
+        print('pick from floor', r4)
+        chk(await js("T.held() && T.held().t==='crate'"), 'picked the crate up from the floor')
+        await step("return go('s')", 200); r5 = await step("return look()+' -> '+go('s')", 200)
+        chk(await js("T.held() && !T.held().open"), 'opened and closed the crate: ' + r5[:60])
+        r6 = await step(f"const sl=emptySlot('shelf'); return aimSlot(sl)", 200)
+        print('crate at shelf', r6)
+        chk('段ボールを机に' not in r6 and '棚に入れられません' in r6, 'a closed crate cannot be put into a shelf')
       await step("return go('s')")  # 開ける（どこでも）
       cold = await js(f"!!(CS.data.ING['{ing}']||{{}}).cold")
       r2 = await step(f"const sl=emptySlot('{'cshelf' if cold else 'shelf'}'); return aimSlot(sl)+' -> '+go('s')")

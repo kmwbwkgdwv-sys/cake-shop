@@ -14,7 +14,8 @@
   const ng = (msg) => ({ ok: false, msg });
   const kindOf = (at) => String(at).split(':')[0];
   const ingName = (k) => (D.ING[k] || {}).name || k;
-  const STACK_CAP = { ing: 60, plate: 10, pan: 6, knife: 6 };
+  // 棚などの1枠に置けるのは10個まで（手に持てる材料も10個まで）
+  const STACK_CAP = { ing: 10, plate: 10, pan: 10, knife: 10 };
   K.STACK_CAP = STACK_CAP;
 
   // =====================================================================
@@ -42,6 +43,13 @@
     del(S, id);
   }
   K.hasKnife = (S) => Object.values(items(S)).some((it) => it.t === 'knife');
+  // 段ボールを床に置く（置ける所が無ければ false）
+  function toFloor(S, it, near) {
+    const sp = P.floorSpot(S, it, near); if (!sp) return false;
+    it.at = 'fl'; it.fx = sp.x; it.fz = sp.z; it.fr = sp.r; return true;
+  }
+  K.toFloor = toFloor;
+  const clearFloor = (it) => { delete it.fx; delete it.fz; delete it.fr; };
   const units = (it) => (it.t === 'ing' ? it.n || 0 : 1);
   function lotsCost(lots, n) { let c = 0; for (const l of lots || []) { const k = Math.min(n, l[0]); c += k * l[2]; n -= k; if (n <= 0) break; } return c; }
   // 原価（捨てたときの廃棄額）
@@ -153,6 +161,7 @@
     if (!it) return 'もうありません';
     const sd = P.slotDef(S, slot); if (!sd) return 'そこには置けません';
     if (it.t === 'fcrate') return '大きな段ボールは置けません（持ったまま、置きたい床をねらって展開しよう）';
+    if (it.t === 'crate' && sd.kind !== 'table' && sd.type !== 'crate') return '段ボールは棚には入れられません（在庫棚・机・床に置くか、開けて中身を並べよう）';
     const here = K.inSlot(S, slot).map((id) => items(S)[id]).filter((x) => x !== it);
     const T = sd.type;
     const one = () => (here.length ? 'ここはうまっています' : '');
@@ -172,6 +181,7 @@
       case 'oven': if (!(it.t === 'pan' && it.st !== 'empty')) return '生地を流した型を入れよう'; return one();
       case 'turn': if (!((it.t === 'pan' && it.st === 'baked') || it.t === 'deco' || it.t === 'cake')) return '焼けたスポンジをのせよう'; return one();
       case 'basin': if (!((it.t === 'plate' && !(it.s || []).length) || (it.t === 'pan' && it.st === 'empty'))) return '流しにはお皿・ケーキ型を入れます'; return one();
+      case 'crate': if (it.t !== 'crate') return '在庫棚には段ボールだけ置けます'; return one();
       default: return 'そこには置けません';
     }
   };
@@ -272,7 +282,7 @@
     for (const id in k.items) {
       // 置き場所がなくなった物（家具を消した・古いデータ）は空いている所へ
       const it = k.items[id], at = String(it.at || '');
-      if (!at || (at.startsWith('f:') && !P.slotDef(S, at)) || /^(sp|rk|pk|dp|wo|mo|ov|dt|cs):/.test(at)) { const sl = K.findSlot(S, it, ['table', 'shelf', 'rack', 'cshelf', 'fridge']); if (sl) it.at = sl; else delete k.items[id]; }
+      if (!at || (at.startsWith('f:') && !P.slotDef(S, at)) || /^(sp|rk|pk|dp|wo|mo|ov|dt|cs):/.test(at)) { const sl = K.findSlot(S, it, ['table', 'shelf', 'rack', 'cshelf', 'fridge']); if (sl) it.at = sl; else if (!((it.t === 'crate' || it.t === 'fcrate') && toFloor(S, it))) delete k.items[id]; }
     }
     for (const fid in S.fu) {
       const st = P.KINDS[S.fu[fid].k].station; if (!st) { delete k.st[fid]; continue; }
@@ -286,7 +296,29 @@
     if (S.dayT == null) S.dayT = 0;
     if (k.truck && (typeof k.truck !== 'object' || !(k.truck.at >= 0))) k.truck = null;
     for (const id in k.items) { const it = k.items[id]; if (it.t === 'fcrate' && String(it.at).startsWith('dl:') && !k.truck) { k.pend.push(it.k); delete k.items[id]; continue; } if (it.t === 'fcrate' && !P.KINDS[it.k]) { delete k.items[id]; continue; } }
-    for (const id in k.items) { const it = k.items[id]; if (it.t === 'crate' && String(it.at).startsWith('dl:') && !k.truck) { const sl = K.findSlot(S, it, ['table', 'shelf']); if (sl) it.at = sl; else delete k.items[id]; } }
+    for (const id in k.items) { const it = k.items[id]; if (it.t === 'crate' && String(it.at).startsWith('dl:') && !k.truck) { const sl = K.findSlot(S, it, ['crack', 'table']); if (sl) it.at = sl; else if (!toFloor(S, it)) delete k.items[id]; } }
+    // 床の物：段ボール以外は棚へ。置けない所（壁が動いた・家具が来た）にある段ボールは近くの床へ
+    for (const id of Object.keys(k.items).sort()) {
+      const it = k.items[id];
+      if (it.at !== 'fl') { if (it.fx != null && !String(it.at).startsWith('h:')) clearFloor(it); continue; }
+      if (!(it.t === 'crate' || it.t === 'fcrate')) { clearFloor(it); const sl = K.findSlot(S, it, ['table', 'shelf', 'rack', 'cshelf', 'fridge']); if (sl) it.at = sl; else delete k.items[id]; continue; }
+      it.fx = +it.fx || 0; it.fz = +it.fz || 0; it.fr = (+it.fr || 0) % 2;
+      if (P.floorOk(S, it, it.fx, it.fz, it.fr, id)) { it.at = 'tmp'; if (!toFloor(S, it, [it.fx, it.fz])) { if (it.t === 'fcrate') { k.pend.push(it.k); delete k.items[id]; } else delete k.items[id]; } }
+    }
+    // 棚に入っている段ボール（古いデータ）は床へ。1枠10個を超えた材料の山は分ける
+    for (const id of Object.keys(k.items).sort()) {
+      const it = k.items[id], sd = P.slotDef(S, it.at);
+      if (it.t === 'crate' && sd && sd.kind !== 'table' && sd.type !== 'crate') { if (!toFloor(S, it)) delete k.items[id]; continue; }
+      if (it.t === 'ing' && sd && it.n > STACK_CAP.ing) {
+        const part = split(S, id, it.n - STACK_CAP.ing), kinds = D.ING[it.ing] && D.ING[it.ing].cold ? ['cshelf', 'shelf', 'table'] : ['shelf', 'cshelf', 'table'];
+        for (const kd of kinds) for (const fid of P.list(S, kd)) for (const sl of P.slots(S, fid)) {
+          if (!(part.n > 0) || K.inSlot(S, sl).length || P.slotDef(S, sl).type !== 'any') continue;
+          const c = Math.min(STACK_CAP.ing, part.n), t = lotsTake(part.lots, c); part.n -= c;
+          add(S, { t: 'ing', ing: it.ing, n: c, lots: t.lots, wm: part.wm, w0: 0, sp: part.sp, at: sl, pl: 0 });
+        }
+        if (part.n > 0) { const cr = { t: 'crate', ing: it.ing, n: part.n, u: Math.round(lotsCost(part.lots, part.n) / part.n), open: 1, ar: 0, pl: 0 }; if (toFloor(S, cr)) add(S, cr); }
+      }
+    }
     delete S.ovens; delete S.showcase;
     if (!k.kn && Object.keys(S.fu).length) giveKnife(S);
   };
@@ -373,7 +405,7 @@
     if (sd && sd.type === 'basin' && K.st(S, sd.fid).by && K.st(S, sd.fid).by !== a.pid && now - (K.st(S, sd.fid).t0 || 0) < 120000) return ng('ほかの人が洗っているところです');
     if (sd && sd.type === 'oven') takeFromOven(S, it, now);
     if (it.t === 'tray') it.t = 'cake';
-    it.at = 'h:' + a.pid; it.pl = now;
+    it.at = 'h:' + a.pid; it.pl = now; clearFloor(it);
     return ok();
   };
   // 材料の山から取る（1つずつ／全部）。手に同じ材料を持っていれば足していく
@@ -400,7 +432,7 @@
     const [hid, it] = heldIt(S, a); if (!hid) return ng('何も持っていません');
     const sd = P.slotDef(S, a.slot); if (!sd) return ng('そこには置けません');
     if (it.t === 'fcrate') return ng('大きな段ボールは置けません。床をねらって展開しよう');
-    if (it.t === 'crate' && sd.type !== 'any') return ng('段ボールは棚・机に置こう');
+    if (it.t === 'crate' && sd.kind !== 'table' && sd.type !== 'crate') return ng('段ボールは棚には入れられません。在庫棚・机・床に置くか、開けて中身を並べよう');
     let src = it, srcId = hid;
     if (it.t === 'ing' && a.one && it.n > 1) { src = split(S, hid, 1); srcId = null; }
     if (src.t === 'cake' && !src.dish && sd.type === 'any') {
@@ -716,8 +748,18 @@
   A.openCrate = function (S, a) {
     const [, cr] = heldIt(S, a);
     if (!cr || cr.t !== 'crate') return ng('段ボールを持っていません');
+    if (a.close) { if (!cr.open) return ng('もう閉じています'); cr.open = 0; return ok('段ボールを閉じた'); }
     if (cr.open) return ng('もう開いています');
     cr.open = 1; return ok();
+  };
+  // 段ボール（材料の段ボール・家具の大きな段ボール）を床に置く。空の段ボールもOK
+  A.floor = function (S, a, now) {
+    const [hid, it] = heldIt(S, a);
+    if (!it || !(it.t === 'crate' || it.t === 'fcrate')) return ng('床に置けるのは段ボールだけです');
+    const x = Math.round((+a.x || 0) * 100) / 100, z = Math.round((+a.z || 0) * 100) / 100, r = ((Math.round(+a.r || 0) % 2) + 2) % 2;
+    const why = P.floorOk(S, it, x, z, r, hid); if (why) return ng(why);
+    it.at = 'fl'; it.fx = x; it.fz = z; it.fr = r; it.pl = now;
+    return ok(it.t === 'fcrate' ? '大きな段ボールを床に置いた（持ち上げて、置きたい所で展開）' : it.n > 0 ? '段ボールを床に置いた' : '空の段ボールを床に置いた');
   };
   // 開けた段ボールの中身を棚に置く（1つずつ／全部）。置く所は自分で決める
   A.shelve = function (S, a, now) {
@@ -736,7 +778,7 @@
     if (ex.length) mergeInto(S, ex[0], part); else add(S, Object.assign(part, { at: a.slot, pl: now }));
     cr.n -= k; S.today.shelved = (S.today.shelved || 0) + k;
     if (!cr.n) { cr.wm = 0; cr.w0 = 0; cr.sp = 0; }
-    return ok(cr.n ? '' : (cr.ing === 'box' ? 'ケーキの箱' : ingName(cr.ing)) + 'を全部しまった' + (half ? '（ぬるくなっていたので日持ちが短め）' : '') + '（空の段ボールはゴミ箱へ）');
+    return ok(cr.n ? (k < (a.all ? cr.n + k : 1) ? 'この枠はいっぱい（1枠10個まで）。残りはほかの枠へ' : '') : (cr.ing === 'box' ? 'ケーキの箱' : ingName(cr.ing)) + 'を全部しまった' + (half ? '（ぬるくなっていたので日持ちが短め）' : '') + '（空の段ボールはゴミ箱へ・床に置いてもOK）');
   };
   // 洗う：流しに入れたお皿・型を、なぞって泡立て → 水で流す（q は泡立ての点数）
   A.washStart = function (S, a, now) {
@@ -1084,7 +1126,7 @@
       const it = S.k.items[id]; if (!it) continue;
       const at = String(it.at);
       if (it.t === 'fcrate') { if (at.startsWith('h:')) { const sp = P.findSpot(S, it.k); if (sp) { addFurn(S, it.k, sp.x, sp.z, sp.r); delete S.k.items[id]; } } continue; }
-      if (at.startsWith('h:') || at.startsWith('c:')) { const sl = K.findSlot(S, it, ['fridge', 'table', 'shelf', 'rack', 'cshelf']); if (sl) it.at = sl; }
+      if (at.startsWith('h:') || at.startsWith('c:')) { const sl = K.findSlot(S, it, it.t === 'crate' ? ['crack', 'table'] : ['fridge', 'table', 'shelf', 'rack', 'cshelf']); if (sl) it.at = sl; else if (it.t === 'crate') toFloor(S, it); }
       const cold = coldSlot(S, it.at);
       if (it.t === 'crate' || it.t === 'ing') { if (K.spoilSec(S, it) && !cold && (it.sp || 0) < 2) { it.sp = 2; it.wm = K.spoilSec(S, it) * 1000; it.w0 = 0; } continue; }
       if (it.t === 'plate' || it.t === 'box') {
@@ -1275,7 +1317,7 @@
       else if (it) {
         const put = K.invAdd(S, it.ing, it.n, it.u, (it.sp || 0) >= 1); S.today.shelved = (S.today.shelved || 0) + put; it.n -= put; it.res = null;
         if (it.n <= 0) del(S, j.id);
-        else { if (String(it.at).startsWith('dl:')) { const sl = K.findSlot(S, it, ['table', 'shelf']); if (sl) it.at = sl; } _.fx(S, 'err', st.name + ' さん「棚がいっぱいで' + ingName(it.ing) + 'を置けません」'); done = false; }
+        else { if (String(it.at).startsWith('dl:')) { const sl = K.findSlot(S, it, ['crack', 'table']); if (sl) it.at = sl; else toFloor(S, it); } _.fx(S, 'err', st.name + ' さん「棚がいっぱいで' + ingName(it.ing) + 'を置けません」'); done = false; }
       } else done = false;
     } else if (j.k === 'order') {
       const c = S.cust[j.c]; if (c && c.st === 'q') takeOrder(S, j.c, now); else done = false;

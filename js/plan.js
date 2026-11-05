@@ -20,8 +20,8 @@
   const shelf6 = (ys, xs, z, kind) => { const out = []; ys.forEach((y) => xs.forEach((x) => out.push([x, y, z || 0, kind || 'any']))); return out; };
   P.KINDS = {
     table:  { name: '机', desc: '物を置ける作業用の机（4か所）', icon: 'box', w: 1.4, d: 0.75, h: 0.9, price: 9000, slots: [[-0.34, 0.905, -0.16, 'any'], [0.34, 0.905, -0.16, 'any'], [-0.34, 0.905, 0.16, 'any'], [0.34, 0.905, 0.16, 'any']] },
-    shelf:  { name: '棚', desc: '何でも置ける棚（6か所）。置いた物と同じ物だけ重ねられる', icon: 'box', w: 1.2, d: 0.5, h: 1.85, price: 12000, slots: shelf6([0.33, 0.93, 1.53], [-0.3, 0.3]) },
-    cshelf: { name: '冷蔵棚', desc: '冷えている棚（6か所）。卵・乳製品・果物はここに置かないと傷む', icon: 'snow', w: 1.25, d: 0.62, h: 1.95, price: 26000, cold: 1, slots: shelf6([0.5, 0.97, 1.44], [-0.3, 0.3], -0.02) },
+    shelf:  { name: '棚', desc: '何でも置ける棚（6か所・1か所10個まで）。置いた物と同じ物だけ重ねられる。段ボールのままは入らない', icon: 'box', w: 1.2, d: 0.5, h: 1.85, price: 12000, slots: shelf6([0.33, 0.93, 1.53], [-0.3, 0.3]) },
+    cshelf: { name: '冷蔵棚', desc: '冷えている棚（6か所・1か所10個まで）。卵・乳製品・果物はここに置かないと傷む。段ボールのままは入らない', icon: 'snow', w: 1.25, d: 0.62, h: 1.95, price: 26000, cold: 1, slots: shelf6([0.5, 0.97, 1.44], [-0.3, 0.3], -0.02) },
     fridge: { name: '冷蔵庫', desc: 'ケーキが6ホール入る（作りかけ・クリーム・焼いたスポンジも）', icon: 'fridge', w: 1.42, d: 0.74, h: 2.08, price: 32000, cold: 1, slots: shelf6([0.92, 1.34], [-0.43, 0, 0.43], 0.02, 'fridge') },
     scase:  { name: 'ショーケース', desc: 'カウンターに置くガラスのショーケース（冷蔵）。3段×3ホールのケーキを切って並べられ、お客さんからよく見える', icon: 'case', w: 2.3, d: 1.0, h: 1.8, price: 48000, counter: 1, cold: 1, slots: [[-0.72, 0.95, 0.3, 'tray'], [0, 0.95, 0.3, 'tray'], [0.72, 0.95, 0.3, 'tray'], [-0.72, 1.17, 0.02, 'tray'], [0, 1.17, 0.02, 'tray'], [0.72, 1.17, 0.02, 'tray'], [-0.72, 1.39, -0.25, 'tray'], [0, 1.39, -0.25, 'tray'], [0.72, 1.39, -0.25, 'tray']] },
     pcase:  { name: '商品棚（冷蔵）', hide: 1, desc: '切ったケーキを並べて売る。冷えているのでクリームのケーキも傷まない（3種類）', icon: 'case', w: 1.5, d: 0.8, h: 1.35, price: 30000, cold: 1, slots: shelf6([0.94], [-0.46, 0, 0.46], 0, 'tray') },
@@ -31,6 +31,7 @@
     whip:   { name: 'クリーム台', desc: '生クリームなどを泡立てる', icon: 'hand', w: 1.3, d: 0.75, h: 0.9, price: 10000, station: 'whip', slots: [] },
     deco:   { name: 'デコ台', desc: '回転台で焼いたスポンジにクリームを塗り、トッピングをのせて仕上げる', icon: 'star', w: 1.2, d: 0.75, h: 0.9, price: 9000, station: 'deco', slots: [[0, 0.975, 0.04, 'turn']] },
     sink:   { name: '洗い場', desc: '汚れたお皿・ケーキ型を洗う。水切りかごで乾かす', icon: 'sync', w: 1.6, d: 0.7, h: 0.9, price: 15000, station: 'sink', slots: [[-0.36, 0.8, 0.02, 'basin'], [0.36, 0.93, -0.06, 'dry'], [0.62, 0.93, -0.06, 'dry']] },
+    crack:  { name: '在庫棚', desc: '段ボールのまま保管できる棚（2列×2段・1台で段ボール4つまで）。常温なので要冷蔵の物は早めに冷蔵棚へ', icon: 'box', w: 1.2, d: 0.62, h: 1.3, price: 10000, slots: [[-0.29, 0.1, 0, 'crate'], [0.29, 0.1, 0, 'crate'], [-0.29, 0.68, 0, 'crate'], [0.29, 0.68, 0, 'crate']] },
     rack:   { name: '冷却ラック', desc: '焼いたスポンジを早く冷ませる棚（6か所）', icon: 'snow', w: 0.75, d: 0.6, h: 1.7, price: 8000, cool: 0.5, slots: shelf6([0.5, 0.95, 1.4], [-0.17, 0.17]) },
     trash:  { name: 'ゴミ箱', desc: 'いらない物・空の段ボールを捨てる', icon: 'trash', w: 0.55, d: 0.55, h: 0.7, price: 3000, slots: [] },
     reg:    { name: 'レジ', desc: 'カウンターに置く。お客さんの注文とお会計', icon: 'cart', w: 1.7, d: 0.7, h: 1.2, price: 20000, counter: 1, slots: [] },
@@ -47,12 +48,15 @@
   // ---------------------------------------------------------------------
   //  間取り（増床レベルで大きさが変わる。倉庫とパソコン室は裏に並ぶ）
   // ---------------------------------------------------------------------
-  P.geom = function (lv) {
+  // lv = 増床の段階、st = 倉庫の拡張の段階（1段ごとに奥行き +1.3m）
+  P.STORE_STEP = 1.3;
+  P.geom = function (lv, st) {
     const sz = D.SHOP_SIZES[clamp(lv || 0, 0, D.SHOP_SIZES.length - 1)];
     const RX = sz.rx, RZ = sz.rz, CZ = -RZ + sz.kd;
-    const g = { RX, RZ, CZ, lv: lv || 0 };
-    // 倉庫（左奥・広め）とパソコン室（そのとなり）
-    g.store = { x0: -RX, x1: -RX + 6.2, z0: -RZ, z1: -RZ + 4.6, door: -RX + 4.9, dw: 1.4 };
+    st = clamp(st || 0, 0, 3);
+    const g = { RX, RZ, CZ, lv: lv || 0, st };
+    // 倉庫（左奥・広め。拡張すると手前に広がる）とパソコン室（そのとなり）
+    g.store = { x0: -RX, x1: -RX + 6.2, z0: -RZ, z1: -RZ + 4.6 + st * P.STORE_STEP, door: -RX + 4.9, dw: 1.4 };
     g.pc = { x0: -RX + 6.2, x1: -RX + 9.4, z0: -RZ, z1: -RZ + 3.4, door: -RX + 7.8, dw: 1.2 };
     g.backDoor = { x: -RX, z: -RZ + 2.3, w: 1.2 };
     // カウンターは売り場の右寄りだけ。左は壁で仕切る（右の端は通路で売り場へ出られる）
@@ -77,10 +81,12 @@
       [-RX, g.backDoor.z - g.backDoor.w / 2 - 0.2, -RX + 1.25, g.backDoor.z + g.backDoor.w / 2 + 0.2],
       [g.counter.x1 - 0.1, g.counter.z - 1.5, RX, g.counter.z + 0.5],
     ];
-    g.key = [lv, RX, RZ, CZ, 2].join(',');
+    g.key = [lv, RX, RZ, CZ, st, 3].join(',');
+    // 床に段ボールを置ける外の路地（トラックと建物のあいだ）
+    g.alley = { x0: -RX - 5.4, x1: -RX - 0.12, z0: -RZ - 2.6, z1: RZ - 0.3 };
     return g;
   };
-  P.geomOf = (S) => P.geom(S && S.up ? S.up.floor || 0 : 0);
+  P.geomOf = (S) => P.geom(S && S.up ? S.up.floor || 0 : 0, S && S.up ? S.up.storage || 0 : 0);
 
   // ---------------------------------------------------------------------
   //  家具の向き・大きさ・置く所の位置
@@ -98,6 +104,44 @@
   P.list = function (S, k) { return Object.keys(S.fu || {}).filter((id) => S.fu[id] && S.fu[id].k === k).sort((a, b) => S.fu[a].x - S.fu[b].x || S.fu[a].z - S.fu[b].z); };
   P.count = (S, k) => P.list(S, k).length;
   // 立って作業する位置（家具の前）
+  // ---------------------------------------------------------------------
+  //  床に置いた段ボール（at = 'fl'、位置は fx, fz、向き fr）
+  // ---------------------------------------------------------------------
+  P.itemFoot = function (it) {
+    if (it && it.t === 'fcrate') { const K = P.KINDS[it.k] || { w: 1, d: 1 }; return [clamp(K.w * 0.8, 0.6, 1.05), clamp(K.d * 0.95, 0.5, 0.85)]; }
+    return [0.48, 0.36];
+  };
+  P.floorBox = function (it, x, z, r) { const [w0, d0] = P.itemFoot(it), rr = r == null ? it.fr || 0 : r, w = rr % 2 ? d0 : w0, d = rr % 2 ? w0 : d0, X = x == null ? it.fx : x, Z = z == null ? it.fz : z; return [X - w / 2, Z - d / 2, X + w / 2, Z + d / 2]; };
+  P.floorItems = (S) => Object.keys((S.k && S.k.items) || {}).filter((id) => S.k.items[id] && S.k.items[id].at === 'fl');
+  // 置けるか：厨房・倉庫の中か、裏の路地（トラック・裏口・荷おろしの所はだめ）。壁・通路・家具・ほかの段ボールと重ならない
+  P.floorOk = function (S, it, x, z, r, id) {
+    const g = P.geomOf(S), b = P.floorBox(it, x, z, r), m = 0.01;
+    const kz = g.kitchen, al = g.alley;
+    const inK = b[0] >= kz.x0 + 0.02 && b[2] <= kz.x1 - 0.02 && b[1] >= kz.z0 + 0.02 && b[3] <= kz.z1 - 0.02;
+    const inA = b[0] >= al.x0 && b[2] <= al.x1 && b[1] >= al.z0 && b[3] <= al.z1;
+    if (!inK && !inA) return '厨房・倉庫の中か、裏の路地に置こう';
+    if (inA) {
+      const bd = g.backDoor.z, tx = -g.RX - 3.45, tz = bd + 3.0;
+      if (hit(b, [tx - 1.3, tz - 3.0, tx + 1.3, tz + 2.9], m)) return 'トラックの所には置けません';
+      if (hit(b, [-g.RX - 2.25, bd + 0.2, -g.RX - 0.75, bd + 3.6], m)) return '荷おろしの場所はあけておこう';
+      if (hit(b, [-g.RX - 1.4, bd - g.backDoor.w / 2 - 0.3, -g.RX, bd + g.backDoor.w / 2 + 0.3], m)) return '裏口の前はふさがないで';
+    } else {
+      for (const w of g.walls) if (hit(b, w, m)) return '壁にぶつかっています';
+      for (const w of g.noBuild) if (hit(b, w, m)) return 'ドアや通路をふさいでしまいます';
+      for (const o in S.fu) { const f = S.fu[o]; if (P.KINDS[f.k] && !P.KINDS[f.k].counter && hit(b, P.box(f), 0.002)) return '家具と重なっています'; }
+    }
+    for (const o of P.floorItems(S)) { if (o === id) continue; if (hit(b, P.floorBox(S.k.items[o]), 0.002)) return 'ほかの段ボールと重なっています'; }
+    return '';
+  };
+  // 空いている床（near の近くから。倉庫の裏口のそば → 厨房）
+  P.floorSpot = function (S, it, near) {
+    const g = P.geomOf(S), kz = g.kitchen, c = [];
+    const n = near || [-g.RX + 1.2, g.backDoor.z + 1.6];
+    for (let z = kz.z0 + 0.3; z < kz.z1 - 0.3; z += 0.25) for (let x = kz.x0 + 0.3; x < kz.x1 - 0.3; x += 0.25) c.push([Math.round(x * 100) / 100, Math.round(z * 100) / 100, Math.hypot(x - n[0], z - n[1])]);
+    c.sort((a, b) => a[2] - b[2]);
+    for (const q of c) for (const r of [0, 1]) if (!P.floorOk(S, it, q[0], q[1], r)) return { x: q[0], z: q[1], r };
+    return null;
+  };
   P.stand = function (f, dist) { const o = P.dirs(f.r), d = P.size(f.k, 0)[1] / 2 + (dist || 0.55); return [f.x + o.fx * d, f.z + o.fz * d]; };
 
   // ---------------------------------------------------------------------
@@ -119,6 +163,7 @@
     for (const w of g.walls) if (hit(b, w, 0.01)) return '壁にぶつかっています';
     for (const w of g.noBuild) if (hit(b, w, 0.01)) return 'ドアや通路をふさいでしまいます';
     for (const o in S.fu) { if (o === id) continue; const f = S.fu[o]; if (P.KINDS[f.k].counter) continue; if (hit(b, P.box(f), 0.002)) return 'ほかの家具と重なっています'; }
+    for (const o of P.floorItems(S)) if (hit(b, P.floorBox(S.k.items[o]), 0.002)) return '床の段ボールがじゃまです（どかそう）';
     return '';
   };
   // 空いている場所をさがす（壁ぞい → 真ん中の順）。near があればその近くから

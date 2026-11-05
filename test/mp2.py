@@ -71,6 +71,7 @@ async def main():
     await ev(B, "(()=>{const R=CS.ui.room,S=R.S,h=CS.kitchen.held(S,R.pid); if(h&&S.k.items[h].n>0) R.act({t:'shelve',slot:'f:'+T.fr('cshelf')+':4',all:1});})()")
     await ev(A, "(()=>{const R=CS.ui.room,S=R.S,h=CS.kitchen.held(S,R.pid); if(h&&S.k.items[h].n>0) R.act({t:'shelve',slot:'f:'+T.fr('cshelf')+':3',all:1});})()")
     print('B stock applied on A after', await until(A, "Object.values(CS.ui.room.S.k.items).filter(i=>i.t==='crate'&&i.n===0).length===2"), 's')
+    print('egg stacks (A view, 1枠10個まで)', await ev(A, "JSON.stringify(Object.values(CS.ui.room.S.k.items).filter(i=>i.t==='ing'&&i.ing==='egg').map(i=>[i.at,i.n]))"), 'cap', await ev(A, "CS.kitchen.STACK_CAP.ing"))
     print('egg before/after (A view)', e0, await ev(A, "CS.sim.invCount(CS.ui.room.S,'egg')"), 'B view', await ev(B, "CS.sim.invCount(CS.ui.room.S,'egg')"))
     # B がミキサーに卵を入れる → A のボウルに反映
     await ev(B, "CS.ui.room.act({t:'trash'})"); await ev(A, "CS.ui.room.act({t:'trash'})"); await B.wait_for_timeout(800)

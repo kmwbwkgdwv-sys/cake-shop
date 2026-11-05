@@ -380,6 +380,7 @@
       S.funds -= cost; S.up[u.id] = lv + 1;
       S.today.capex = (S.today.capex || 0) + cost;
       if (u.id === 'floor') moveForFloor(S, lv, lv + 1);
+      if (u.id === 'storage') CS.kitchen.normalize(S); // 倉庫の壁が動く → かかった家具・段ボールは近くの空いている所へ
       fx(S, 'up', u.name + (u.levels.length > 1 ? ' Lv' + (lv + 1) : '') + ' を導入！');
       return { ok: true };
     },
@@ -475,8 +476,9 @@
   function cakeExpText(S, d) { const left = cakeExpDay(d, S) - S.day; return left <= 0 ? '賞味期限 今日まで' : left === 1 ? '賞味期限 明日まで' : '賞味期限 あと' + left + '日'; }
   // 増床：家具ごと奥の左の角を基準に動かす（はみ出したら空いている所へ）
   function moveForFloor(S, from, to) {
-    const P = CS.plan, a = P.geom(from), b = P.geom(to), dx = b.store.x0 - a.store.x0, dz = b.store.z0 - a.store.z0;
+    const P = CS.plan, st = S.up.storage || 0, a = P.geom(from, st), b = P.geom(to, st), dx = b.store.x0 - a.store.x0, dz = b.store.z0 - a.store.z0;
     for (const id in S.fu) { const f = S.fu[id]; if (P.KINDS[f.k].counter) { f.x += dx; f.z = b.counter.z; } else { f.x += dx; f.z += dz; } }
+    for (const id in S.k.items) { const it = S.k.items[id]; if (it.at === 'fl' && it.fx > -a.RX) { it.fx += dx; it.fz += dz; } }
     for (const id in S.fu) { const f = S.fu[id]; if (P.valid(S, id, f.k, f.x, f.z, f.r)) { const old = S.fu[id]; delete S.fu[id]; const sp = P.findSpot(S, old.k, [old.x, old.z]); S.fu[id] = sp ? Object.assign(old, sp) : old; } }
     CS.kitchen.normalize(S);
   }

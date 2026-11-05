@@ -50,8 +50,21 @@ ok(!A({ t: 'fmove', id: tb, x: (g.pc.x0 + g.pc.x1) / 2, z: g.pc.z0 + 1.5, r: 0, 
 A({ t: 'fmove', id: tb, x: t0.x, z: t0.z, r: 0 });
 // ---- 仕入れ（材料と箱）----
 const crate = (ing) => findIt((i) => i.t === 'crate' && i.ing === ing);
+// 段ボールは棚・冷蔵棚に直接は入れられない（机・床はOK）。開けたら閉じられる
+A({ t: 'pick', id: crate('egg') });
+ok(!A({ t: 'put', slot: slot('cshelf', 5), quiet: 1 }).ok && !A({ t: 'put', slot: slot('shelf', 5), quiet: 1 }).ok, 'a crate cannot go into a shelf or cold shelf');
+A({ t: 'openCrate' }); ok(held().open === 1 && A({ t: 'openCrate', close: 1 }).ok && !held().open, 'opened and closed the crate again');
+const gf = P.geomOf(S);
+ok(!A({ t: 'floor', x: gf.store.x1, z: -gf.RZ + 1, r: 0, quiet: 1 }).ok, 'cannot put a crate into a wall');
+const fsp = P.floorSpot(S, held(), [gf.store.x0 + 2, gf.store.z0 + 2.5]);
+ok(A({ t: 'floor', x: fsp.x, z: fsp.z, r: fsp.r }).ok && S.k.items[crate('egg')].at === 'fl' && !held(), 'put the crate on the floor at ' + fsp.x + ',' + fsp.z);
+ok(!A({ t: 'floor', x: fsp.x, z: fsp.z, r: fsp.r, quiet: 1 }).ok, 'nothing in hand');
+A({ t: 'pick', id: crate('flour') }); ok(!A({ t: 'floor', x: fsp.x, z: fsp.z, r: fsp.r, quiet: 1 }).ok, 'cannot stack crates on the floor'); A({ t: 'put', slot: slot('table', 1) }); ok(S.k.items[crate('flour')].at === slot('table', 1), 'a crate can go on a table');
+ok(!A({ t: 'fmove', id: furn('table'), x: fsp.x, z: fsp.z, r: 0, quiet: 1 }).ok, 'furniture cannot be moved onto a floor crate');
+A({ t: 'pick', id: crate('egg') }); ok(held() && held().ing === 'egg' && S.k.items[crate('egg')].fx == null, 'picked the crate up from the floor');
 // 卵 → 冷蔵棚の1枠目、小麦粉 → 冷蔵棚の同じ枠はダメ（卵専用になっている）→ 棚へ
-A({ t: 'pick', id: crate('egg') }); A({ t: 'openCrate' }); A({ t: 'shelve', slot: slot('cshelf', 0), all: 1 }); A({ t: 'trash' });
+A({ t: 'openCrate' }); A({ t: 'shelve', slot: slot('cshelf', 0), all: 1 });
+ok(!held().n && A({ t: 'floor', x: fsp.x, z: fsp.z, r: fsp.r }).ok, 'the empty crate can be left on the floor'); A({ t: 'pick', id: findIt((i) => i.t === 'crate' && i.at === 'fl') }); A({ t: 'trash' });
 A({ t: 'pick', id: crate('flour') }); A({ t: 'openCrate' });
 ok(!A({ t: 'shelve', slot: slot('cshelf', 0), quiet: 1 }).ok, 'a slot with eggs only accepts eggs');
 A({ t: 'shelve', slot: slot('shelf', 1), all: 1 }); A({ t: 'trash' });
@@ -59,6 +72,13 @@ const putCrate = (ing, sl) => { A({ t: 'pick', id: crate(ing) }); A({ t: 'openCr
 putCrate('sugar', slot('shelf', 3)); putCrate('butter', slot('cshelf', 1)); putCrate('cream', slot('cshelf', 2)); putCrate('strawberry', slot('cshelf', 3)); putCrate('box', slot('shelf', 4));
 console.log('inv', ['egg', 'flour', 'sugar', 'butter', 'cream', 'strawberry', 'box'].map((k) => k + ':' + K.invCount(S, k)).join(' '));
 ok(K.invCount(S, 'egg') === 10 && K.invCount(S, 'box') === 10, 'shelved into the chosen slots');
+// 1枠に置けるのは10個まで（手に持てるのも10個まで）
+K.add(S, { t: 'crate', ing: 'sugar', n: 10, u: 40, open: 1, at: 'h:p1', pl: now });
+const r10 = A({ t: 'shelve', slot: slot('shelf', 3), all: 1 }); ok(K.inSlot(S, slot('shelf', 3)).map((id) => S.k.items[id].n)[0] === 10 && held().n === 10, 'a full slot (10) takes no more: ' + r10.msg);
+A({ t: 'shelve', slot: slot('shelf', 5), all: 1 }); ok(K.inSlot(S, slot('shelf', 5)).map((id) => S.k.items[id].n)[0] === 10 && !held().n, 'the rest goes into another slot');
+A({ t: 'trash' });
+const sg = K.inSlot(S, slot('shelf', 5))[0]; for (let k = 0; k < 12; k++) A({ t: 'take', id: sg, quiet: 1 });
+ok(held().n === 10 && !S.k.items[sg], 'can hold up to 10'); A({ t: 'put', slot: slot('shelf', 5) });
 // ---- 材料を手に取ってミキサーへ（余りは棚に戻せる）----
 const stackAt = (sl) => K.inSlot(S, sl)[0];
 const mixer = furn('mixer');
@@ -68,7 +88,7 @@ for (let k = 0; k < 3; k++) A({ t: 'addIng', fid: mixer });
 ok(!held(), 'eggs went into the bowl');
 const fill = (sl, n) => { A({ t: 'take', id: stackAt(sl), all: 1 }); for (let k = 0; k < n; k++) A({ t: 'addIng', fid: mixer }); if (held()) A({ t: 'put', slot: sl }); };
 fill(slot('shelf', 3), 2); fill(slot('shelf', 1), 2); fill(slot('cshelf', 1), 1);
-ok(K.invCount(S, 'sugar') === 8 && K.invCount(S, 'flour') === 8, 'left-overs went back to the shelf (sugar ' + K.invCount(S, 'sugar') + ')');
+ok(K.invCount(S, 'sugar') === 18 && K.invCount(S, 'flour') === 8, 'left-overs went back to the shelf (sugar ' + K.invCount(S, 'sugar') + ')');
 A({ t: 'run', fid: mixer }); now += 6500 * K.gauge(S, 'mix').sec / 6.5; console.log('mix:', A({ t: 'run', fid: mixer }).msg);
 // 型（棚）を持って流す → オーブン
 const pan = findIt((i) => i.t === 'pan'); A({ t: 'pick', id: pan }); A({ t: 'pour', fid: mixer });
@@ -168,6 +188,27 @@ A({ t: 'pick', id: pl2 }); A({ t: 'put', slot: slot('table', 1) }); A({ t: 'pick
 A({ t: 'pick', id: findIt((i) => i.t === 'knife') }); ok(A({ t: 'cut', id: ck3 }).ok, 'cut on the plate (on the table)'); A({ t: 'put', slot: slot('table', 3) });
 A({ t: 'take', id: stackAt(slot('shelf', 4)) }); for (let k = 0; k < 6; k++) A({ t: 'slice', id: ck3 });
 const left = K.at(S, slot('table', 1)); ok(held().s.length === 6 && left && S.k.items[left].t === 'plate' && S.k.items[left].dirty, 'took 6 slices; a dirty plate is left');
+// ---- 在庫棚：段ボールのまま保管（2列×2段で4つまで）----
+const clearHand = () => { for (const id of Object.keys(S.k.items)) if (S.k.items[id].at === 'h:p1') delete S.k.items[id]; };
+clearHand();
+const ck = K.placeNew(S, 'crack'); ok(ck && P.slots(S, ck).length === 4, 'crate rack has 4 places');
+let n4 = 0; P.slots(S, ck).forEach((sl, i) => { K.add(S, { t: 'crate', ing: i % 2 ? 'sugar' : 'flour', n: 10, u: 40, ar: 0, open: i === 3 ? 1 : 0, at: 'h:p1', pl: now }); const r = A({ t: 'put', slot: sl }); if (r.ok) n4++; });
+ok(n4 === 4 && P.slots(S, ck).every((sl) => K.inSlot(S, sl).length === 1) && !held(), 'four crates stored in the crate rack (2 columns x 2 levels)');
+K.add(S, { t: 'crate', ing: 'sugar', n: 10, u: 40, ar: 0, at: 'h:p1', pl: now });
+ok(!A({ t: 'put', slot: P.slots(S, ck)[0], quiet: 1 }).ok, 'a fifth crate does not fit');
+ok(!A({ t: 'put', slot: slot('shelf', 0), quiet: 1 }).ok, 'still not into a normal shelf');
+clearHand(); K.add(S, { t: 'plate', s: [], at: 'h:p1', pl: now });
+ok(!A({ t: 'put', slot: P.slots(S, ck)[0], quiet: 1 }).ok, 'only crates go in the crate rack'); clearHand();
+A({ t: 'pick', id: K.inSlot(S, P.slots(S, ck)[3])[0] }); ok(held() && held().t === 'crate' && held().open === 1, 'took a crate back out of the rack');
+clearHand(); for (const sl of P.slots(S, ck)) for (const id of K.inSlot(S, sl)) delete S.k.items[id];
+delete S.fu[ck];
+// ---- 倉庫の拡張（店舗レベル2から）----
+const z1a = P.geomOf(S).store.z1; S.xp = 0;
+ok(!A({ t: 'upgrade', id: 'storage', quiet: 1 }).ok, 'storage expansion is locked at Lv1');
+S.xp = 200; S.funds += 30000; const fu0 = JSON.stringify(Object.keys(S.fu).sort());
+ok(A({ t: 'upgrade', id: 'storage' }).ok && Math.abs(P.geomOf(S).store.z1 - z1a - P.STORE_STEP) < 1e-6, 'storage expanded: ' + z1a.toFixed(2) + ' → ' + P.geomOf(S).store.z1.toFixed(2));
+ok(Object.keys(S.fu).every((id) => !S.fu[id].bad && !P.valid(S, id, S.fu[id].k, S.fu[id].x, S.fu[id].z, S.fu[id].r)) && JSON.stringify(Object.keys(S.fu).sort()) === fu0, 'all furniture still valid after the storage expansion');
+ok(!A({ t: 'upgrade', id: 'storage', quiet: 1 }).ok, 'the next storage step needs Lv4');
 // ---- 追加のケーキナイフ ----
 A({ t: 'put', slot: slot('shelf', 5) }); const f3 = S.funds; A({ t: 'tbuy', k: 'knife' });
 ok(S.funds === f3 - P.TOOLS.knife.price && Object.values(S.k.items).filter((i) => i.t === 'knife').length === 2, 'bought another knife');

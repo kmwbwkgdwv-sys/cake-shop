@@ -105,6 +105,7 @@
     { id: 'showcase', hide: 1, name: '商品棚（冷蔵ショーケース）', desc: 'ケーキを並べる冷蔵の商品棚が1台増える。並べたケーキは賞味期限まで傷まない', icon: 'case', levels: [18000, 42000, 80000, 140000], req: [1, 2, 4, 6], vals: [4, 5, 6, 7, 8] },
     { id: 'oven', hide: 1, name: 'オーブン追加', desc: '同時に焼ける数が増える', icon: 'oven', levels: [30000, 70000, 130000], req: [1, 3, 5], vals: [3, 4, 5, 6] },
     { id: 'coldcase', name: '冷蔵ショーケース', desc: '（商品棚はすべて冷蔵になりました）', icon: 'case', levels: [45000], req: [3], hide: 1 },
+    { id: 'storage', name: '倉庫の拡張', desc: '倉庫が手前に 1.3m ずつ広くなり、棚・冷蔵棚・冷蔵庫を置ける場所が増える（中の家具はそのまま）', icon: 'box', levels: [25000, 60000, 120000], req: [2, 4, 6] },
     { id: 'sign', name: '看板', desc: '来店数 +10%', icon: 'sign', levels: [12000], req: [1] },
     { id: 'interior', name: '内装リフォーム', desc: '来店数 +12% / お客さんの払える額 +3%（段階ごと）', icon: 'home', levels: [40000, 90000, 180000], req: [1, 3, 5] },
     { id: 'lab', name: 'レシピ研究室', desc: '試作コスト半額、相性の予想が見える', icon: 'lab', levels: [30000], req: [2] },

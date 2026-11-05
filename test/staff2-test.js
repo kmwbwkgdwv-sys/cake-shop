@@ -7,13 +7,13 @@ function run(tasks, menu, boost, label, opt) {
   const S = sim.newState({}); S.funds = 1e6; S.xp = 9600; S.rep = 3.5; sim.normalize(S);
   const A = (a) => sim.apply(S, Object.assign({ pid: 'p1' }, a), now);
   // 設備をそろえる
-  ['oven', 'oven', 'mixer', 'deco', 'cshelf', 'shelf', 'rack', 'pcaseN'].forEach((k) => K.placeNew(S, k));
+  ['oven', 'oven', 'mixer', 'deco', 'cshelf', 'cshelf', 'shelf', 'shelf', 'rack', 'pcaseN'].forEach((k) => K.placeNew(S, k));
   for (let i = 0; i < 3; i++) { A({ t: 'tbuy', k: 'pan' }); A({ t: 'tbuy', k: 'plate' }); }
   S.furn.table = 3;
   for (let i = 0; i < 4; i++) A({ t: 'hire', slot: i });
   tasks.forEach((t, i) => A({ t: 'staffTask', slot: i, task: t }));
   S.staff.forEach((st) => { if (st) st.lv = Math.min(10, st.lv + boost); });
-  for (const k in D.ING) K.invAdd(S, k, 40, D.ING[k].price);
+  for (const k in D.ING) K.invAdd(S, k, 20, D.ING[k].price); // 1枠10個まで → 2枠ずつ
   for (const r in S.menu) S.menu[r].on = menu.includes(r);
   A({ t: 'start' }); now += 60000; for (let t = 0; t < 240; t++) { now += 250; sim.tick(S, now); }
   A({ t: 'sign' });

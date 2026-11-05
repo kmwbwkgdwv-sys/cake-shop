@@ -23,7 +23,7 @@
   //  間取り（部屋の位置は増床レベルで決まる。家具は S.fu）
   // =====================================================================
   function layout(s) {
-    const g = P.geom(s ? (s.up && s.up.floor) || 0 : 0);
+    const g = P.geomOf(s);
     RX = g.RX; RZ = g.RZ; CZ = g.CZ;
     const L = { g, lv: g.lv, key: g.key, store: g.store, pc: g.pc };
     L.backDoor = [-RX, g.backDoor.z];
@@ -674,6 +674,8 @@
   // トラックの動き（到着時刻と出発時刻から決まるので全員の画面で同じ）
   W.updateTruck = function (s, g, dt) {
     const tr = W.truck, TT = K.TRUCK, tk = s.k.truck; W.dynBlocks = [];
+    // 床に置いた段ボールにはぶつかる
+    for (const id in s.k.items) { const it = s.k.items[id]; if (it.at === 'fl') { const b = P.floorBox(it); W.dynBlocks.push([b[0] - 0.02, b[1] - 0.02, b[2] + 0.02, b[3] + 0.02]); } }
     if (!tr) return;
     if (!tk) { tr.node.vis = false; tr.z = null; W.truckParked = false; return; }
     const P0 = W.L.truck; let z, parked = false;
@@ -867,6 +869,18 @@
     // 洗剤とスポンジ
     m.put('gloss', Geo.cyl(0.03, 0.03, 0.17, 12), [-0.73, top + 0.085, -0.22], 0, 1, rgb('#4FB3D9'), { rough: 0.15 });
     m.put('paint', Geo.rbox(0.09, 0.03, 0.06, 0.01), [-0.73, top + 0.015, -0.05], 0, 1, rgb('#F2D16B'));
+  };
+  // 在庫棚（段ボール置き場。2列×2段）
+  FM.crack = (m) => {
+    const W2 = 1.2, D2 = 0.6, H2 = 1.3;
+    [-1, 1].forEach((sx) => [-1, 1].forEach((sz) => m.put('steel', Geo.box(0.035, H2, 0.035), [sx * (W2 / 2 - 0.02), H2 / 2, sz * (D2 / 2 - 0.02)], 0, 1, rgb('#4F6B8A'))));
+    [0.06, 0.64, 1.22].forEach((y) => {
+      m.put('oak', Geo.box(W2 - 0.04, 0.025, D2 - 0.04), [0, y + 0.0125, 0], 0, 1, rgb('#C9A57A'));
+      [-1, 1].forEach((sz) => m.put('steel', Geo.box(W2, 0.05, 0.03), [0, y - 0.01, sz * (D2 / 2 - 0.02)], 0, 1, rgb('#E07A2E')));
+    });
+    m.put('steel', Geo.box(0.02, 1.12, 0.02), [0, 0.66, D2 / 2 - 0.02], 0, 1, rgb('#4F6B8A'));
+    m.put('gloss', Geo.box(0.16, 0.05, 0.004), [-0.29, 0.6, D2 / 2], 0, 1, rgb('#F2EBE1'));
+    m.put('gloss', Geo.box(0.16, 0.05, 0.004), [0.29, 0.6, D2 / 2], 0, 1, rgb('#F2EBE1'));
   };
   FM.rack = (m) => {
     [-1, 1].forEach((sx) => [-1, 1].forEach((sz) => m.put('steel', Geo.cyl(0.014, 0.014, 1.7, 6), [sx * 0.355, 0.85, sz * 0.28])));
@@ -1462,6 +1476,8 @@
           const ot = W.others[who] || W.staffN[who];
           if (ot) { const r = ot.r || 0, hg = it.t === 'fcrate'; p = [ot.x + Math.sin(r) * (hg ? 0.6 : 0.42), hg ? 0.6 : 1.02, ot.z + Math.cos(r) * (hg ? 0.6 : 0.42)]; ry = r; }
         }
+      } else if (at === 'fl') {
+        p = [+it.fx || 0, 0, +it.fz || 0]; ry = ((it.fr || 0) % 2) * PI / 2;
       } else if (at.startsWith('c:')) {
         const oc = W.custs[at.slice(2)];
         if (oc) { const r = oc.r || 0; p = [oc.x + Math.sin(r) * 0.34, 0.95, oc.z + Math.cos(r) * 0.34]; ry = r; }
@@ -1498,9 +1514,9 @@
       const G2 = W.ghost; G2.n.vis = true; G2.n.p = [up.x, 0, up.z]; G2.n.r = [0, P.dirs(up.r).a, 0];
       const v = up.why ? 5 : 4; if (G2.v !== v) { G2.v = v; G2.n.kids.forEach((k) => { if (!k.op || k.op >= 1) setTint(k, v); }); }
     } else if (gh) gh.n.vis = false;
-    const mv = W.mv && s.fu[W.mv.id] ? W.mv : null, cur = mv ? { k: s.fu[mv.id].k, x: mv.x, z: mv.z, r: mv.r, why: mv.why } : up;
+    const mv = W.mv && s.fu[W.mv.id] ? W.mv : null, dg = W.dropG, cur = mv ? { k: s.fu[mv.id].k, x: mv.x, z: mv.z, r: mv.r, why: mv.why } : up || dg;
     if (!cur) { ft.vis = false; return; }
-    const [w, d] = P.size(cur.k, cur.r);
+    const [w, d] = cur.it ? (() => { const b = P.floorBox(cur.it, cur.x, cur.z, cur.r); return [b[2] - b[0], b[3] - b[1]]; })() : P.size(cur.k, cur.r);
     ft.vis = true; ft.p = [cur.x, 0.012, cur.z]; ft.s = [w + 0.06, 1, d + 0.06]; ft.color = cur.why ? rgb('#E2574C') : rgb('#5BD18B');
   };
   // 床をねらった位置（配置・展開）
@@ -1590,7 +1606,7 @@
     return { x: 0, z: -RZ + 4, fx: 0, fz: -RZ };
   }
   // 厨房・倉庫・パソコン室・外（路地）を行き来するときはドアを通る
-  function zoneOf(x, z) { const g = W.L.g; if (x < -RX) return 'out'; if (z < g.store.z1) { if (x < g.store.x1) return 'store'; if (x < g.pc.x1) return 'pc'; } return 'kit'; }
+  function zoneOf(x, z) { const g = W.L.g; if (x < -RX) return 'out'; if (z < g.store.z1 && x < g.store.x1) return 'store'; if (z < g.pc.z1 && x >= g.pc.x0 && x < g.pc.x1) return 'pc'; return 'kit'; }
   function doorPts(a, b) {
     const g = W.L.g, bd = W.L.backDoor[1];
     if ((a === 'kit' && b === 'store') || (a === 'store' && b === 'kit')) { const p = [[g.store.door, g.store.z1 + 0.6], [g.store.door, g.store.z1 - 0.6]]; return a === 'kit' ? p : [p[1], p[0]]; }
@@ -1677,22 +1693,28 @@
     const T = sl[3], Kd = P.KINDS[f.k], cold = !!Kd.cold;
     if (!top && !held) return null;
     const p = P.local(f, sl[0], sl[1], sl[2]);
-    const t = { slot: at, item: topId, fid, pp: [p[0], p[1] + (T === 'tray' ? 0.12 : T === 'fridge' ? 0.1 : 0.07), p[2]], rr: T === 'tray' ? 0.24 : T === 'fridge' ? 0.18 : 0.17 };
+    const t = { slot: at, item: topId, fid, pp: [p[0], p[1] + (T === 'tray' ? 0.12 : T === 'fridge' ? 0.1 : T === 'crate' ? 0.2 : 0.07), p[2]], rr: T === 'tray' ? 0.24 : T === 'fridge' ? 0.18 : T === 'crate' ? 0.26 : 0.17 };
     if (top) t.name = W.itemName(top, s) + (ids.length > 1 ? '（' + ids.length + 'つ）' : '');
     else t.name = W.fname(s, fid) + (T === 'dry' ? '：水切りかご' : T === 'mixpan' ? '：型置き' : '') + '（空き' + (T === 'tray' || T === 'any' ? (cold ? '・冷蔵' : '・常温') : '') + '）';
     if (top && top.t === 'tray') t.name = ((sim.recipe(s, top.r) || {}).name || 'ケーキ') + (top.w ? '（ホール・' : '（残り ' + top.p + ' 切れ・') + sim.cakeExpText(s, top.d) + '）';
     if (top && top.res) { t.name += '（アルバイトが使用中）'; return t; }
     if (held) {
       if (held.t === 'crate') {
+        if (T === 'crate') { if (!top) t.pri = { label: held.n > 0 ? '段ボールを在庫棚に置く' : '空の段ボールを在庫棚に置く', a: { t: 'put', slot: at } }; else t.name += '（うまっています）'; t.sec = held.open ? { label: '段ボールを閉じる', a: { t: 'openCrate', close: 1 } } : { label: '段ボールを開ける', a: { t: 'openCrate' } }; return t; }
         if (T !== 'any') return t;
-        if (!held.open) { if (!top) t.pri = { label: '段ボールを置く', a: { t: 'put', slot: at } }; t.sec = { label: '段ボールを開ける', a: { t: 'openCrate' } }; return t; }
-        if (!(held.n > 0)) return t;
+        const onTable = f.k === 'table' && !top, put = onTable ? { label: held.n > 0 ? '段ボールごと机に置く' : '空の段ボールを机に置く', a: { t: 'put', slot: at } } : null;
+        const close = { label: '段ボールを閉じる', a: { t: 'openCrate', close: 1 } };
+        if (!held.open) { t.pri = put; t.sec = { label: '段ボールを開ける', a: { t: 'openCrate' } }; if (!put && !top) t.name += '（段ボールは棚に入れられません。開けて中身を並べよう）'; return t; }
+        if (!(held.n > 0)) { t.pri = put; t.sec = close; if (!put) t.name += '（空の段ボールは床・机に置くか、ゴミ箱へ）'; return t; }
         if ((held.sp || 0) >= 2) { t.name = nm(held.ing) + 'は傷んでいて置けません（ゴミ箱へ）'; return t; }
         if (!top || (top.t === 'ing' && top.ing === held.ing)) {
+          const room = K.STACK_CAP.ing - (top ? top.n : 0);
+          if (room <= 0) { t.name += '（この枠はいっぱい・1枠10個まで）'; t.sec = close; return t; }
           t.pri = { label: (held.ing === 'box' ? '箱' : nm(held.ing)) + 'を1つ置く（長押しで続けて）', a: { t: 'shelve', slot: at }, hold: 1 };
-          t.sec = { label: '全部置く（' + held.n + '）', a: { t: 'shelve', slot: at, all: 1 } };
+          t.sec = { label: '置けるだけ置く（' + Math.min(room, held.n) + '）', a: { t: 'shelve', slot: at, all: 1 } };
+          t.del = put ? { label: put.label, a: put.a } : close;
           if (D.ING[held.ing] && D.ING[held.ing].cold && !cold) t.name += '・ここは常温（要冷蔵は冷蔵棚へ）';
-        } else t.name += '（ほかの物が置いてある）';
+        } else { t.name += '（ほかの物が置いてある）'; t.sec = close; }
         return t;
       }
       if (cakeT(s, t, held, top, topId)) return t;
@@ -1826,7 +1848,7 @@
     if (!s || !W.room || W.blocked()) { if (W.onTarget) W.onTarget(null, null); return; }
     const L = W.L, o = W.eng.cam.pos, d = W.fwd, pid = W.room.pid;
     const hid = K.held(s, pid), held = hid ? s.k.items[hid] : null;
-    W.up = null;
+    W.up = null; W.dropG = null;
     if (W.bm) { const t = W.buildTarget(s, o, d); W.target = t; if (W.onTarget) W.onTarget(t, held); return; }
     if (held && held.t === 'fcrate' && P.KINDS[held.k]) {
       // 大きな段ボール：置きたい床をねらって展開する
@@ -1836,6 +1858,8 @@
       const t = { name: Kd.name + '：' + (why || 'ここに展開できます'), unpack: 1,
         pri: why ? null : { label: 'ここに展開する', a: { t: 'unpack', x, z: zz, r } },
         sec: Kd.counter ? null : { label: '向きを変える', fn: () => { W.upR = ((W.upR || 0) + 1) % 4; } } };
+      const fw = P.floorOk(s, held, x, z, (W.upR || 0) % 2, hid);
+      if (!fw && Math.hypot(x - o[0], z - o[2]) < 3.4) t.del = { label: '段ボールのまま床に置く', a: { t: 'floor', x, z, r: (W.upR || 0) % 2 } };
       W.target = t; if (W.onTarget) W.onTarget(t, held); return;
     }
     const cands = [];
@@ -1854,6 +1878,11 @@
     // 客席の汚れたお皿・トラックの段ボール
     for (const id in s.k.items) {
       const it = s.k.items[id], at = String(it.at);
+      if (at === 'fl') {
+        const hg = it.t === 'fcrate', hh = hg ? 0.45 : 0.2;
+        add([it.fx, hh, it.fz], hg ? 0.5 : 0.32, { item: id, name: W.itemName(it, s) + '（床）', pri: !held ? { label: hg ? '大きな段ボールを持つ' : '段ボールを持つ', a: { t: 'pick', id } } : null });
+        continue;
+      }
       if (!(at.startsWith('seat:') || at.startsWith('dl:'))) continue;
       if ((it.t === 'crate' || it.t === 'fcrate') && (it.ar > g || (s.k.truck && s.k.truck.out))) continue;
       const sw = slotWorld(s, at); if (!sw) continue;
@@ -1874,8 +1903,16 @@
     }
     cands.sort((a, b) => a.dist - b.dist);
     let t = cands[0] || null;
-    // 段ボールを持っているときは、どこでも「開ける」ができる
-    if (held && held.t === 'crate' && !held.open && !(t && t.sec)) { t = t || { name: W.itemName(held, s), dist: 0, p: o }; t.sec = { label: '段ボールを開ける', a: { t: 'openCrate' } }; }
+    // 段ボール（空でもOK）を持っていて、ほかに何もねらっていない → 床に置く（緑＝置ける／赤＝置けない）
+    if (held && held.t === 'crate' && !t && d[1] < -0.08) {
+      const [x, z] = W.floorAim(o, d), r = Math.abs(Math.sin(W.me.yaw)) > 0.7 ? 1 : 0, far = Math.hypot(x - o[0], z - o[2]) > 3.0;
+      const bx = P.floorBox(held, x, z, r), nearMe = Math.hypot(W.me.x - clamp(W.me.x, bx[0], bx[2]), W.me.z - clamp(W.me.z, bx[1], bx[3])) < 0.3;
+      const why = far ? 'もう少し近くの床をねらおう' : nearMe ? '足もとすぎます（少し先の床をねらおう）' : P.floorOk(s, held, x, z, r, hid);
+      W.dropG = { it: held, x, z, r, why };
+      t = { name: '床' + (why ? '：' + why : '（段ボールを置ける）'), dist: 1, p: [x, 0, z], floor: 1, pri: why ? null : { label: held.n > 0 ? '段ボールを床に置く' : '空の段ボールを床に置く', a: { t: 'floor', x, z, r } } };
+    }
+    // 段ボールを持っているときは、どこでも「開ける／閉じる」ができる
+    if (held && held.t === 'crate' && !(t && t.sec)) { t = t || { name: W.itemName(held, s), dist: 0, p: o }; t.sec = held.open ? { label: '段ボールを閉じる', a: { t: 'openCrate', close: 1 } } : { label: '段ボールを開ける', a: { t: 'openCrate' } }; }
     if (t && t.pri && t.pri.aim) {
       // 回転台のケーキの上面の照準 → ケーキの向きに合わせた -1〜1 の位置
       const f = fOf(s, t.deco), dk = s.k.items[K.at(s, K.slot0(t.deco))];
@@ -1985,7 +2022,7 @@
     const hid = K.held(s, W.room.pid); if (!hid) return;
     const it = s.k.items[hid];
     if (it.t === 'fcrate') { CS.ui.toast('置きたい床をねらって「ここに展開する」', 'err'); return; }
-    if (it.t === 'crate' && !((it.sp || 0) >= 2 && it.n > 0)) { CS.ui.toast(it.n > 0 ? '中身は棚に置こう（開けてから）' : '空の段ボールはゴミ箱へ', 'err'); return; }
+    if (it.t === 'crate' && !((it.sp || 0) >= 2 && it.n > 0)) { if (W.dropG && !W.dropG.why) { send({ t: 'floor', x: W.dropG.x, z: W.dropG.z, r: W.dropG.r }); return; } CS.ui.toast('段ボールは床（足もと）をねらって置こう。空ならゴミ箱へ', 'err'); return; }
     if (it.t === 'plate') { send({ t: 'drop' }); return; }
     send({ t: 'trash' });
   };
@@ -2217,7 +2254,7 @@
     // 画面の外：見ている向きからの角度で、画面の端に矢印
     const a = Math.atan2(side, fwd), rx = cw / 2 - 80, ry = ch / 2 - 80;
     let x = Math.sin(a), y = -Math.cos(a); const k = Math.min(rx / Math.max(1e-3, Math.abs(x)), ry / Math.max(1e-3, Math.abs(y)));
-    x = cw / 2 + x * k; y = clamp(ch / 2 + y * k, top + 40, ch - 140);
+    x = cw / 2 + x * k; y = clamp(ch / 2 + y * k, top + 40, Math.min(ch - 140, ch * 0.7));
     el.classList.add('edge'); el.style.setProperty('--ga', (a * 180 / PI).toFixed(0) + 'deg');
     el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%)`;
   }
