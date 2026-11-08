@@ -35,7 +35,17 @@
     rack:   { name: '冷却ラック', desc: '焼いたスポンジを早く冷ませる棚（6か所）', icon: 'snow', w: 0.75, d: 0.6, h: 1.7, price: 8000, cool: 0.5, slots: shelf6([0.5, 0.95, 1.4], [-0.17, 0.17]) },
     trash:  { name: 'ゴミ箱', desc: 'いらない物・空の段ボールを捨てる', icon: 'trash', w: 0.55, d: 0.55, h: 0.7, price: 3000, slots: [] },
     reg:    { name: 'レジ', desc: 'カウンターに置く。お客さんの注文とお会計', icon: 'cart', w: 1.7, d: 0.7, h: 1.2, price: 20000, counter: 1, slots: [] },
+    // カウンターの裏（厨房側）の穴に入れる箱置き。レジの下にも置ける
+    boxhole: { name: '箱入れ（カウンター裏）', desc: 'カウンターの裏の穴に、ケーキの箱をしまっておける（2か所・1か所30枚まで）。接客のときはここから箱を取って詰める', icon: 'box', w: 0.9, d: 0.6, h: 0.86, price: 5000, counter: 1, under: 1, slots: [[-0.21, 0.105, -0.1, 'boxes'], [0.21, 0.105, -0.1, 'boxes']] },
+    // ---- 自動の機械（店舗レベルで解放。材料をセットするだけで動く） ----
+    amixer: { name: '自動ミキサー', lv: 4, desc: '材料を入れるだけ（順番も気にしなくてOK）。そろったら自動で混ぜ、横の型置きにきれいな型があれば自動で流し込む', icon: 'mixer', w: 1.4, d: 0.75, h: 1.0, price: 60000, station: 'amix', auto: 1, slots: [[0.42, 0.905, 0.08, 'mixpan']] },
+    awhip:  { name: '自動ホイッパー', lv: 5, desc: 'クリームの材料を入れるだけで、ちょうどいい固さに泡立てる。できたら「すくう」か自動デコ機へ', icon: 'hand', w: 1.2, d: 0.75, h: 1.0, price: 55000, station: 'awhip', auto: 1, slots: [] },
+    aoven:  { name: '自動オーブン', lv: 6, desc: '生地を入れるだけで、温度を合わせて予熱し、ちょうどいい焼き加減で自動で止める（焦げない）', icon: 'oven', w: 1.2, d: 0.95, h: 1.45, price: 90000, station: 'aoven', auto: 1, slots: [[0, 0.8, 0.12, 'oven']] },
+    adeco:  { name: '自動デコ機', lv: 7, desc: '冷めたスポンジをのせると、セットしたクリームを自動で塗り、補充したトッピングをきれいに並べて仕上げる', icon: 'star', w: 1.4, d: 0.8, h: 1.5, price: 120000, station: 'adeco', auto: 1, slots: [[-0.18, 0.975, 0.08, 'turn']] },
+    line:   { name: '全自動製造ライン', lv: 10, desc: '材料を投入口に入れるだけ。レーンで生地 → オーブン → 冷却 → クリーム塗り → トッピングと進み、完成したケーキが出口に出てくる（出口は冷蔵）', icon: 'bolt', w: 5.4, d: 1.2, h: 1.9, price: 380000, station: 'line', auto: 1, cold: 1, slots: [[2.12, 0.93, -0.22, 'out'], [2.12, 0.93, 0.22, 'out'], [2.5, 0.93, 0, 'out']] },
   };
+  // 1か所に置ける数（箱入れは30枚まで）
+  P.SLOT_CAP = { boxes: 30 };
   // 道具（パソコンで1つずつ買う）
   P.TOOLS = {
     plate: { name: 'お皿', desc: '店内で食べるお客さんに出す。落とすと割れる', icon: 'cup', price: 1200 },
@@ -43,7 +53,7 @@
     knife: { name: 'ケーキナイフ', desc: 'ホールケーキを6等分に切る。台の上やお皿の上で使える（最初に1本もらえる）', icon: 'knife', price: 1800 },
   };
   // 最初にある物（机1・棚1・クリーム台1・ショーケース1・洗い場1・冷蔵棚1・冷蔵庫1・レジ1・ゴミ箱1、型1・お皿1・ケーキナイフ1）
-  P.START = ['table', 'shelf', 'whip', 'scase', 'sink', 'cshelf', 'fridge', 'reg', 'trash'];
+  P.START = ['table', 'shelf', 'whip', 'scase', 'sink', 'cshelf', 'fridge', 'reg', 'trash', 'boxhole'];
 
   // ---------------------------------------------------------------------
   //  間取り（増床レベルで大きさが変わる。倉庫とパソコン室は裏に並ぶ）
@@ -152,9 +162,14 @@
     const g = P.geomOf(S), K = P.KINDS[k]; if (!K) return '置けない物です';
     if (K.counter) {
       // レジはカウンターの上（左右だけ動かせる）
+      // 箱入れ（カウンターの下）はレジの下に置ける。ショーケース・ほかの箱入れとは重ならない
       const half = K.w / 2;
-      if (x - half < g.counter.x0 + 0.1 || x + half > g.counter.x1 - 0.05) return 'カウンターの上に置こう';
-      for (const o in S.fu) { if (o === id) continue; const f = S.fu[o]; if (P.KINDS[f.k].counter && Math.abs(f.x - x) < (K.w + P.KINDS[f.k].w) / 2 + 0.1) return 'ほかのレジとくっつきすぎ'; }
+      if (x - half < g.counter.x0 + 0.1 || x + half > g.counter.x1 - 0.05) return K.under ? 'カウンターの下に置こう' : 'カウンターの上に置こう';
+      for (const o in S.fu) {
+        if (o === id) continue; const f = S.fu[o], Ko = P.KINDS[f.k]; if (!Ko || !Ko.counter) continue;
+        const clash = K.under ? Ko.under || f.k === 'scase' : Ko.under ? k === 'scase' : true;
+        if (clash && Math.abs(f.x - x) < (K.w + Ko.w) / 2 + (K.under || Ko.under ? 0.02 : 0.1)) return K.under || Ko.under ? 'ショーケース・ほかの箱入れと重なっています' : 'ほかのレジとくっつきすぎ';
+      }
       return '';
     }
     const b = P.box({ k, x, z, r });
@@ -170,7 +185,9 @@
   P.findSpot = function (S, k, near) {
     const g = P.geomOf(S), K = P.KINDS[k];
     if (K.counter) {
-      for (let x = g.counter.x1 - K.w / 2 - 0.1; x > g.counter.x0 + K.w / 2; x -= 0.1) { const v = Math.round(x * 100) / 100; if (!P.valid(S, null, k, v, g.counter.z, 0)) return { x: v, z: g.counter.z, r: 0 }; }
+      const xs = []; for (let x = g.counter.x1 - K.w / 2 - 0.1; x > g.counter.x0 + K.w / 2; x -= 0.1) xs.push(Math.round(x * 100) / 100);
+      if (near) xs.sort((a, b) => Math.abs(a - near[0]) - Math.abs(b - near[0]));
+      for (const v of xs) if (!P.valid(S, null, k, v, g.counter.z, 0)) return { x: v, z: g.counter.z, r: 0 };
       return null;
     }
     const cand = [];
@@ -204,6 +221,7 @@
       ['table', g.pc.x1 + 2.4, -RZ + 7.0, 0],
       ['scase', g.counter.x0 + 1.35, CZ, 0],
       ['reg', g.counter.x0 + 3.6, CZ, 0],
+      ['boxhole', g.counter.x0 + 3.6, CZ, 0],
     ];
   };
 })(typeof window !== 'undefined' ? window : globalThis);

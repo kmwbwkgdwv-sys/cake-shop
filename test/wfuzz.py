@@ -15,12 +15,16 @@ window.__fz = async (steps, seed) => {
   for (let step = 0; step < steps; step++) {
     const S = r.S, items = Object.keys(S.k.items), fids = Object.keys(S.fu);
     const SL = fids.reduce((a, f) => a.concat(P.slots(S, f)), []);
-    const t = pick(['pick', 'take', 'put', 'put', 'trash', 'drop', 'addIng', 'run', 'pour', 'scoop', 'dump', 'oven', 'spreadDone', 'topPlace', 'topTake', 'finish', 'slice', 'unslice', 'caseTake', 'cut', 'cut', 'hole', 'unhole', 'unpack', 'openCrate', 'floor', 'floor', 'shelve', 'washStart', 'wash', 'order', 'sign', 'takeOrder', 'serve', 'pay', 'fmove', 'fbuy', 'tbuy', 'endDay', 'next']);
+    const t = pick(['pick', 'take', 'put', 'put', 'trash', 'drop', 'addIng', 'run', 'pour', 'scoop', 'dump', 'oven', 'spreadDone', 'topPlace', 'topTake', 'finish', 'slice', 'unslice', 'caseTake', 'cut', 'cut', 'hole', 'unhole', 'unpack', 'openCrate', 'floor', 'floor', 'shelve', 'washStart', 'wash', 'order', 'sign', 'takeOrder', 'serve', 'pay', 'fmove', 'fbuy', 'tbuy', 'endDay', 'next', 'mcream', 'amode', 'lineOn', 'shoo', 'addIng']);
     const g = P.geomOf(S);
     const a = { t, pid: pick(pids), id: pick(items.concat(fids).concat(['x'])), slot: pick(SL.concat(['f:x:0'])), fid: pick(fids), k: pick(Object.keys(P.KINDS).concat(['plate', 'pan', 'knife'])), op: pick(['set', 'next', 'off']), temp: 170, q: rnd(), x: t === 'fmove' || t === 'floor' ? -g.RX - 3 + rnd() * (2 * g.RX + 3) : rnd() - 0.5, z: t === 'fmove' || t === 'floor' ? -g.RZ + rnd() * (g.CZ + g.RZ) : rnd() - 0.5, close: rnd() < 0.3 ? 1 : 0, r: Math.floor(rnd() * 4), one: rnd() < 0.4 ? 1 : 0, all: rnd() < 0.5 ? 1 : 0, items: [pick(ings), pick(ings)], c: pick(Object.keys(S.cust).concat(['z'])), ch: Math.floor(rnd() * 2000) };
     try { sim.apply(S, a, r.now()); } catch (e) { errs.push('apply ' + t + ': ' + e.message); }
     if (S.funds < 50000) S.funds += 300000; if (S.bankrupt) S.bankrupt = 0;
     if (step % 200 === 0) for (const k of ings) if (sim.invCount(S, k) < 5) K.invAdd(S, k, 20, 50);
+    // 自動の機械・全自動ライン（店舗Lv10）も置いて、画面側のコードを通す
+    if (step === 30) S.xp = D.SHOP_XP[D.SHOP_XP.length - 1];
+    if (step % 150 === 60) { const kd = ['amixer', 'awhip', 'aoven', 'adeco', 'line'][Math.floor(step / 150) % 5]; try { K.placeNew(S, kd); } catch (e) { errs.push('place ' + kd + ': ' + e.message); } }
+    if (step % 50 === 7) for (const fid of P.list(S, 'line').concat(P.list(S, 'adeco'))) { const b = S.k.st[fid]; if (b && b.hop) for (const k of pick([['egg', 'sugar', 'flour', 'butter', 'cream', 'strawberry'], ['chocolate', 'cocoa']])) if (D.ING[k]) b.hop[k] = [8, 400]; }
     if (step % 25 === 0) { const sl = SL.find((x) => !K.inSlot(S, x).length && ['any', 'tray'].includes((P.slotDef(S, x) || {}).type)); if (sl) K.add(S, { t: P.slotDef(S, sl).type === 'tray' ? 'tray' : 'cake', r: pick(['short', 'chocolate', 'baked_cheese']), q: 0.8, df: [], p: 6, n: 6, w: rnd() < 0.6 ? 1 : undefined, dish: rnd() < 0.2 ? 1 : undefined, c: 900, d: S.day, at: sl, pl: 0 }); }
     // 自分の視点を設備の近くにランダムに置く（ラベル・照準のコードを通す）
     if (step % 10 === 0) { const f = S.fu[pick(Object.keys(S.fu))], L = W.L; const sp = pick([f ? P.stand(f, 0.7) : [0, 0], [L.desk[0], L.desk[1] + 1], [1, W.dims.CZ - 1], [L.truck.x, L.truck.z - 3.5], [2, W.dims.CZ + 2]]); W.me.x = sp[0]; W.me.z = sp[1]; W.me.yaw = rnd() * 6.28; W.me.pitch = -0.6 + rnd() * 0.8; }

@@ -101,6 +101,7 @@
       const ups = D.UPGRADES.filter((u) => !u.hide && (u.req || []).some((r, i) => r === after && (S.up[u.id] || 0) <= i)).map((u) => u.name);
       for (const k in D.EQUIP) D.EQUIP[k].tiers.forEach((t) => { if (t.lv === after && t.price) ups.push(t.name); });
       for (const k in D.FURN) if (D.FURN[k].lv === after) ups.push(D.FURN[k].name);
+      if (CS.plan) for (const k in CS.plan.KINDS) if (CS.plan.KINDS[k].lv === after) ups.push(CS.plan.KINDS[k].name);
       const st = D.STAFF.slots.filter((x) => x.lv === after).length;
       const parts = [];
       if (items.length) parts.push('新商品「' + items.join('」「') + '」');
@@ -511,7 +512,7 @@
     waste = Math.round(waste);
     T.waste += waste;
     let equip = 0; for (const u of D.UPGRADES) equip += S.up[u.id] || 0;
-    let wages = 0; S.staff.forEach((st) => { if (st) { wages += D.STAFF.wage(st.lv, st.sp); st.job = null; st.days = (st.days || 0) + 1; } });
+    let wages = 0; S.staff.forEach((st, i) => { if (st) { wages += D.STAFF.wage(st.lv, st.sp); st.job = null; CS.kitchen.releaseStaff(S, i); st.days = (st.days || 0) + 1; } });
     T.wages = wages;
     const fixed = R.RENT + (S.up.floor || 0) * (R.RENT_PER_FLOOR || 1500) + (equip + 2) * R.UTIL_PER_EQUIP + wages;
     S.funds -= fixed;

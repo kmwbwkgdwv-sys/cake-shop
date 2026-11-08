@@ -67,7 +67,7 @@ function check() {
     if (it.t === 'fcrate') { err('fcrate in slot ' + at); continue; }
     err('weird at ' + at);
   }
-  for (const id in S.k.items) { const it = S.k.items[id]; if (it.t === 'ing' && !(it.n > 0)) err('empty stack ' + id); if (it.t === 'ing' && it.n > K.STACK_CAP.ing) err('over cap ' + id); }
+  for (const id in S.k.items) { const it = S.k.items[id]; if (it.t === 'ing' && !(it.n > 0)) err('empty stack ' + id); if (it.t === 'ing' && it.n > (K.slotCap ? K.slotCap(S, it.at, it) : K.STACK_CAP.ing)) err('over cap ' + id); }
   for (const ing of ings) if (K.invCount(S, ing) < 0) err('neg inv ' + ing);
   for (const id in S.k.items) { const it = S.k.items[id]; if ((it.t === 'box' && K.boxUnits(it) > 6) || (it.t === 'plate' && K.boxUnits(it) > 3)) err('overfull ' + it.t); if ((it.t === 'cake' || it.t === 'tray') && (it.w && it.p !== it.n || !(it.p > 0))) err('bad cake ' + JSON.stringify(it)); }
   if (!isFinite(S.funds)) err('funds NaN');

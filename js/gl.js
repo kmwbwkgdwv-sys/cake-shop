@@ -558,7 +558,9 @@ void main(){
           const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
           gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
           let rb = null;
-          if (depth) { rb = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, rb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, fw, fh); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb); }
+          // 深度は DEPTH_STENCIL（たいていの端末で 24bit）を使う。16bit だと奥の床や壁の飾りがちらつく。だめなら 16bit
+          const depthRB = (fmt, att) => { if (rb) { gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, null); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, null); gl.deleteRenderbuffer(rb); } rb = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, rb); gl.renderbufferStorage(gl.RENDERBUFFER, fmt, fw, fh); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, att, gl.RENDERBUFFER, rb); return gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE; };
+          if (depth && !depthRB(gl.DEPTH_STENCIL, gl.DEPTH_STENCIL_ATTACHMENT)) depthRB(gl.DEPTH_COMPONENT16, gl.DEPTH_ATTACHMENT);
           const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
           gl.bindFramebuffer(gl.FRAMEBUFFER, null);
           if (!ok) throw new Error('fbo');

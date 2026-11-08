@@ -79,6 +79,8 @@ h1, h2, h3 { font-family: var(--display); font-weight: 600; margin: 0; text-wrap
 .chip.warn { border-color: rgba(224, 164, 88, .5); color: #F2CB93; background: rgba(224, 164, 88, .12); }
 .chip.bad { border-color: rgba(224, 106, 106, .55); color: #F5ABAB; background: rgba(224, 106, 106, .12); }
 .chip.info { border-color: rgba(132, 169, 201, .5); color: #BCD3E8; background: rgba(132, 169, 201, .12); }
+.chip.auto { border-color: rgba(122, 176, 214, .55); color: #CFE6F7; background: rgba(122, 176, 214, .14); }
+.card.upg.locked { opacity: .6; }
 .chip.cold { border-color: rgba(143, 211, 255, .5); color: #BFE6FF; background: rgba(143, 211, 255, .12); }
 .chip .ic { width: 1.05em; height: 1.05em; }
 .chip.pink { border-color: rgba(212, 80, 108, .5); color: #F1AFBE; background: rgba(212, 80, 108, .12); }
@@ -181,6 +183,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 28px; }
 .st-lb.near b { font-size: 14px; }
 .st-lb.hot { border-color: var(--warn); animation: hotGlow .8s ease-in-out infinite; }
 @keyframes hotGlow { 50% { box-shadow: 0 0 0 4px rgba(224, 164, 88, .35); } }
+.st-lb.auto { border-color: rgba(122, 176, 214, .55); }
+.st-lb .pb { display: block; width: 100px; height: 6px; border-radius: 99px; background: rgba(255, 255, 255, .14); margin-top: 4px; overflow: hidden; }
+.st-lb .pb i { display: block; height: 100%; background: linear-gradient(90deg, #7AB0D6, #9BD88A); border-radius: 99px; }
 .st-lb .dm { position: relative; display: block; width: 100px; height: 8px; border-radius: 99px; background: linear-gradient(90deg, #F2E5C2, #E1B26A 45%, #A8652E 70%, #5A2E14 85%, #1B0F08); margin-top: 4px; }
 .st-lb .dm u { position: absolute; top: -3px; bottom: -3px; border: 1.5px solid #9BD88A; border-radius: 3px; background: rgba(141, 181, 128, .25); }
 .st-lb .dm b { position: absolute; top: -5px; width: 3px; height: 18px; margin-left: -1.5px; background: #fff; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .6); }

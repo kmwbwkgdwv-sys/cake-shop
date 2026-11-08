@@ -101,7 +101,7 @@
     host.innerHTML = '<canvas id="gl3d" aria-label="お店の中"></canvas><div class="labels" id="labels"></div><div class="xhair" id="xhair"></div>';
     const canvas = host.querySelector('canvas');
     // 前のエンジンのテクスチャ・メッシュは使えないので作り直す
-    W.T = null; W.boardTex = null; W.signTex = null; W.openTex = null; W.blobTex = null; W.blobMesh = null; W.frTex = null; W.csTex = null; W.dockTex = null; W.truckTex = null; W.trayM = null; W.footM = null;
+    W.T = null; W.bhTex = null; W.lineTex = null; W.lineTex2 = null; W.boardTex = null; W.signTex = null; W.openTex = null; W.blobTex = null; W.blobMesh = null; W.frTex = null; W.csTex = null; W.dockTex = null; W.truckTex = null; W.trayM = null; W.footM = null;
     for (const k in meshCache) delete meshCache[k];
     W.fmesh = {}; W.bowlM = null; W.TT = null;
     W.dying = false;
@@ -178,6 +178,23 @@
     paint: { rough: 0.6 }, gloss: { rough: 0.22 }, cloth: { rough: 0.9 }, brass: { rough: 0.28, metal: 1 }, plant: { rough: 0.7 }, facade: { tex: 'facade', rough: 0.8 },
   };
   W.obstacles = [];
+  // 長方形の集まりから穴（長方形）を抜く [x0, z0, x1, z1]
+  W.rectSub = function (rects, holes) {
+    let out = rects.slice();
+    for (const h of holes) {
+      const next = [];
+      for (const r of out) {
+        if (h[0] >= r[2] || h[2] <= r[0] || h[1] >= r[3] || h[3] <= r[1]) { next.push(r); continue; }
+        const x0 = Math.max(r[0], h[0]), x1 = Math.min(r[2], h[2]), z0 = Math.max(r[1], h[1]), z1 = Math.min(r[3], h[3]);
+        if (r[0] < x0) next.push([r[0], r[1], x0, r[3]]);
+        if (x1 < r[2]) next.push([x1, r[1], r[2], r[3]]);
+        if (r[1] < z0) next.push([x0, r[1], x1, z0]);
+        if (z1 < r[3]) next.push([x0, z1, x1, r[3]]);
+      }
+      out = next;
+    }
+    return out.filter((r) => r[2] - r[0] > 1e-4 && r[3] - r[1] > 1e-4);
+  };
   function block(x0, z0, x1, z1) { W.obstacles.push([Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1)]); }
   // 文字の札（キャンバス）
   function textCard(text, sub, w, h) {
@@ -218,10 +235,14 @@
     ground(Geo.plane(90, 40, 22, 10), T.grass, [0, -0.02, -RZ - 20], 0.95);
     ground(Geo.plane(30, 90, 7, 22), T.walk, [-RX - 15.2, -0.015, 0], 0.8); ground(Geo.plane(30, 90, 7, 22), T.walk, [RX + 15.2, -0.015, 0], 0.8);
     // ---------- 床・天井 ----------
-    const FZ = CZ + g.counter.d / 2, kd = FZ + RZ, fd = RZ - FZ;
-    const kf = new Node(e.mesh(Geo.plane(RX * 2, kd, (RX * 2) / 0.6, kd / 0.6), null, { rough: 0.4 }), { tex: T.ktile, cast: false, ao: 0 }); kf.p = [0, 0.001, -RZ + kd / 2]; sc.add(kf);
-    const ff = new Node(e.mesh(Geo.plane(RX * 2, fd, (RX * 2) / 1.2, fd / 1.2), null, { rough: 0.38 }), { tex: T.parquet, cast: false, ao: 0 }); ff.p = [0, 0.001, FZ + fd / 2]; sc.add(ff);
-    { const pw = g.pc.x1 - g.pc.x0, pd = g.pc.z1 - g.pc.z0; const pf = new Node(e.mesh(Geo.plane(pw, pd, pw / 1.2, pd / 1.2), null, { rough: 0.38 }), { tex: T.parquet, cast: false, ao: 0 }); pf.p = [(g.pc.x0 + g.pc.x1) / 2, 0.002, (g.pc.z0 + g.pc.z1) / 2]; sc.add(pf); }
+    const FZ = CZ + g.counter.d / 2;
+    // 床は重ねずに敷く（重なった床は奥でちらつく）：厨房のタイルから、パソコン室・仕切りの前の木の床の所を抜く
+    const wood = [[-RX, FZ, RX, RZ], [g.pc.x0, -RZ, g.pc.x1, g.pc.z1]];
+    if (g.hall[2] - g.hall[0] >= 0.2 && FZ - g.hall[3] > 0.01) wood.push([g.hall[0], g.hall[3], g.hall[2], FZ]);
+    const tiles = W.rectSub([[-RX, -RZ, RX, FZ]], wood.slice(1));
+    const floorMesh = (rects, tile, rough) => { const gg = CS.gl.geo(); rects.forEach(([x0, z0, x1, z1]) => CS.gl.quad(gg, [x0, 0, z1], [x1, 0, z1], [x1, 0, z0], [x0, 0, z0], [0, 1, 0], [[x0 / tile, -z1 / tile], [x1 / tile, -z1 / tile], [x1 / tile, -z0 / tile], [x0 / tile, -z0 / tile]], true)); return e.mesh(gg, null, { rough }); };
+    const kf = new Node(floorMesh(tiles, 0.6, 0.4), { tex: T.ktile, cast: false, ao: 0 }); kf.p = [0, 0.001, 0]; sc.add(kf);
+    const ff = new Node(floorMesh(wood, 1.2, 0.38), { tex: T.parquet, cast: false, ao: 0 }); ff.p = [0, 0.001, 0]; sc.add(ff);
     Pt('brass', Geo.box(RX * 2, 0.006, 0.04), [0, 0.004, FZ]);
     const ceil = new Node(e.mesh(Geo.plane(RX * 2 + 0.4, RZ * 2 + 0.4, RX, RZ), null, { rough: 0.9 }), { tex: T.ceil, cast: false, ao: 0, r: [PI, 0, 0] }); ceil.p = [0, WH, 0]; sc.add(ceil);
     // ---------- 外の壁（影は落とさない：窓際が暗くならないように） ----------
@@ -396,14 +417,17 @@
   // カウンター（売り場との境目。右の端は通路）
   W.buildCounter = function (e, sc, L, Pt) {
     const c = L.g.counter, w = c.x1 - c.x0, cx = (c.x0 + c.x1) / 2, z = c.z;
-    Pt('walnut', Geo.rbox(w, 0.86, c.d - 0.06, 0.02), [cx, 0.43, z]);
+    // 厨房側は開いている（中に箱入れなどを置ける）。売り場側の前板・両端・底板・天板
+    const zf = z + c.d / 2 - 0.03, zb = z - c.d / 2 + 0.03;
+    Pt('walnut', Geo.rbox(w, 0.86, 0.08, 0.02), [cx, 0.43, zf - 0.04]);
+    [c.x0 + 0.03, c.x1 - 0.03].forEach((x) => Pt('walnut', Geo.box(0.06, 0.86, zf - zb), [x, 0.43, (zf + zb) / 2]));
+    Pt('walnut', Geo.box(w - 0.08, 0.06, zf - zb), [cx, 0.03, (zf + zb) / 2], 0, 1, rgb('#5A3A28'));
+    Pt('walnut', Geo.box(w - 0.08, 0.07, 0.05), [cx, CT - 0.075, zb + 0.025]);
     Pt('marble', Geo.rbox(w + 0.04, 0.04, c.d + 0.02, 0.012), [cx, CT - 0.02, z]);
     const np = Math.max(1, Math.round(w / 1.05));
     for (let i = 0; i < np; i++) Pt('oak', Geo.rbox(w / np - 0.1, 0.56, 0.02, 0.008), [c.x0 + (i + 0.5) * (w / np), 0.46, z + c.d / 2 - 0.02]);
     Pt('brass', Geo.box(w, 0.03, 0.02), [cx, 0.08, z + c.d / 2 - 0.01]);
     Pt('brass', Geo.cyl(0.018, 0.018, w, 10), [cx, 0.16, z + c.d / 2 + 0.1], [0, 0, PI / 2]);
-    // 厨房側の下の棚
-    Pt('steel', Geo.box(w - 0.1, 0.02, 0.3), [cx, 0.32, z - c.d / 2 + 0.12], 0, 1, rgb('#B9BEC4'));
     block(c.x0, z - c.d / 2, c.x1, z + c.d / 2);
     // 厨房と売り場の仕切りの壁（カウンターの左）。売り場側は腰板と絵、厨房側はタイル
     const h = L.g.hall, T = W.T; if (h[2] - h[0] < 0.2) return;
@@ -417,9 +441,7 @@
     const TB = new Builder(); TB.put(Geo.box(hw, 1.9, 0.02, 1), [hx, 0.95, h[1] - 0.01], 0, 1, [1, 1, 1], { rough: 0.16 });
     sc.add(new Node(TB.build(e), { tex: T.subway, ao: 0, cast: false }));
     Pt('walnut', Geo.box(0.06, WH, hd + 0.04), [h[2], WH / 2, hz]);
-    // 売り場の床（仕切りの前）
-    const FZ = CZ + c.d / 2, pd = FZ - h[3];
-    if (pd > 0.01) { const pf = new Node(e.mesh(Geo.plane(hw, pd, hw / 1.2, pd / 1.2), null, { rough: 0.38 }), { tex: T.parquet, cast: false, ao: 0 }); pf.p = [hx, 0.0015, h[3] + pd / 2]; sc.add(pf); }
+    // 売り場の床（仕切りの前）は buildStatic でほかの床といっしょに敷く（重ねるとちらつくため）
     // 絵（売り場側）
     const AB = new Builder(), n = Math.max(1, Math.floor(hw / 2.6));
     for (let i = 0; i < n; i++) { const x = h[0] + (hw / n) * (i + 0.5); Pt('walnut', Geo.rbox(1.02, 0.82, 0.05, 0.01), [x, 1.85, h[3] + 0.025]); AB.put(Geo.card(0.9, 0.7), [x, 1.85, h[3] + 0.052], 0, 1, [1, 1, 1], { rough: 0.8 }); }
@@ -910,6 +932,109 @@
     m.put('paint', Geo.cyl(0.22, 0.22, 0.004, 24), [0.55, 0.003, 0.85], 0, 1, rgb('#C9A35E'));
     m.put('paint', Geo.cyl(0.22, 0.22, 0.004, 24), [-0.4, 0.003, 1.0], 0, 1, rgb('#7A1F2B'));
   };
+  // ---------- カウンター裏の箱入れ（カウンターの下に入る。厨房側が前） ----------
+  const cardTex = (key, text, sub) => {
+    if (W[key]) return W[key];
+    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 96; const g = cv.getContext('2d');
+    g.fillStyle = '#2A2624'; g.fillRect(0, 0, 256, 96); g.strokeStyle = '#E8C547'; g.lineWidth = 5; g.strokeRect(5, 5, 246, 86);
+    g.fillStyle = '#F2EBE1'; g.textAlign = 'center'; g.font = '700 38px "Zen Kaku Gothic New",sans-serif'; g.fillText(text, 128, 50);
+    g.fillStyle = '#E8C547'; g.font = '600 18px "Zen Kaku Gothic New",sans-serif'; g.fillText(sub, 128, 80);
+    return (W[key] = W.eng.texFromCanvas(cv, false));
+  };
+  FM.boxhole = (m) => {
+    const zb = -0.36, zf = 0.0, zc = (zb + zf) / 2, dd = zf - zb;
+    m.put('oak', Geo.box(0.86, 0.04, dd), [0, 0.08, zc], 0, 1, rgb('#C9A57A'));
+    [-0.43, 0, 0.43].forEach((x) => m.put('oak', Geo.box(x ? 0.03 : 0.02, x ? 0.4 : 0.32, dd), [x, x ? 0.3 : 0.26, zc], 0, 1, rgb('#B88C5E')));
+    m.put('oak', Geo.box(0.86, 0.4, 0.02), [0, 0.3, zf], 0, 1, rgb('#9A7550'));
+    m.put('oak', Geo.box(0.86, 0.07, 0.02), [0, 0.135, zb], 0, 1, rgb('#B88C5E'));
+    m.sign(cardTex('bhTex', 'ケーキの箱', 'BOX'), 0.34, 0.13, [0, 0.43, zb + 0.02], [0, PI, 0]);
+  };
+  // ---------- 自動の機械（黄色い帯と緑の表示が目印） ----------
+  const autoBadge = (m, w, y, z) => { m.put('paint', Geo.box(w, 0.05, 0.012), [0, y, z], 0, 1, rgb('#E8C547')); };
+  FM.amixer = (m) => {
+    steelCounter(m, 1.4, 0.75);
+    const mc = rgb('#3F6F93'), mx = -0.2;
+    m.put('gloss', Geo.rbox(0.34, 0.07, 0.4, 0.03), [mx, 0.935, -0.03], 0, 1, mc);
+    m.put('gloss', Geo.rbox(0.16, 0.52, 0.19, 0.05), [mx, 1.19, -0.18], 0, 1, mc);
+    m.put('gloss', Geo.rbox(0.22, 0.15, 0.46, 0.06), [mx, 1.48, -0.05], 0, 1, mc);
+    m.put('steel', Geo.cyl(0.085, 0.035, 0.14, 16, 0, PI * 2, true), [mx + 0.15, 1.34, 0.17], [0.35, 0, -0.35]);
+    m.put('gloss', Geo.rbox(0.26, 0.15, 0.03, 0.01), [0.18, 1.0, 0.37], [-0.5, 0, 0], 1, rgb('#151515'));
+    m.led(Geo.box(0.22, 0.11, 0.004), [0.18, 1.005, 0.386], '#7FD3A8', [-0.5, 0, 0]);
+    autoBadge(m, 1.2, 0.8, 0.376);
+    pad(m, 0.42, 0.905, 0.08);
+  };
+  FM.awhip = (m) => {
+    steelCounter(m, 1.2, 0.75);
+    const c = rgb('#6E8F62');
+    m.put('gloss', Geo.rbox(0.3, 0.04, 0.34, 0.015), [-0.15, 0.9, 0.02], 0, 1, c);
+    m.put('gloss', Geo.rbox(0.12, 0.52, 0.14, 0.04), [-0.15, 1.16, -0.24], 0, 1, c);
+    m.put('gloss', Geo.rbox(0.18, 0.12, 0.36, 0.05), [-0.15, 1.44, -0.1], 0, 1, c);
+    m.put('gloss', Geo.rbox(0.24, 0.14, 0.03, 0.01), [0.32, 1.0, 0.37], [-0.5, 0, 0], 1, rgb('#151515'));
+    m.led(Geo.box(0.2, 0.1, 0.004), [0.32, 1.005, 0.386], '#7FD3A8', [-0.5, 0, 0]);
+    autoBadge(m, 1.0, 0.8, 0.376);
+  };
+  FM.aoven = (m) => {
+    FM.oven(m);
+    autoBadge(m, 1.0, 0.54, 0.476);
+    m.led(Geo.box(0.26, 0.06, 0.004), [0.3, 1.29, 0.488], '#7FD3A8');
+  };
+  FM.adeco = (m) => {
+    island(m, 1.4, C.navy);
+    m.put('steel', Geo.cyl(0.05, 0.2, 0.06, 28), [-0.18, 0.94, 0.08], 0, 1, rgb('#D8DCE0'));
+    [-0.62, 0.26].forEach((x) => m.put('steel', Geo.box(0.05, 0.62, 0.05), [x, 1.21, -0.3]));
+    m.put('steel', Geo.box(0.95, 0.06, 0.08), [-0.18, 1.52, -0.3]);
+    m.put('steel', Geo.box(0.07, 0.06, 0.4), [-0.18, 1.52, -0.1]);
+    m.put('gloss', Geo.cyl(0.11, 0.11, 0.3, 18), [0.45, 1.06, -0.18], 0, 1, rgb('#F2F0EC'), { rough: 0.2 });
+    m.put('steel', Geo.cyl(0.118, 0.118, 0.025, 18), [0.45, 1.22, -0.18]);
+    for (let k = 0; k < 4; k++) m.put('gloss', Geo.cyl(0.045, 0.03, 0.1, 12, 0, PI * 2, true), [0.36 + (k % 2) * 0.13, 0.96, 0.08 + Math.floor(k / 2) * 0.13], 0, 1, rgb('#DDE8EE'), { rough: 0.1 });
+    m.put('gloss', Geo.rbox(0.24, 0.14, 0.03, 0.01), [0.45, 1.3, -0.12], [-0.3, 0, 0], 1, rgb('#151515'));
+    m.led(Geo.box(0.2, 0.1, 0.004), [0.45, 1.302, -0.104], '#7FD3A8', [-0.3, 0, 0]);
+    autoBadge(m, 1.2, 0.75, 0.356);
+  };
+  // 全自動製造ライン（左 → 右に流れる。生地 → オーブン → 冷却 → クリーム → トッピング → 出口）
+  FM.line = (m) => {
+    const L2 = 5.4, bx0 = -1.95, bx1 = 1.9;
+    // 脚と枠
+    for (let x = -2.6; x <= 2.61; x += 0.87) [-0.3, 0.3].forEach((z) => m.put('steel', Geo.box(0.05, 0.86, 0.05), [x, 0.43, z]));
+    [-0.3, 0.3].forEach((z) => m.put('steel', Geo.box(L2, 0.06, 0.04), [0, 0.86, z], 0, 1, rgb('#B9BEC4')));
+    m.put('steel', Geo.box(L2, 0.03, 0.56), [0, 0.18, 0], 0, 1, rgb('#9AA0A6'));
+    // ベルト
+    m.put('paint', Geo.box(bx1 - bx0, 0.02, 0.5), [(bx0 + bx1) / 2, 0.895, 0], 0, 1, rgb('#2E3236'));
+    for (let x = bx0; x <= bx1 + 0.01; x += 0.3) m.put('steel', Geo.cyl(0.025, 0.025, 0.52, 10), [x, 0.87, 0], [PI / 2, 0, 0], 1, rgb('#C7CBD0'));
+    // ① 生地：ミキサーと投入口
+    m.put('steel', Geo.box(0.7, 0.06, 0.62), [-2.35, 0.86, 0], 0, 1, rgb('#C7CBD0'));
+    m.put('steel', Geo.box(0.06, 0.9, 0.06), [-2.62, 1.34, -0.26]);
+    m.put('gloss', Geo.rbox(0.2, 0.16, 0.5, 0.05), [-2.35, 1.72, -0.06], 0, 1, rgb('#3F6F93'));
+    m.put('steel', Geo.cyl(0.34, 0.1, 0.34, 20, 0, PI * 2, true), [-2.3, 1.38, 0.05], 0, 1, rgb('#D8DCE0'));
+    m.put('steel', Geo.torus(0.34, 0.012, 6, 24), [-2.3, 1.55, 0.05], [PI / 2, 0, 0]);
+    // ② オーブン（トンネル）
+    m.put('steel', Geo.rbox(1.85, 0.08, 0.66, 0.02), [-0.7, 1.46, 0], 0, 1, rgb('#9AA0A6'));
+    [-0.33, 0.33].forEach((z) => m.put('steel', Geo.box(1.85, 0.52, 0.04), [-0.7, 1.17, z], 0, 1, rgb('#B9BEC4')));
+    [-1.63, 0.23].forEach((x) => m.put('steel', Geo.box(0.05, 0.08, 0.66), [x, 1.38, 0], 0, 1, rgb('#6E757C')));
+    for (let k = 0; k < 6; k++) m.put('cloth', Geo.box(0.012, 0.24, 0.07), [-1.63, 1.22, -0.2 + k * 0.08], 0, 1, rgb('#3A3E42'));
+    m.put('steel', Geo.cyl(0.05, 0.05, 0.3, 12), [-1.1, 1.65, -0.15]);
+    // ③ 冷却ファン
+    [0.42, 0.78].forEach((x) => { m.put('steel', Geo.cyl(0.16, 0.16, 0.05, 20, 0, PI * 2, true), [x, 1.38, 0]); m.put('steel', Geo.box(0.04, 0.48, 0.04), [x, 1.12, -0.3]); });
+    m.put('steel', Geo.box(0.5, 0.04, 0.04), [0.6, 1.36, -0.3]);
+    // ④ クリーム塗り・⑤ トッピング（門型の台）
+    [1.0, 1.95].forEach((x) => [-0.3, 0.3].forEach((z) => m.put('steel', Geo.box(0.045, 0.66, 0.045), [x, 1.22, z])));
+    m.put('steel', Geo.box(1.0, 0.06, 0.66), [1.47, 1.55, 0], 0, 1, rgb('#B9BEC4'));
+    m.put('gloss', Geo.cyl(0.1, 0.1, 0.22, 16), [1.2, 1.68, -0.12], 0, 1, rgb('#F2F0EC'), { rough: 0.2 });
+    for (let k = 0; k < 3; k++) m.put('gloss', Geo.cyl(0.05, 0.035, 0.12, 12, 0, PI * 2, true), [1.62 + k * 0.12, 1.64, -0.14], 0, 1, rgb('#DDE8EE'), { rough: 0.1 });
+    // 出口（冷蔵の台）
+    m.put('marble', Geo.box(0.82, 0.05, 0.82), [2.32, 0.885, 0]);
+    m.put('steel', Geo.box(0.82, 0.85, 0.82), [2.32, 0.43, 0], 0, 1, rgb('#D6DADE'));
+    P.KINDS.line.slots.forEach((sl) => m.put('gloss', Geo.cyl(0.17, 0.17, 0.01, 28), [sl[0], 0.913, sl[2]], 0, 1, rgb('#F4F1EC'), { rough: 0.2 }));
+    m.glass(Geo.box(0.82, 0.32, 0.012), [2.32, 1.08, -0.4]);
+    m.led(Geo.box(0.7, 0.01, 0.03), [2.32, 1.22, -0.36], '#E9F6FF');
+    // 操作パネル・看板
+    m.put('gloss', Geo.rbox(0.5, 0.34, 0.06, 0.02), [-1.25, 1.1, 0.42], [-0.45, 0, 0], 1, rgb('#20262B'));
+    m.led(Geo.box(0.42, 0.2, 0.004), [-1.25, 1.12, 0.455], '#7FD3A8', [-0.45, 0, 0]);
+    m.put('steel', Geo.box(0.05, 0.3, 0.05), [-1.25, 0.86, 0.38]);
+    autoBadge(m, L2 - 0.2, 0.76, 0.32);
+    m.sign(cardTex('lineTex', '全自動製造ライン', 'AUTO LINE'), 1.0, 0.36, [-0.7, 1.72, 0.0]);
+    m.sign(cardTex('lineTex2', '出口', 'できあがり'), 0.4, 0.15, [2.32, 1.32, -0.405]);
+  };
   function furnParts(k) {
     if (W.fmesh[k]) return W.fmesh[k];
     const e = W.eng, BB = {}, extra = [], LB = new Builder();
@@ -917,7 +1042,7 @@
       put: (mat, g, p, r, s, c, opt) => (BB[mat] = BB[mat] || new Builder()).put(g, p, r || 0, s || 1, c || [1, 1, 1], Object.assign({ rough: MATS[mat].rough, metal: MATS[mat].metal || 0 }, opt || {})),
       glass: (g, p, r) => extra.push({ g, p, r, o: { color: rgb('#CFE3EE'), op: 0.14, cast: false, recv: false } }),
       led: (g, p, c, r) => LB.put(g, p, r || 0, 1, rgb(c || '#F4FBFF'), {}),
-      sign: (tex, w, h, p) => extra.push({ g: Geo.card(w, h), p, o: { tex, em: 0.85, cast: false } }),
+      sign: (tex, w, h, p, r) => extra.push({ g: Geo.card(w, h), p, r, o: { tex, em: 0.85, cast: false } }),
     };
     (FM[k] || FM.table)(m);
     const parts = [];
@@ -940,6 +1065,15 @@
     W.dispM = CS.gl.keep(e.mesh(Geo.box(0.16, 0.05, 0.01)));
     W.waterM = CS.gl.keep(e.mesh(Geo.cyl(0.009, 0.012, 0.42, 10), '#FFFFFF', { rough: 0.05 }));
     W.foamM = CS.gl.keep(e.mesh(Geo.sphere(0.03, 10, 8), '#FFFFFF', { rough: 0.6 }));
+    // 自動の機械の動く部分（クリームのノズル・ベルトの板・ファン・オーブンの窓・トッピングのアーム）
+    const nozB = new Builder(); nozB.put(Geo.cyl(0.03, 0.03, 0.12, 12), [0, 0.06, 0], 0, 1, rgb('#C7CBD0'), stl); nozB.put(Geo.cyl(0.03, 0.008, 0.07, 12), [0, -0.035, 0], 0, 1, rgb('#D8DBDF'), stl);
+    W.nozM = CS.gl.keep(nozB.build(e));
+    W.slatM = CS.gl.keep(e.mesh(Geo.box(0.035, 0.006, 0.48), '#FFFFFF', { rough: 0.7 }));
+    const fanB = new Builder(); for (let k = 0; k < 4; k++) fanB.put(Geo.box(0.13, 0.006, 0.05), [Math.cos(k * PI / 2) * 0.07, 0, Math.sin(k * PI / 2) * 0.07], [0.3, -k * PI / 2, 0], 1, rgb('#AEB3B8'), stl); fanB.put(Geo.cyl(0.025, 0.025, 0.02, 10), [0, 0, 0], 0, 1, rgb('#6E757C'), stl);
+    W.fanM = CS.gl.keep(fanB.build(e));
+    W.lwinM = CS.gl.keep(e.mesh(Geo.box(1.6, 0.16, 0.01), null, { rough: 0.05 }));
+    const armB = new Builder(); armB.put(Geo.box(0.03, 0.2, 0.03), [0, 0.1, 0], 0, 1, rgb('#C7CBD0'), stl); armB.put(Geo.box(0.08, 0.02, 0.02), [0, 0, 0], 0, 1, rgb('#6E757C'), stl); [-0.035, 0.035].forEach((x) => armB.put(Geo.box(0.008, 0.05, 0.016), [x, -0.025, 0], 0, 1, rgb('#6E757C'), stl));
+    W.armM = CS.gl.keep(armB.build(e));
   }
   function mkBowl(parent, p, mix2) {
     const n = parent.add(new Node(W.bowlM)); n.p = p.slice();
@@ -952,10 +1086,13 @@
     const n = new Node();
     for (const pt of furnParts(f.k)) { const c = new Node(pt.meshes, Object.assign({}, pt.o)); if (pt.p) c.p = pt.p.slice(); if (pt.r) c.r = pt.r.slice(); n.add(c); }
     const o = { n, k: f.k, fid };
-    if (f.k === 'mixer') o.bowl = mkBowl(n, [-0.2, 0.97, 0.05], true);
+    if (f.k === 'mixer' || f.k === 'amixer') o.bowl = mkBowl(n, [-0.2, 0.97, 0.05], true);
     if (f.k === 'whip') o.bowl = mkBowl(n, [-0.15, 0.915, 0.04], false);
+    if (f.k === 'awhip') o.bowl = mkBowl(n, [-0.15, 0.92, 0.02], true);
     if (f.k === 'deco') { o.tt = n.add(new Node(W.ttM)); o.tt.p = [0, 0.968, 0.04]; o.a = 0; }
-    if (f.k === 'oven') { o.win = n.add(new Node(W.winM, { color: rgb('#202020'), em: 0, cast: false })); o.win.p = [0, 0.88, 0.495]; o.disp = n.add(new Node(W.dispM, { color: rgb('#FF5A2A'), em: 1, cast: false })); o.disp.p = [0.25, 1.29, 0.49]; }
+    if (f.k === 'adeco') { o.tt = n.add(new Node(W.ttM)); o.tt.p = [-0.18, 0.968, 0.08]; o.a = 0; o.noz = n.add(new Node(W.nozM, { cast: false })); o.noz.p = [-0.18, 1.42, 0.08]; }
+    if (f.k === 'line') mkLine(o, n);
+    if (f.k === 'oven' || f.k === 'aoven') { o.win = n.add(new Node(W.winM, { color: rgb('#202020'), em: 0, cast: false })); o.win.p = [0, 0.88, 0.495]; o.disp = n.add(new Node(W.dispM, { color: rgb('#FF5A2A'), em: 1, cast: false })); o.disp.p = [0.25, 1.29, 0.49]; }
     if (f.k === 'sink') {
       o.water = n.add(new Node(W.waterM, { color: rgb('#CDEBFA'), op: 0.55, em: 0.25, cast: false, recv: false })); o.water.p = [-0.36, 0.97, -0.04]; o.water.vis = false;
       o.foam = []; for (let k = 0; k < 7; k++) { const fn = n.add(new Node(W.foamM, { color: [1, 1, 1], cast: false, em: 0.1 })); fn.p = [-0.36 + Math.sin(k * 2.1) * 0.14, 0.84, 0.02 + Math.cos(k * 1.7) * 0.1]; fn.s = [1.3, 0.7, 1.3]; fn.vis = false; o.foam.push(fn); }
@@ -963,10 +1100,21 @@
     W.furnGroup.add(n);
     return o;
   }
-  // 家具の当たり判定（レジはカウンターの上なので要らない）
+  // 全自動ラインの動く部分
+  function mkLine(o, n) {
+    o.bowl = mkBowl(n, [-2.3, 0.89, 0.05], true);
+    o.slats = []; for (let k = 0; k < 14; k++) { const sl = n.add(new Node(W.slatM, { cast: false, color: rgb('#4A5056') })); sl.p = [0, 0.909, 0]; o.slats.push(sl); }
+    o.fans = [0.42, 0.78].map((x) => { const fn = n.add(new Node(W.fanM, { cast: false })); fn.p = [x, 1.37, 0]; return fn; });
+    o.lwin = n.add(new Node(W.lwinM, { color: rgb('#202020'), em: 0, cast: false })); o.lwin.p = [-0.7, 1.17, 0.352];
+    o.ltt = n.add(new Node(W.ttM)); o.ltt.p = [1.2, 0.912, 0]; o.ltt.s = [0.8, 1, 0.8]; o.lta = 0;
+    o.noz = n.add(new Node(W.nozM, { cast: false })); o.noz.p = [1.2, 1.4, 0];
+    o.arm = n.add(new Node(W.armM, { cast: false })); o.arm.p = [1.72, 1.32, 0];
+    o.jobs = {}; o.jg = n.add(new Node()); o.slatT = 0; o.fa = 0;
+  }
+  // 家具の当たり判定（レジ・箱入れはカウンターの上・下なので要らない）
   function furnObstacles(s) {
     W.obstacles = W.sObs.slice();
-    for (const fid in s.fu) { const f = s.fu[fid]; if (!P.KINDS[f.k] || f.k === 'reg') continue; const b = P.box(f); const o = f.k === 'scase' ? [b[0], CZ - 0.41, b[2], CZ + 0.6] : [b[0], b[1], b[2], b[3]]; o.furn = fid; W.obstacles.push(o); }
+    for (const fid in s.fu) { const f = s.fu[fid]; if (!P.KINDS[f.k] || P.KINDS[f.k].counter && f.k !== 'scase') continue; const b = P.box(f); const o = f.k === 'scase' ? [b[0], CZ - 0.41, b[2], CZ + 0.6] : [b[0], b[1], b[2], b[3]]; o.furn = fid; W.obstacles.push(o); }
     if (W._decoObs) W.obstacles.push(...W._decoObs);
   }
   W.syncFurn = function (s) {
@@ -1388,7 +1536,7 @@
     e.cam.pos = [me.x, eye, me.z];
     e.cam.target = [me.x - Math.sin(me.yaw) * cp, eye + Math.sin(me.pitch), me.z - Math.cos(me.yaw) * cp];
     e.cam.fov = ((ST.fov || 72) * PI) / 180;
-    e.cam.near = 0.04; e.cam.far = 140;
+    e.cam.near = 0.07; e.cam.far = 140; // near を少し大きくして奥の深度の精度を上げる（床・壁のちらつき防止）
     W.fwd = [-Math.sin(me.yaw) * cp, Math.sin(me.pitch), -Math.cos(me.yaw) * cp];
   };
   // いちばん近い天井ライトだけを点灯（WebGL1 なので最大4灯）
@@ -1406,6 +1554,47 @@
   };
   // ---------- 設備（ボウルの中身・回転台・オーブン・流し） ----------
   const stOf = (s, fid) => (s.k.st && s.k.st[fid]) || {};
+  // 全自動ラインの上を流れるケーキ（段階：0 生地 → 1 オーブン → 2 冷却 → 3 クリーム → 4 トッピング → 5 出口待ち）
+  W.lineStage = function (j, g) { const d = j.d || [1, 1, 1, 1, 1]; let el = g - j.t0, k = 0; while (k < 5 && el >= d[k]) { el -= d[k]; k++; } return { k, f: k < 5 ? clamp(el / Math.max(1, d[k]), 0, 1) : 1 }; };
+  const ringTops = (r) => { const tl = [], cnt = Object.assign({}, r.tops || {}), ks = Object.keys(cnt); for (let more = true; more;) { more = false; for (const k of ks) if (cnt[k] > 0) { tl.push(k); cnt[k]--; more = true; } } return tl.map((k, i) => { const a = (i / Math.max(1, tl.length)) * PI * 2 + 0.3, rr = tl.length === 1 ? 0 : 0.55; return [Math.cos(a) * rr, Math.sin(a) * rr, k]; }); };
+  function lineItem(s, r, k, f) {
+    const cr = r.cream && r.cream !== 'none' ? r.cream : null;
+    if (k === 1) return { n: new Node(itemMesh({ t: 'pan', st: 'raw', b: r.base }, s, false)), sc: 1 };
+    if (k === 2) return { n: new Node(itemMesh({ t: 'pan', st: 'baked', b: r.base }, s, false)), sc: 1 };
+    if (k === 3) return { n: decoNode({ b: r.base, cr: f > 0.5 ? cr : null, tp: [], df: [] }), sc: CAKE_SC };
+    if (k === 4) { const tp = ringTops(r); return { n: decoNode({ b: r.base, cr, tp: tp.slice(0, Math.ceil(tp.length * Math.min(1, f * 1.2))), df: [] }), sc: CAKE_SC }; }
+    return { n: MD.cake(W.eng, r, 6, 1, [], false), sc: CAKE_SC };
+  }
+  function updLine(s, fid, o, b, g, dt) {
+    const seen = {}, on = !!b.on;
+    let belt = false, oven = false, mixing = null, coating = null, topping = null;
+    for (const j of b.q || []) {
+      const r = sim.recipe(s, j.r); if (!r) continue;
+      const { k, f } = W.lineStage(j, g);
+      seen[j.i] = 1;
+      if (k === 0) mixing = { r, f };
+      const key = k === 0 ? '' : k + '|' + j.r + '|' + (k === 3 ? (f > 0.5 ? 1 : 0) : k === 4 ? Math.min(9, Math.ceil(f * 6)) : 0);
+      let jn = o.jobs[j.i];
+      if (jn && jn.key !== key) { o.jg.remove(jn.n); W.eng.freeTree(jn.n); delete o.jobs[j.i]; jn = null; }
+      if (!jn && key) { const it = lineItem(s, r, k, f); o.jg.add(it.n); jn = o.jobs[j.i] = { n: it.n, key, sc: it.sc }; }
+      if (!jn) continue;
+      const x = k === 1 ? lerp(-1.85, 0.2, f) : k === 2 ? lerp(0.28, 0.95, f) : k === 3 ? 1.2 : k === 4 ? 1.72 : 1.88;
+      jn.n.p = [x, k === 3 ? 0.918 : 0.905, 0]; jn.n.s = [jn.sc, jn.sc, jn.sc]; jn.n.r = [0, k === 3 ? o.lta : 0, 0];
+      if (k === 1 || k === 2) belt = true; if (k === 1) oven = true; if (k === 3) coating = f; if (k === 4) topping = f;
+    }
+    for (const id in o.jobs) if (!seen[id]) { o.jg.remove(o.jobs[id].n); W.eng.freeTree(o.jobs[id].n); delete o.jobs[id]; }
+    // ベルト・ファン・オーブンの窓・ミキサー・ノズル・アーム
+    if (belt || (on && (b.q || []).length)) o.slatT += dt * 0.32;
+    const span = 3.85; o.slats.forEach((sl, k) => { sl.p[0] = -1.95 + ((k * span / o.slats.length + o.slatT) % span); });
+    o.fa += on ? dt * 9 : 0; o.fans.forEach((fn) => (fn.r[1] = o.fa));
+    o.lwin.em = oven ? 0.45 : on ? 0.12 : 0; o.lwin.color = oven ? rgb('#E2802F') : on ? rgb('#7A3A14') : rgb('#202020');
+    const bw = o.bowl;
+    if (mixing) { const kk = clamp(Math.round(4 + mixing.f * 6), 1, 10); if (bw.lv !== kk) { bw.lv = kk; bw.f.meshes = W.fillM[kk - 1]; bw.f.p = [0, 0.004 + (0.014 * kk) / 2, 0]; } bw.f.vis = true; bw.f.color = mix('#F4E7C6', (D.BASES[mixing.r.base] || {}).color || '#EFC77C', mixing.f); bw.w.r[1] += dt * 18; bw.w.p[1] = 0.13; }
+    else { bw.f.vis = false; bw.w.p[1] = 0.25; }
+    if (coating != null) { o.lta += dt * 3; o.noz.p[1] = 1.24 + Math.sin(g / 150) * 0.02; } else o.noz.p[1] = lerp(o.noz.p[1], 1.4, 1 - Math.exp(-dt * 6));
+    o.ltt.r[1] = o.lta;
+    o.arm.p[1] = topping != null ? 1.12 + Math.abs(Math.sin(g / 220)) * 0.12 : lerp(o.arm.p[1], 1.32, 1 - Math.exp(-dt * 6));
+  }
   W.updateStations = function (s, g, dt) {
     const fillOf = (b, cream) => {
       const ings = b.ings || [], n = ings.length; const lvl = clamp(n / 8, 0, 1);
@@ -1416,15 +1605,17 @@
     };
     for (const fid in W.fn) {
       const o = W.fn[fid], b = stOf(s, fid);
+      if (o.k === 'line') { updLine(s, fid, o, b, g, dt); continue; }
+      if (o.noz) { const coat = b.st === 'auto' && b.ph === 'coat'; o.noz.p[1] = coat ? 1.3 + Math.sin(g / 140) * 0.02 : lerp(o.noz.p[1], 1.42, 1 - Math.exp(-dt * 6)); }
       if (o.bowl) {
-        const bw = o.bowl, f = fillOf(b, o.k === 'whip');
+        const bw = o.bowl, f = fillOf(b, o.k === 'whip' || o.k === 'awhip');
         if (f.lvl > 0) { const k = clamp(Math.round(f.lvl * 10), 1, 10); if (bw.lv !== k) { bw.lv = k; bw.f.meshes = W.fillM[k - 1]; bw.f.p = [0, 0.004 + (0.014 * k) / 2, 0]; } bw.f.vis = true; bw.f.color = rgb(f.col); } else bw.f.vis = false;
         const run = b.st === 'run' || !!b.by;
         bw.w.r[1] += run ? dt * 18 : 0; bw.w.p[1] = run ? 0.13 : 0.25; bw.w.p[0] = run ? Math.sin(g / 120) * 0.03 : 0;
         bw.w.vis = bw.mix || run;
       }
       if (o.tt) {
-        if (b.st === 'run' || b.by) o.a += dt * 2.6;
+        if (b.st === 'run' || b.by || (b.st === 'auto' && b.ph !== 'fin')) o.a += dt * 2.6;
         else { const tgt = Math.round(o.a / (PI * 2)) * PI * 2; o.a = lerp(o.a, tgt, 1 - Math.exp(-dt * 8)); }
         o.tt.r[1] = o.a;
       }
@@ -1600,6 +1791,21 @@
       if (j && j.k === 'serve' && c) { const q = custTarget(s, c, j.c); return { x: clamp(q[0], -RX + 0.5, W.L.g.counter.x1 - 0.3), z: CZ - 0.75, fx: q[0], fz: q[1] }; }
       if (f) return { x: f.x - 0.3, z: CZ - 0.75, fx: f.x, fz: CZ + 2 };
     }
+    if (m.task === 'feed') {
+      // 機械係：取りに行く所（前半）→ 機械（後半）。ひまなときは最初の自動の機械の前
+      if (j) {
+        const go = !j.hd && j.from && s.fu[j.from] ? j.from : j.fid && s.fu[j.fid] ? j.fid : j.to ? String(j.to).split(':')[1] : null;
+        const gf = go && fOf(s, go);
+        if (gf && gf.k === 'line') {
+          // 長いライン：材料は左の投入口、ケーキは右の出口
+          const lx = go === j.fid && j.k !== 'f-carry' ? -2.1 : 2.2, q = P.local(gf, lx, 0, 0.6 + 0.55), c = P.local(gf, lx, 0, 0);
+          return { x: q[0], z: q[2], fx: c[0], fz: c[2], carry: !!j.hd };
+        }
+        const q = gf && at(go, 0.6); if (q) return Object.assign(q, { carry: !!j.hd });
+      }
+      const mf = ['line', 'adeco', 'aoven', 'amixer', 'awhip'].map((k) => P.list(s, k)[0]).find(Boolean);
+      if (mf) { const q = at(mf, 0.9); if (q) return q; }
+    }
     if (j && j.fid && s.fu[j.fid]) { const q = at(j.fid); if (q) return q; }
     const fid = TASK_KIND[m.task] && P.list(s, TASK_KIND[m.task])[0];
     if (fid) { const q = at(fid, 0.75); if (q) return q; }
@@ -1622,7 +1828,7 @@
   }
   W.updateStaff = function (dt, s) {
     const list = s.staff || [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 8; i++) {
       const m = list[i]; let o = W.staffN['staff' + i];
       const key = m ? m.name + JSON.stringify(m.skin || {}) : '';
       if (o && o.key !== key) { W.people.remove(o.ch.node); delete W.staffN['staff' + i]; o = null; }
@@ -1665,7 +1871,7 @@
   const yen = (n) => '¥' + Math.round(n || 0).toLocaleString();
   W.itemName = (it, s) => (!it ? '' : K.label(s, it) + (it.t === 'ing' ? ' ×' + it.n : ''));
   // 手に持っている物を捨てるボタンの名前
-  W.delLabel = (held) => (!held || held.t === 'fcrate' ? '' : held.t === 'crate' ? ((held.sp || 0) >= 2 && held.n > 0 ? '捨てる' : '') : held.t === 'plate' ? '落とす（割れる）' : '捨てる');
+  W.delLabel = (held) => (!held || held.t === 'fcrate' ? '' : held.t === 'crate' ? ((held.sp || 0) >= 2 && held.n > 0 ? '捨てる' : '') : held.t === 'plate' ? '落とす（割れる）' : held.t === 'pan' && held.st !== 'empty' ? '中身を捨てる' : '捨てる');
   const SHORT = (s, it) => (it.t === 'ing' ? nm(it.ing) + ' ' + it.n : it.t === 'plate' ? (it.dirty ? '汚れたお皿' : 'お皿') : it.t === 'pan' && it.st === 'empty' ? (it.dirty ? '汚れた型' : 'ケーキ型') : K.label(s, it));
   // ケーキに対する操作（ナイフで切る・ホールのまま箱へ・1切れずつ箱／お皿へ）
   function cakeT(s, t, held, top, topId) {
@@ -1691,15 +1897,30 @@
   function slotT(s, fid, f, k, sl, held) {
     const at = 'f:' + fid + ':' + k, ids = K.inSlot(s, at), topId = ids.length ? ids[ids.length - 1] : null, top = topId ? s.k.items[topId] : null;
     const T = sl[3], Kd = P.KINDS[f.k], cold = !!Kd.cold;
-    if (!top && !held) return null;
     const p = P.local(f, sl[0], sl[1], sl[2]);
-    const t = { slot: at, item: topId, fid, pp: [p[0], p[1] + (T === 'tray' ? 0.12 : T === 'fridge' ? 0.1 : T === 'crate' ? 0.2 : 0.07), p[2]], rr: T === 'tray' ? 0.24 : T === 'fridge' ? 0.18 : T === 'crate' ? 0.26 : 0.17 };
+    if (!top && !held) return T === 'boxes' ? { slot: at, fid, pp: [p[0], p[1] + 0.09, p[2]], rr: 0.2, boost: 0.35, name: W.fname(s, fid) + '（空き：箱の段ボールを持ってきて、開けてしまう）' } : null;
+    const t = { slot: at, item: topId, fid, pp: [p[0], p[1] + (T === 'tray' || T === 'out' ? 0.12 : T === 'fridge' ? 0.1 : T === 'crate' ? 0.2 : T === 'boxes' ? 0.09 : 0.07), p[2]], rr: T === 'tray' ? 0.24 : T === 'out' ? 0.2 : T === 'fridge' ? 0.18 : T === 'crate' ? 0.26 : T === 'boxes' ? 0.2 : 0.17 };
+    if (T === 'boxes') t.boost = 0.35; // レジの下の箱入れは、レジより先にねらえるように
     if (top) t.name = W.itemName(top, s) + (ids.length > 1 ? '（' + ids.length + 'つ）' : '');
-    else t.name = W.fname(s, fid) + (T === 'dry' ? '：水切りかご' : T === 'mixpan' ? '：型置き' : '') + '（空き' + (T === 'tray' || T === 'any' ? (cold ? '・冷蔵' : '・常温') : '') + '）';
+    else t.name = W.fname(s, fid) + (T === 'dry' ? '：水切りかご' : T === 'mixpan' ? '：型置き' : T === 'boxes' ? '：ケーキの箱をしまう所' : T === 'out' ? '：出口' : '') + '（空き' + (T === 'tray' || T === 'any' ? (cold ? '・冷蔵' : '・常温') : '') + '）';
     if (top && top.t === 'tray') t.name = ((sim.recipe(s, top.r) || {}).name || 'ケーキ') + (top.w ? '（ホール・' : '（残り ' + top.p + ' 切れ・') + sim.cakeExpText(s, top.d) + '）';
     if (top && top.res) { t.name += '（アルバイトが使用中）'; return t; }
     if (held) {
       if (held.t === 'crate') {
+        if (T === 'boxes') {
+          // ケーキの箱の段ボール → 箱入れにしまう
+          const close = { label: '段ボールを閉じる', a: { t: 'openCrate', close: 1 } };
+          if (held.ing !== 'box') { t.name += '（ケーキの箱だけしまえます）'; return t; }
+          if (!held.open) { t.sec = { label: '段ボールを開ける', a: { t: 'openCrate' } }; t.name += '（開けてからしまう）'; return t; }
+          if (!(held.n > 0)) { t.sec = close; return t; }
+          const room = P.SLOT_CAP.boxes - (top && top.t === 'ing' ? top.n : 0);
+          if (top && !(top.t === 'ing' && top.ing === 'box')) { t.name += '（ほかの物が置いてある）'; return t; }
+          if (room <= 0) { t.name += '（いっぱい・' + P.SLOT_CAP.boxes + '枚まで）'; t.sec = close; return t; }
+          t.pri = { label: '箱を1枚しまう（長押しで続けて）', a: { t: 'shelve', slot: at }, hold: 1 };
+          t.sec = { label: 'しまえるだけしまう（' + Math.min(room, held.n) + '）', a: { t: 'shelve', slot: at, all: 1 } };
+          t.del = close;
+          return t;
+        }
         if (T === 'crate') { if (!top) t.pri = { label: held.n > 0 ? '段ボールを在庫棚に置く' : '空の段ボールを在庫棚に置く', a: { t: 'put', slot: at } }; else t.name += '（うまっています）'; t.sec = held.open ? { label: '段ボールを閉じる', a: { t: 'openCrate', close: 1 } } : { label: '段ボールを開ける', a: { t: 'openCrate' } }; return t; }
         if (T !== 'any') return t;
         const onTable = f.k === 'table' && !top, put = onTable ? { label: held.n > 0 ? '段ボールごと机に置く' : '空の段ボールを机に置く', a: { t: 'put', slot: at } } : null;
@@ -1761,24 +1982,34 @@
   // 設備（ミキサー・クリーム台・オーブン・デコ台・洗い場）
   function stationT(s, fid, f, Kd, held, pid, add) {
     const b = stOf(s, fid), nmF = W.fname(s, fid), kind = Kd.station, staffBusy = b.by && String(b.by).startsWith('staff');
-    if (kind === 'mix' || kind === 'whip') {
-      const t = { name: nmF, station: fid };
+    if (kind === 'mix' || kind === 'whip' || kind === 'amix' || kind === 'awhip') {
+      const t = { name: nmF, station: fid }, auto = kind === 'amix' || kind === 'awhip';
       const ings = b.ings || [];
       if (staffBusy) t.name += '（アルバイトが使用中）';
       else {
-        if (held && held.t === 'ing' && held.ing !== 'box' && b.st === 'idle') t.pri = { label: nm(held.ing) + 'を入れる（残り ' + held.n + '・長押しで続けて）', a: { t: 'addIng', fid }, hold: 1 };
+        if (held && held.t === 'ing' && held.ing !== 'box' && b.st === 'idle') { t.pri = { label: nm(held.ing) + 'を入れる（残り ' + held.n + '・長押しで続けて）', a: { t: 'addIng', fid }, hold: 1 }; if (auto && held.n > 1 && ings.length < 10) t.sec = { label: '全部入れる（' + Math.min(held.n, 10 - ings.length) + '）', a: { t: 'addIng', fid, all: 1 } }; }
+        else if (kind === 'amix' && b.st === 'done' && b.k) {
+          if (held && held.t === 'pan' && held.st === 'empty' && !held.dirty && !held.wet) t.pri = { label: '型に流す', a: { t: 'pour', fid } };
+          else t.name += '（横の型置きにきれいな型を置くと自動で流し込みます）';
+        }
+        else if (kind === 'awhip' && !held && b.st === 'done' && b.k) t.pri = { label: 'クリームをすくう', a: { t: 'scoop', fid } };
         else if (kind === 'mix' && b.st === 'done' && b.k) {
           const pz = K.at(s, K.slot0(fid)), ph = pz && s.k.items[pz];
           if (held && held.t === 'pan' && held.st === 'empty') { if (held.dirty) t.name += '（汚れた型は洗い場で洗おう）'; else if (held.wet) t.name += '（型がまだぬれている）'; else t.pri = { label: '型に流す', a: { t: 'pour', fid } }; }
           else if (!held && ph && ph.t === 'pan' && ph.st === 'empty' && !ph.dirty && !ph.wet) t.pri = { label: '横の型に流す', a: { t: 'pour', fid } };
           else if (!held) t.name += '（きれいなケーキ型を持ってこよう）';
         } else if (kind === 'whip' && !held && b.st === 'done' && b.k) t.pri = { label: 'クリームをすくう', a: { t: 'scoop', fid } };
-        if (b.st === 'idle' && ings.length) t.sec = { label: kind === 'mix' ? 'ミキサーを回す' : '泡立てる', a: { t: 'run', fid } };
-        if (b.st === 'run') t.sec = { label: kind === 'mix' ? 'ミキサーを止める' : '泡立てを止める', a: { t: 'run', fid } };
-        if (ings.length || b.st === 'done') t.del = { label: 'ボウルを空ける', a: { t: 'dump', fid } };
-        if (!t.pri && !held && b.st === 'idle' && !ings.length) t.name += '（棚から材料を持ってきて入れる）';
+        if (!auto && b.st === 'idle' && ings.length) t.sec = { label: kind === 'mix' ? 'ミキサーを回す' : '泡立てる', a: { t: 'run', fid } };
+        if (!auto && b.st === 'run') t.sec = { label: kind === 'mix' ? 'ミキサーを止める' : '泡立てを止める', a: { t: 'run', fid } };
+        if (ings.length || b.st === 'done') {
+          t.del = { label: 'ボウルを空ける', a: { t: 'dump', fid } };
+          // 失敗した生地・クリームは「使う」ボタンでも捨てられる
+          if (b.st === 'done' && !b.k && !t.sec) t.sec = t.del;
+        }
+        if (!t.pri && !held && b.st === 'idle' && !ings.length) t.name += auto ? '（材料を入れるだけ。順番は気にしなくてOK）' : '（棚から材料を持ってきて入れる）';
+        if (auto && b.st === 'run') t.name += '（自動で混ぜています）';
       }
-      add(kind === 'mix' ? P.local(f, -0.2, 1.1, 0.05) : P.local(f, -0.15, 1.02, 0.04), 0.22, t);
+      add(kind === 'mix' || kind === 'amix' ? P.local(f, -0.2, 1.1, 0.05) : P.local(f, -0.15, 1.02, 0.04), 0.26, t);
     } else if (kind === 'oven') {
       const sl = K.slot0(fid), id = K.at(s, sl), it = id && s.k.items[id];
       const t = { name: nmF + '（' + (b.h ? b.temp + '℃' : '電源オフ') + '）', station: fid, item: id || null };
@@ -1807,6 +2038,36 @@
         }
       }
       add(P.local(f, 0, 1.02, 0.04), 0.25, t);
+    } else if (kind === 'aoven') {
+      const sl = K.slot0(fid), id = K.at(s, sl), it = id && s.k.items[id];
+      const stt = !it ? '空き・生地を入れるだけで焼けます' : it.st === 'baking' ? '焼いています' : it.st === 'baked' ? '焼き上がり' : b.h && (s && W.room && W.room.now() < (b.hot || 0)) ? '予熱中' : '温度を合わせています';
+      const t = { name: nmF + '（' + stt + '）', station: fid, item: id || null };
+      if (it && it.res) t.name += '（アルバイトが使用中）';
+      else if (!held && it) t.pri = { label: it.st === 'baking' ? '途中で取り出す' : '取り出す', a: { t: 'pick', id } };
+      else if (held && !it) { const why = K.canPut(s, sl, held); if (!why) t.pri = { label: '自動オーブンに入れる', a: { t: 'put', slot: sl } }; else t.name += '・' + why; }
+      add(P.local(f, 0, 0.95, 0.45), 0.42, t);
+    } else if (kind === 'adeco') {
+      const sl = K.slot0(fid), did = K.at(s, sl), dk = did && s.k.items[did];
+      const rn = b.r ? ((sim.recipe(s, b.r) || {}).name || '') : 'おまかせ';
+      const t = { name: nmF + '（作るケーキ：' + rn + '）', station: fid, item: did || null };
+      if (staffBusy) t.name += '（アルバイトが使用中）';
+      else {
+        if (dk && dk.t === 'cake' && cakeT(s, t, held, dk, did)) { /* ナイフ・箱・お皿 */ }
+        else if (!held && dk && b.st !== 'auto') t.pri = { label: dk.t === 'cake' ? 'ケーキを持つ' : '作りかけを持つ', a: { t: 'pick', id: did } };
+        else if (held && held.t === 'cream') t.pri = { label: (D.CREAMS[held.k] || {}).name + 'をタンクにセット', a: { t: 'mcream', fid } };
+        else if (held && held.t === 'ing' && D.TOPS[held.ing]) { t.pri = { label: nm(held.ing) + 'を補充（長押しで続けて）', a: { t: 'addIng', fid }, hold: 1 }; if (held.n > 1) t.sec = { label: '全部補充（' + held.n + '）', a: { t: 'addIng', fid, all: 1 } }; }
+        else if (held && !dk) { const why = K.canPut(s, sl, held); if (!why) t.pri = { label: held.t === 'pan' ? 'スポンジをのせる（型から出す）' : 'のせる', a: { t: 'put', slot: sl } }; else t.name += '・' + why; }
+        if (!held && !t.sec) t.sec = { label: '作るケーキを選ぶ', ui: 'amode:' + fid };
+        if (b.cr && b.cr.n > 0 && b.st !== 'auto' && !t.del) t.del = { label: 'クリームのタンクを空ける', a: { t: 'dump', fid } };
+      }
+      add(P.local(f, -0.18, 1.05, 0.08), 0.3, t);
+    } else if (kind === 'line') {
+      const rn = b.r ? ((sim.recipe(s, b.r) || {}).name || '') : 'おまかせ';
+      const t = { name: nmF + '：投入口（' + (b.on ? '運転中' : '停止中') + '・' + rn + '）', station: fid };
+      if (held && held.t === 'ing' && held.ing !== 'box') { t.pri = { label: nm(held.ing) + 'を投入（長押しで続けて）', a: { t: 'addIng', fid }, hold: 1 }; if (held.n > 1) t.sec = { label: '全部投入（' + held.n + '）', a: { t: 'addIng', fid, all: 1 } }; }
+      else if (!held) { t.name += '（材料を持ってきて入れるだけ）'; t.sec = { label: '作るケーキを選ぶ', ui: 'amode:' + fid }; if (Object.keys(b.hop || {}).length) t.del = { label: '投入口の材料を棚に戻す', a: { t: 'dump', fid } }; }
+      add(P.local(f, -2.3, 1.42, 0.05), 0.42, t);
+      add(P.local(f, -1.25, 1.1, 0.45), 0.24, { name: nmF + '：操作パネル（' + (b.on ? '運転中' : '停止中') + '・作るケーキ：' + rn + '）', station: fid, pri: { label: b.on ? 'ラインを止める' : 'ラインを動かす', a: { t: 'lineOn', fid } }, sec: { label: '作るケーキを選ぶ', ui: 'amode:' + fid } });
     } else if (kind === 'sink') {
       const sl = K.slot0(fid), id = K.at(s, sl), it = id && s.k.items[id];
       const t = { name: nmF, station: fid, item: id || null };
@@ -1827,7 +2088,7 @@
     const t = { name: 'ゴミ箱' };
     if (!held) return t;
     if (held.t === 'crate' && held.n > 0 && (held.sp || 0) < 2) { t.name += '（中身は棚に置こう）'; return t; }
-    t.pri = { label: held.t === 'crate' ? (held.n > 0 ? '傷んだ段ボールを捨てる（廃棄）' : '空の段ボールを捨てる') : held.t === 'plate' ? 'お皿を捨てる（1枚減る）' : held.t === 'pan' && held.st === 'empty' ? '型を捨てる（1つ減る）' : '捨てる', a: { t: 'trash' } };
+    t.pri = { label: held.t === 'crate' ? (held.n > 0 ? '傷んだ段ボールを捨てる（廃棄）' : '空の段ボールを捨てる') : held.t === 'plate' ? 'お皿を捨てる（1枚減る）' : held.t === 'pan' && held.st === 'empty' ? '型を捨てる（1つ減る）' : held.t === 'pan' ? '中身を捨てる（型は残る）' : '捨てる', a: { t: 'trash' } };
     return t;
   }
   function payAct(c, id) { return c.pm === 'card' ? { label: 'カードをタッチしてお会計（' + yen(c.due) + '）', a: { t: 'pay', c: id } } : { label: 'お会計（' + yen(c.tend) + ' お預かり・お釣りを選ぶ）', pay: id }; }
@@ -1864,13 +2125,19 @@
     }
     const cands = [];
     const reachable = (p) => { for (const w of W.rayWalls) if (segHit(o[0], o[2], p[0], p[2], w)) return false; return true; };
-    const add = (p, r, t, reach) => { if (!t) return; const dist = raySphere(o, d, p, r); if (dist >= 0 && dist <= (reach || REACH) && reachable(p)) cands.push(Object.assign(t, { dist, p })); };
+    const add = (p, r, t, reach) => { if (!t) return; const dist = raySphere(o, d, p, r); if (dist >= 0 && dist <= (reach || REACH) && reachable(p)) cands.push(Object.assign(t, { dist: dist - (t.boost || 0), p })); };
+    // 機械の本体をねらっていれば、その機械の操作（照準が少しずれても、手の物を捨ててしまわないように）
+    const bodyHits = [];
     const working = s.phase === 'prep' || s.phase === 'open';
     // 家具（置く所・設備）
     for (const fid in s.fu) {
       const f = fOf(s, fid), Kd = P.KINDS[f.k]; if (!Kd) continue;
       if (Math.hypot(f.x - o[0], f.z - o[2]) > REACH + 1.8) continue;
-      if (Kd.station) stationT(s, fid, f, Kd, held, pid, add);
+      if (Kd.station) {
+        stationT(s, fid, f, Kd, held, pid, add);
+        const bb = P.box(f), bd = rayBox(o, d, [bb[0], 0, bb[1]], [bb[2], Kd.h || 1, bb[3]]);
+        if (bd >= 0 && bd <= REACH && reachable([f.x, 1, f.z])) bodyHits.push({ fid, f, Kd, dist: bd });
+      }
       if (f.k === 'trash') add(P.local(f, 0, 0.6, 0), 0.32, trashT(held));
       if (f.k === 'reg') add(P.local(f, -0.1, 1.05, 0), 0.48, regT(s, fid));
       Kd.slots.forEach((sl, k) => { if (sl[3] === 'turn' || sl[3] === 'oven' || sl[3] === 'basin') return; const t = slotT(s, fid, f, k, sl, held); if (t) add(t.pp, t.rr, t); });
@@ -1899,9 +2166,21 @@
       if (c.st === 'q' && K.queue(s, c.reg)[0] === id && oc.atSpot) t.pri = { label: '注文を受ける', a: { t: 'takeOrder', c: id } };
       if (c.st === 'w') { t.name = '注文 #' + c.no + '：' + K.ordText(s, c.ord, c.wh) + (c.dine ? '（店内・お皿で）' : '（持ち帰り・箱で）'); if (held && (held.t === 'box' || held.t === 'plate')) t.pri = { label: (held.t === 'box' ? '箱' : 'お皿') + 'を渡す', a: { t: 'serve', c: id } }; }
       if (c.st === 'pay') { t.name = 'お会計待ち（' + (c.pm === 'card' ? 'カード' : '現金 ' + yen(c.tend)) + '）'; if (K.payQ(s, c.reg)[0] === id && oc.atSpot && !c.res) t.pri = payAct(c, id); }
+      if (c.st === 'eat') t.name = 'お客さん（店内で食べています）';
+      // ねらって「帰ってもらう」（押しまちがえないように、2回押すと帰ってもらう）
+      if (c.st !== 'out' && working) {
+        const armed = W._shoo && W._shoo.id === id && performance.now() < W._shoo.until;
+        t.del = { label: armed ? 'もう一度押すと帰ってもらう' : '帰ってもらう', fn: () => { if (W._shoo && W._shoo.id === id && performance.now() < W._shoo.until) { W._shoo = null; send({ t: 'shoo', c: id }); } else { W._shoo = { id, until: performance.now() + 2600 }; CS.ui.toast('もう一度「帰ってもらう」を押すと、このお客さんに帰ってもらいます'); } } };
+      }
       add([oc.x, 1.25, oc.z], 0.42, t);
     }
     cands.sort((a, b) => a.dist - b.dist);
+    bodyHits.sort((a, b) => a.dist - b.dist);
+    const bh = bodyHits[0];
+    if (bh && (!cands.length || (cands[0].dist > bh.dist + 0.45 && cands[0].station !== bh.fid && cands[0].fid !== bh.fid))) {
+      const extra = []; stationT(s, bh.fid, bh.f, bh.Kd, held, pid, (p, r, t2) => { if (t2) extra.push(Object.assign(t2, { dist: bh.dist, p })); });
+      if (extra.length) cands.unshift(extra[0]);
+    }
     let t = cands[0] || null;
     // 段ボール（空でもOK）を持っているとき → 床に置ける（床をねらう／前を向いていれば足もとの少し先）
     if (held && held.t === 'crate') {
@@ -1983,7 +2262,7 @@
     send({ t: 'fmove', id: fid, x: f.x, z: f.z, r });
   };
   // 操作（つかむ・置く／使う／捨てる）
-  const REPEAT_OK = { addIng: 1, slice: 1, unslice: 1, shelve: 1, take: 1, put: 1, topPlace: 1, topTake: 1 };
+  const REPEAT_OK = { addIng: 1, slice: 1, unslice: 1, shelve: 1, take: 1, put: 1, topPlace: 1, topTake: 1, mcream: 1 };
   function send(a) {
     if (!a || !W.room) return;
     // 連打・通信待ちの二重送信を防ぐ（同じ操作は 0.6 秒あける。続けて置く・取る操作はのぞく）
@@ -2009,6 +2288,7 @@
   W.secondary = function () {
     const t = W.target; if (!t || !t.sec) return;
     if (t.sec.fn) { CS.sound.play('tap'); t.sec.fn(); return; }
+    if (t.sec.ui) { CS.sound.play('tap'); if (W.onUI) W.onUI(t.sec.ui); return; }
     if (t.sec.pay) { if (W.onPay) W.onPay(t.sec.pay); return; }
     if (t.sec.wash) { if (W.onWash) W.onWash(t.sec.wash); return; }
     if (t.sec.a) send(t.sec.a);
@@ -2067,6 +2347,7 @@
   };
   function setHTML(el, h) { if (el._h !== h) { if (!el._h || el._h.length !== h.length) el._hh = null; el._h = h; el.innerHTML = h; } }
   const esc = (x) => CS.art.esc(x);
+  function prog(f) { return `<span class="pb"><i style="width:${(clamp(f, 0, 1) * 100).toFixed(0)}%"></i></span>`; }
   function meter(m, lo, hi, max) { return `<span class="dm"><u style="left:${((lo / max) * 100).toFixed(1)}%;width:${(((hi - lo) / max) * 100).toFixed(1)}%"></u><b style="left:${(clamp(m / max, 0, 1) * 100).toFixed(1)}%"></b></span>`; }
   const dryLeft = (it, g) => (it.wet ? (it.wd ? Math.max(0, Math.ceil((it.wd - g) / 1000)) : Math.ceil((D.RULES.DRY_MS || 30000) / 1000)) : 0);
   W.updateLabels = function (s, g) {
@@ -2098,6 +2379,63 @@
           if (b.st === 'done') h += `<small class="${b.k ? 'ok' : 'bad'}">${b.k ? esc(kind === 'mix' ? D.BASES[b.k].name : D.CREAMS[b.k].name) + ' 完成' + (b.df && b.df.length ? '（' + b.df.map((x) => esc(D.DEFECTS[x].name)).join('・') + '）' : '') + (kind === 'mix' ? '・型に流そう' : '・すくって使おう') : '失敗…ボウルを空けよう'}</small>`;
           if (!ings.length && b.st === 'idle') h += '<small>棚から材料を持ってきて入れる</small>';
           setHTML(el, h); place(el, kind === 'mix' ? P.local(f, -0.2, 1.7, 0.05) : P.local(f, -0.15, 1.45, 0.04));
+        }
+      } else if (kind === 'amix' || kind === 'awhip') {
+        const ings = b.ings || [];
+        if (look || (b.st === 'run' && near(f.x, f.z, 6)) || (near(f.x, f.z, 2.6) && (ings.length || b.st !== 'idle'))) {
+          const el = lab('st' + fid, 'st-lb auto' + (look ? ' near' : ''));
+          const nmK = (id) => (kind === 'amix' ? D.BASES[id].name : D.CREAMS[id].name);
+          let h = `<b>${esc(W.fname(s, fid))}</b>`;
+          if (b.by && String(b.by).startsWith('staff')) h += '<small>アルバイトが材料を入れています</small>';
+          if (ings.length && b.st !== 'done') { const cnt = {}; ings.forEach((x) => (cnt[x] = (cnt[x] || 0) + 1)); h += `<small>${Object.keys(cnt).map((x) => esc(nm(x)) + '×' + cnt[x]).join(' ')}</small>`; const id = kind === 'amix' ? K.baseFromIngs(ings) : K.creamFromIngs(ings); if (b.st === 'idle') h += `<small class="${id ? 'ok' : ''}">${id ? '→ ' + esc(nmK(id)) : '（レシピの材料にまだ足りない）'}</small>`; }
+          if (b.st === 'idle' && b.why) h += `<small class="${/合いません/.test(b.why) ? 'bad' : 'ok'}">${esc(b.why)}</small>`;
+          if (b.st === 'run') h += prog((g - b.t0) / Math.max(1, (b.sec || 1) * 1000)) + '<small>自動で混ぜています</small>';
+          if (b.st === 'done') h += `<small class="${b.k ? 'ok' : 'bad'}">${b.k ? esc(nmK(b.k)) + ' 完成' + (kind === 'amix' ? '・横の型置きにきれいな型を置くと自動で流します' : '・すくって自動デコ機のタンクへ（残り ' + (b.n || 0) + '）') : '失敗…ボウルを空けよう'}</small>`;
+          if (!ings.length && b.st === 'idle') h += '<small>材料を入れるだけで自動で混ぜます</small>';
+          setHTML(el, h); place(el, kind === 'amix' ? P.local(f, -0.2, 1.75, 0.05) : P.local(f, -0.15, 1.5, 0.04));
+        }
+      } else if (kind === 'aoven') {
+        const id = K.at(s, K.slot0(fid)), it = id && s.k.items[id];
+        if (look || (it && near(f.x, f.z, 6))) {
+          const el = lab('st' + fid, 'st-lb auto' + (look ? ' near' : ''));
+          let h = `<b>${esc(W.fname(s, fid))}</b>`;
+          if (!it) h += '<small>生地を流した型を入れるだけ。温度も時間も自動です</small>';
+          else if (it.st === 'raw') h += `<small>${b.h && g < (b.hot || 0) ? '予熱中… ' + b.temp + '℃（終わると自動で焼き始めます）' : '焼き始めます'}</small>`;
+          else if (it.st === 'baking' && it.bk) h += `<small>${esc((D.BASES[it.b] || {}).name || '')}・${it.bk.temp}℃・あと${Math.max(0, Math.ceil((it.bk.t0 + it.bk.dur - g) / 1000))}秒</small>` + prog((g - it.bk.t0) / Math.max(1, it.bk.dur));
+          else if (it.st === 'baked') h += '<small class="ok">焼き上がり（ちょうどよく止めました）・デコ台へ</small>';
+          setHTML(el, h); place(el, P.local(f, 0, 1.8, 0.4));
+        }
+      } else if (kind === 'adeco') {
+        const did = K.at(s, K.slot0(fid)), dk = did && s.k.items[did];
+        if (look || (dk && near(f.x, f.z, 3.2)) || (near(f.x, f.z, 2.2) && b.cr)) {
+          const el = lab('st' + fid, 'st-lb auto' + (look ? ' near' : ''));
+          const rn = b.r ? (sim.recipe(s, b.r) || {}).name || '' : 'おまかせ';
+          let h = `<b>${esc(W.fname(s, fid))}</b><small>作るケーキ：${esc(rn)}</small>`;
+          const tank = b.cr && b.cr.n > 0 ? esc(D.CREAMS[b.cr.k].short || D.CREAMS[b.cr.k].name) + '×' + b.cr.n : 'なし';
+          const hop = Object.keys(b.hop || {}).filter((k) => K.hopN(b, k) > 0).map((k) => esc(nm(k)) + '×' + K.hopN(b, k)).join(' ');
+          h += `<small>クリーム：${tank}　トッピング：${hop || 'なし'}</small>`;
+          if (b.ph === 'coat') h += prog(1 - ((b.t1 || g) - g) / K.AUTO_MS.coat) + '<small>クリームを塗っています</small>';
+          else if (b.ph === 'top') h += '<small>トッピングをのせています</small>';
+          else if (b.ph === 'fin') h += '<small>仕上げています</small>';
+          else if (dk && dk.t === 'cake') h += `<small class="ok">${esc((sim.recipe(s, dk.r) || {}).name || '')} 完成！ショーケースへ</small>`;
+          else if (b.why) h += `<small class="bad">${esc(b.why)}</small>`;
+          else if (!dk) h += '<small>焼けた型をのせる（クリームはタンク、トッピングは補充口へ）</small>';
+          if (b.made) h += `<small>今日 ${b.made} 台</small>`;
+          setHTML(el, h); place(el, P.local(f, 0, 1.75, 0.04));
+        }
+      } else if (kind === 'line') {
+        if (look || near(f.x, f.z, 4.5)) {
+          const el = lab('st' + fid, 'st-lb auto' + (look ? ' near' : ''));
+          const rn = b.r ? (sim.recipe(s, b.r) || {}).name || '' : 'おまかせ';
+          let h = `<b>${esc(W.fname(s, fid))}（${b.on ? '運転中' : '停止中'}）</b><small>作るケーキ：${esc(rn)}</small>`;
+          const hop = Object.keys(b.hop || {}).filter((k) => K.hopN(b, k) > 0).map((k) => esc(nm(k)) + '×' + K.hopN(b, k));
+          h += `<small>投入口：${hop.length ? hop.slice(0, 8).join(' ') + (hop.length > 8 ? ' …' : '') : '空'}</small>`;
+          const q = (b.q || []).filter((j) => j && j.r);
+          if (q.length) { const cnt = [0, 0, 0, 0, 0]; q.forEach((j) => { const k = W.lineStage(j, g).k; if (k < 5) cnt[k]++; }); h += `<small>${K.LINE_STAGES.map((x, i) => esc(x) + ' ' + cnt[i]).join(' → ')}</small>`; }
+          if (b.why) h += `<small class="${b.on ? 'bad' : ''}">${esc(b.why)}</small>`;
+          if (b.need && sim.recipe(s, b.need)) { const nd = K.lineReq(s, fid, b.need), miss = Object.keys(nd).filter((k) => K.hopN(b, k) < nd[k]).map((k) => esc(nm(k)) + ' あと' + (nd[k] - K.hopN(b, k))); if (miss.length) h += `<small>${esc(sim.recipe(s, b.need).name)}：${miss.join('・')}</small>`; }
+          if (b.made) h += `<small class="ok">今日 ${b.made} 台できました</small>`;
+          setHTML(el, h); place(el, P.local(f, -0.6, 2.25, 0.1));
         }
       } else if (kind === 'oven') {
         const id = K.at(s, K.slot0(fid)), it = id && s.k.items[id];
@@ -2152,7 +2490,8 @@
         }
       }
       // 棚・机の中身の名札（近くにいるとき）
-      if (Kd.slots.length && distMe(f.x, f.z) < 2.7 && !kind) {
+      // カウンター裏の箱入れは厨房側からだけ（売り場からは見えない）
+      if (Kd.slots.length && distMe(f.x, f.z) < 2.7 && !kind && !(Kd.under && W.me.z > f.z)) {
         Kd.slots.forEach((sl, k) => {
           if (sl[3] === 'tray') return;
           const at = 'f:' + fid + ':' + k, ids = K.inSlot(s, at); if (!ids.length) return;

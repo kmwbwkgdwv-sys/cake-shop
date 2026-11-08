@@ -126,7 +126,7 @@
     W.onPay = (cid) => game.openChange(cid);
     W.onBuild = (on) => game.renderBuildBar(on);
     W.onTarget = (t, held) => game.renderPrompt(t, held);
-    W.onUI = (k) => { if (k === 'pc') game.openPC(); else if (k === 'menu') game.openMenu('sell'); };
+    W.onUI = (k) => { if (k === 'pc') game.openPC(); else if (k === 'menu') game.openMenu('sell'); else if (String(k).startsWith('amode:')) game.openAutoMode(String(k).slice(6)); };
     { const used = {}; W.onMouseUsed = (k) => { used[k] = 1; if (used.move && used.click) { const h = $('#lockhint'); if (h && !h.hidden) { h.hidden = true; CS.LS.set('cs.mh', true); } } }; }
     if (!game._plBound) {
       game._plBound = true;
@@ -588,13 +588,14 @@
         const s = S();
         const howTo = `<div class="card soft"><h3>作り方（ショートケーキの例）</h3><ol class="howto">
           <li><b>道具をそろえる</b>：最初は机・棚・冷蔵棚・冷蔵庫・クリーム台・洗い場・商品棚・レジ・ゴミ箱、ケーキの型1つ・お皿1枚だけ。パソコン室のパソコンの「家具・道具」でオーブン・ミキサー台・デコ台を買う。<b>「配置」</b>で家具を好きな場所に動かせる</li>
-          <li><b>仕入れ</b>：「材料の注文」でカートに入れて「発送」→ トラックが裏の路地に来たら、倉庫の裏口から出て荷台の段ボールを運ぶ →「開ける」→ 棚の好きな所に「置く」（同じ物は同じ所に重なる。空けるとまた何でも置ける）。ケーキの<b>箱</b>も仕入れる</li>
+          <li><b>仕入れ</b>：「材料の注文」でカートに入れて「発送」→ トラックが裏の路地に来たら、倉庫の裏口から出て荷台の段ボールを運ぶ →「開ける」→ 棚の好きな所に「置く」（同じ物は同じ所に重なる。空けるとまた何でも置ける）。ケーキの<b>箱</b>も仕入れる。箱の段ボールは開けて<b>カウンター裏の箱入れ</b>（レジの下の穴）にしまえる（30枚まで）</li>
           <li><b>生地</b>：棚の材料を「1つ取る」（長押しで続けて）→ ミキサーで<b>順番どおり</b>に入れる（取りすぎたら棚に「1つ戻す」）→ 回してゲージの<b class="pos">緑</b>で止める → きれいなケーキ型を持って「型に流す」</li>
           <li><b>焼く</b>：オーブンに入れて電源ON（温度は生地ごとの適温）→ ゲージの緑で「取り出す」→ 机や冷却ラックで冷ます</li>
           <li><b>クリーム</b>：クリーム台に材料を入れて泡立て、緑で止める →「すくう」</li>
           <li><b>デコ</b>：冷めた型をデコ台にのせる（空いた型は汚れる）→ クリームを持って「塗る」→ 指でなぞってまんべんなく → トッピングを棚から取ってケーキの上に1つずつ置く（まちがえたら「1つ取る」）→「仕上げる」</li>
           <li><b>並べる</b>：できたケーキを商品棚に置くと<b>切って並ぶ</b>。クリームのケーキは<b>冷蔵</b>の商品棚へ、クッキーなどは<b>常温</b>の商品棚でもOK</li>
-          <li><b>接客</b>：外の看板を OPEN → レジで注文を受ける → <b>持ち帰り＝箱</b>、<b>店内＝お皿</b>を持って商品棚から1切れずつ入れる → お客さんに渡す → <b>レジでお会計</b>（カードはタッチするだけ。現金はお釣りの硬貨・お札をえらんで渡す。足りないと渡せない）</li>
+          <li><b>接客</b>：外の看板を OPEN → レジで注文を受ける → <b>持ち帰り＝箱</b>（カウンター裏の箱入れから取る）、<b>店内＝お皿</b>を持って商品棚から1切れずつ入れる → お客さんに渡す（困ったお客さんはねらって「帰ってもらう」を2回） → <b>レジでお会計</b>（カードはタッチするだけ。現金はお釣りの硬貨・お札をえらんで渡す。足りないと渡せない）</li>
+          <li><b>自動化</b>：店舗レベルが上がると「家具・道具」に<b>自動の機械</b>が並ぶ。自動ミキサー（材料を入れるだけ）→ 自動オーブン（入れるだけで適温・適時間）→ 自動ホイッパー → 自動デコ機（クリームとトッピングをセット）。<b>Lv10</b> の<b>全自動製造ライン</b>は投入口に材料を入れるだけでケーキが出口に出てくる。アルバイトを<b>「機械係」</b>にすると補充と運び出しも自動</li>
           <li><b>洗い物</b>：使った型、店内で食べ終わったお皿（席に残る）は洗い場の流しへ →「洗う」でこすって泡立て → 水を出す → 棚か水切りかごに置くと<b>30秒で乾く</b>。お皿は<b>床に落とすと割れる</b></li></ol></div>
           <div class="card soft"><h3>${ic('snow')} 冷蔵のルール</h3><ul class="howto">
           <li><b>要冷蔵の材料</b>（卵・バター・牛乳・生クリーム・チーズ・果物）は常温に置くと2〜5分で傷みます。トラックの荷台は冷蔵なので大丈夫。下ろしたら<b>すぐ冷蔵棚</b>へ</li>
@@ -763,6 +764,7 @@
       Object.keys(D.RECIPES).forEach((rid) => { if ((D.RECIPES[rid].lv || 1) === lv) items.push('🍰 ' + D.RECIPES[rid].name); });
       for (const k in D.EQUIP) D.EQUIP[k].tiers.forEach((t) => { if (t.lv === lv && t.price) items.push('🔧 ' + t.name); });
       for (const k in D.FURN) if (D.FURN[k].lv === lv) items.push('🪑 ' + D.FURN[k].name);
+      for (const k in CS.plan.KINDS) if (CS.plan.KINDS[k].lv === lv) items.push('🤖 ' + CS.plan.KINDS[k].name);
       D.STAFF.slots.forEach((x, i) => { if (x.lv === lv) items.push('🧑‍🍳 アルバイト' + (i + 1) + '人目'); });
       D.UPGRADES.filter((u) => !u.hide).forEach((u) => (u.req || []).forEach((r, i) => { if (r === lv) items.push('🏠 ' + u.name + (u.levels.length > 1 ? ' ' + (i + 1) + '段階目' : '')); }));
       const ru = sim.rush({ xp: D.SHOP_XP[lv - 1] }), rp = lv > 1 ? sim.rush({ xp: D.SHOP_XP[lv - 2] }) : null;
@@ -770,7 +772,18 @@
       rows.push(`<div class="item lvrow ${lv <= L.lv ? 'done' : ''}"><div class="ico"><b>${lv}</b></div><div class="mid"><b>Lv${lv}${lv > 1 ? `<small class="muted">（${D.SHOP_XP[lv - 1]}pt）</small>` : ''}</b><small>${items.length ? items.map(esc).join('　') : '—'}</small></div><span>${lv <= L.lv ? '<span class="chip ok">解放</span>' : ''}</span></div>`);
     }
     body.innerHTML = `<div class="card"><div class="row between"><h3>店舗レベル ${L.lv}${L.max ? '（最大）' : ''}</h3><span class="num">${L.xp}${L.max ? '' : ' / ' + L.next}pt</span></div><i class="bar lvbar"><u style="width:${L.max ? 100 : Math.round(L.f * 100)}%"></u></i>
-      <p class="muted small" style="margin:0">ポイントは「欠点のない商品を売る」「お客さんを満足させる」「評判を上げる」でたまります。Lv10 ですべての商品が作れるようになります。</p></div><div class="list">${rows.join('')}</div>`;
+      <p class="muted small" style="margin:0">ポイントは「欠点のない商品を売る」「お客さんを満足させる」「評判を上げる」でたまります。レベルが上がると、材料をセットするだけの<b>自動の機械</b>が買えるようになり、Lv10 で<b>全自動製造ライン</b>とアルバイトの「機械係」で完全自動化できます。</p></div><div class="list">${rows.join('')}</div>`;
+  };
+  // ---------- 自動の機械：作るケーキを選ぶ ----------
+  game.openAutoMode = async function (fid) {
+    const s = S(); if (!s || !s.fu[fid]) return;
+    if (document.pointerLockElement) document.exitPointerLock();
+    const k = s.fu[fid].k, cur = ((s.k.st || {})[fid] || {}).r || '';
+    const list = [['', 'おまかせ（足りない物から）']].concat(Object.keys(s.known).filter((r) => s.known[r] && sim.recipe(s, r) && (k !== 'line' || s.menu[r])).map((r) => [r, sim.recipe(s, r).name + (s.menu[r] && s.menu[r].on ? '' : '（メニュー外）')]));
+    const html = `<p class="muted small" style="margin:0 0 8px">${k === 'line' ? '投入口に入れた材料から、選んだケーキを作り続けます。' : 'のせたスポンジとクリームで、選んだケーキに仕上げます。'}</p><div class="pick">${list.map(([r, n]) => `<button data-pick="${r || '-'}" aria-pressed="${cur === r}">${esc(n)}</button>`).join('')}</div>`;
+    const v = await UI.choose(CS.plan.KINDS[k].name + '：作るケーキ', html, '[data-pick]');
+    if (v == null) return;
+    CS.sound.play('tap'); act({ t: 'amode', fid, r: v === '-' ? '' : v });
   };
   // ---------- アルバイト ----------
   game.renderStaff = function (body, s) {
@@ -786,7 +799,7 @@
       return `<label class="small">${lbl} <select data-sopt="${i}"><option value="">${auto}</option>${list.map(([k, n]) => `<option value="${k}" ${st.opt === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>`;
     };
     const stars = (sp) => '★'.repeat(Math.max(1, Math.min(5, Math.round((sp - 0.7) / 0.15)))) + '☆'.repeat(5 - Math.max(1, Math.min(5, Math.round((sp - 0.7) / 0.15))));
-    body.innerHTML = `<div class="banner sky">${ic('user')}<span>アルバイトは1人1つの業務を担当（最大8人。店舗Lv2から雇える）。人によって<b>手際</b>がちがい、作業の速さが変わります。働くほどレベルが上がって速く・上手に。「お菓子係」は作るお菓子を指定でき、生地から仕上げまで1人で作ります。「仕入れ係」はトラックの段ボールを指定の場所へ運びます。日給は閉店時に支払い。</span></div><div class="list">${D.STAFF.slots.map((sl, i) => {
+    body.innerHTML = `<div class="banner sky">${ic('user')}<span>アルバイトは1人1つの業務を担当（最大8人。店舗Lv2から雇える）。人によって<b>手際</b>がちがい、作業の速さが変わります。働くほどレベルが上がって速く・上手に。「お菓子係」は作るお菓子を指定でき、生地から仕上げまで1人で作ります。「仕入れ係」はトラックの段ボールを指定の場所へ運びます。「機械係」は自動の機械に材料をセットして、できた物を次の機械やショーケースへ運びます。日給は閉店時に支払い。</span></div><div class="list">${D.STAFF.slots.map((sl, i) => {
       const st = s.staff[i];
       if (!st) {
         const lock = SL < sl.lv, sp = D.STAFF.speed[sl.start - 1] * (sl.sp || 1);
@@ -809,10 +822,14 @@
   game.renderFurn = function (body, s) {
     const SL = sim.shopLevel(s).lv, P = CS.plan;
     const cnt = (t, cond) => Object.values(s.k.items).filter((it) => it.t === t && (!cond || cond(it))).length;
-    const kitchen = Object.keys(P.KINDS).filter((k) => !P.KINDS[k].hide).map((k) => {
-      const K2 = P.KINDS[k], n = P.count(s, k), pn = (s.k.pend || []).filter((x) => x === k).length + Object.values(s.k.items).filter((it) => it.t === 'fcrate' && it.k === k).length;
-      return `<div class="card upg"><div class="ico">${ic(K2.icon)}</div><div style="min-width:0;display:grid;gap:2px"><b>${esc(K2.name)} <small class="muted">${n}台${pn ? '・配達／展開待ち ' + pn : ''}</small>${K2.cold ? ` <span class="chip cold">${ic('snow')} 冷蔵</span>` : ''}</b><span class="small muted">${esc(K2.desc)}</span></div><button class="btn sm pink num" data-fbuy="${k}" ${s.funds >= K2.price ? '' : 'disabled'}>${yen(K2.price)}</button></div>`;
-    }).join('');
+    const furnRow = (k) => {
+      const K2 = P.KINDS[k], n = P.count(s, k), pn = (s.k.pend || []).filter((x) => x === k).length + Object.values(s.k.items).filter((it) => it.t === 'fcrate' && it.k === k).length, lock = K2.lv && SL < K2.lv;
+      const btn = lock ? `<span class="chip">${ic('lock')} Lv${K2.lv}</span>` : `<button class="btn sm pink num" data-fbuy="${k}" ${s.funds >= K2.price ? '' : 'disabled'}>${yen(K2.price)}</button>`;
+      return `<div class="card upg ${lock ? 'locked' : ''}"><div class="ico">${ic(lock ? 'lock' : K2.icon)}</div><div style="min-width:0;display:grid;gap:2px"><b>${esc(K2.name)} <small class="muted">${n}台${pn ? '・配達／展開待ち ' + pn : ''}</small>${K2.cold ? ` <span class="chip cold">${ic('snow')} 冷蔵</span>` : ''}${K2.auto ? ' <span class="chip auto">自動</span>' : ''}</b><span class="small muted">${esc(K2.desc)}${lock ? `（店舗Lv${K2.lv}で買えるようになります・${yen(K2.price)}）` : ''}</span></div>${btn}</div>`;
+    };
+    const keys = Object.keys(P.KINDS).filter((k) => !P.KINDS[k].hide);
+    const kitchen = keys.filter((k) => !P.KINDS[k].auto).map(furnRow).join('');
+    const autos = keys.filter((k) => P.KINDS[k].auto).sort((a, b) => (P.KINDS[a].lv || 0) - (P.KINDS[b].lv || 0)).map(furnRow).join('');
     const tools = Object.keys(P.TOOLS).map((k) => {
       const T2 = P.TOOLS[k], n = cnt(k), u = k === 'plate' ? '枚' : k === 'knife' ? '本' : '個';
       return `<div class="card upg"><div class="ico">${ic(T2.icon)}</div><div style="min-width:0;display:grid;gap:2px"><b>${esc(T2.name)} <small class="muted">${n}${u}</small></b><span class="small muted">${esc(T2.desc)}（1回で1${u}。空いている棚に置かれます）</span></div><button class="btn sm yellow num" data-tbuy="${k}" ${s.funds >= T2.price ? '' : 'disabled'}>${yen(T2.price)}</button></div>`;
@@ -824,6 +841,7 @@
     }).join('');
     body.innerHTML = `<div class="row between wrap"><span class="small">資金 <b class="num">${yen(s.funds)}</b></span><button class="btn sm mint" id="fu-build">${ic('move')} 配置モードにする</button></div>
       <h3 class="sec-h">厨房の家具</h3><p class="muted small" style="margin:0">買った家具は<b>トラックで大きな段ボール</b>に入って届きます（材料と同じトラック）。荷台の段ボールを持って、置きたい床をねらうと「ここに展開する」。置いたあとも<b>「配置」</b>ボタン（または <kbd>B</kbd>）でみんなで動かせます。</p><div class="list">${kitchen}</div>
+      <h3 class="sec-h">自動の機械</h3><p class="muted small" style="margin:0">材料・型・クリームを<b>セットするだけ</b>で作業してくれる機械です（店舗レベルで解放）。アルバイトの<b>「機械係」</b>にすると、材料の補充やできた物の運び出しも任せられます。</p><div class="list">${autos}</div>
       <h3 class="sec-h">道具</h3><div class="list">${tools}</div>
       <h3 class="sec-h">売り場</h3><div class="list">${hall}</div>`;
     $$('[data-fbuy]', body).forEach((b) => (b.onclick = async () => { const K2 = P.KINDS[b.dataset.fbuy]; if (await UI.confirm(K2.name, `${yen(K2.price)} で買いますか？<br><small>${esc(K2.desc)}</small>`, '買う')) { CS.sound.play('coin'); act({ t: 'fbuy', k: b.dataset.fbuy, near: [CS.world.me.x, CS.world.me.z] }); } }));
@@ -1273,7 +1291,7 @@
     },
     {
       id: 'serve', t: '箱（お皿）に入れて渡す', ok: (s) => Object.values(s.cust).some((c) => c.st === 'pay') || sold(s),
-      d: (s, c) => { const cid = waitC(s), cu = cid && s.cust[cid]; if (!cu) return 'ショーケースから箱やお皿に入れて、注文したお客さんに渡す'; const what = CS.kitchen.ordText(s, cu.ord, cu.wh); return '注文「' + what + '」→ ' + (cu.dine ? '店内なのでお皿（棚）' : '持ち帰りなのでケーキの箱（棚）') + 'を持って、ショーケースのケーキをねらい' + (Object.keys(cu.wh || {}).length ? '「ホールのまま箱に入れる」' : '「1切れ入れる」を注文の数だけ') + ' → お客さんに渡す'; },
+      d: (s, c) => { const cid = waitC(s), cu = cid && s.cust[cid]; if (!cu) return 'ショーケースから箱やお皿に入れて、注文したお客さんに渡す'; const what = CS.kitchen.ordText(s, cu.ord, cu.wh); return '注文「' + what + '」→ ' + (cu.dine ? '店内なのでお皿（棚）' : '持ち帰りなのでケーキの箱（カウンター裏の箱入れ）') + 'を持って、ショーケースのケーキをねらい' + (Object.keys(cu.wh || {}).length ? '「ホールのまま箱に入れる」' : '「1切れ入れる」を注文の数だけ') + ' → お客さんに渡す'; },
       g: (s, c) => {
         const cid = waitC(s), cu = cid && s.cust[cid]; if (!cu) return null;
         const h = c.held, want = cu.dine ? 'plate' : 'box';

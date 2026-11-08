@@ -32,6 +32,9 @@
   // 重ねられる物の種類（同じなら同じ所に重ねられる）
   K.skey = (it) => (!it ? null : it.t === 'ing' ? 'i:' + it.ing : it.t === 'box' && !(it.s && it.s.length) ? 'i:box' : it.t === 'plate' && !(it.s && it.s.length) ? (it.dirty ? 'plate-d' : 'plate') : it.t === 'pan' && it.st === 'empty' ? (it.dirty ? 'pan-d' : 'pan') : it.t === 'knife' ? 'knife' : null);
   const capOf = (k) => (!k ? 1 : k.startsWith('i:') ? STACK_CAP.ing : k.startsWith('plate') ? STACK_CAP.plate : k === 'knife' ? STACK_CAP.knife : STACK_CAP.pan);
+  // 置き場所ごとの上限（箱入れは30枚。ほかは物の種類で決まる）
+  const slotCapT = (type, k) => (P.SLOT_CAP && P.SLOT_CAP[type]) || capOf(k);
+  K.slotCap = (S, at, it) => { const sd = P.slotDef(S, at); return slotCapT(sd && sd.type, K.skey(it)); };
   // ホール（切っていないケーキ）か。w=1 がホール。切ると w が消えて p 切れになる
   K.isWhole = (it) => !!it && (it.t === 'cake' || it.t === 'tray') && !!it.w;
   const HOLE_U = 6; // 箱の中でホール1台が使う大きさ（1切れ=1）
@@ -101,12 +104,15 @@
     const put = (slot) => {
       const ex = K.inSlot(S, slot).map((id) => items(S)[id]);
       if (ex.length && !(ex[0].t === 'ing' && ex[0].ing === ing)) return;
-      const cur = ex[0] ? ex[0].n : 0, k = Math.min(left, STACK_CAP.ing - cur); if (k <= 0) return;
+      const cap = slotCapT((P.slotDef(S, slot) || {}).type, 'i:' + ing);
+      const cur = ex[0] ? ex[0].n : 0, k = Math.min(left, cap - cur); if (k <= 0) return;
       if (ex[0]) { ex[0].n += k; ex[0].lots = lotsMerge(ex[0].lots, [[k, lot[1], lot[2]]]); } else add(S, { t: 'ing', ing, n: k, lots: [[k, lot[1], lot[2]]], at: slot, pl: S._now || 0 });
       left -= k;
     };
-    const order = I.cold ? ['cshelf', 'shelf', 'rack', 'table'] : ['shelf', 'cshelf', 'rack', 'table'];
-    const slotsOf = (k) => P.list(S, k).reduce((a, fid) => a.concat(P.slots(S, fid)), []).filter((sl) => (P.slotDef(S, sl) || {}).type === 'any');
+    // ケーキの箱はカウンター裏の箱入れから
+    const order = ing === 'box' ? ['boxhole', 'shelf', 'cshelf', 'rack', 'table'] : I.cold ? ['cshelf', 'shelf', 'rack', 'table'] : ['shelf', 'cshelf', 'rack', 'table'];
+    const okT = (t) => t === 'any' || (t === 'boxes' && ing === 'box');
+    const slotsOf = (k) => P.list(S, k).reduce((a, fid) => a.concat(P.slots(S, fid)), []).filter((sl) => okT((P.slotDef(S, sl) || {}).type));
     for (const k of order) for (const sl of slotsOf(k)) { if (left <= 0) break; const ex = K.inSlot(S, sl).map((id) => items(S)[id]); if (ex.length && ex[0].t === 'ing' && ex[0].ing === ing) put(sl); }
     for (const k of order) for (const sl of slotsOf(k)) { if (left <= 0) break; if (!K.inSlot(S, sl).length) put(sl); }
     return n - left;
@@ -129,7 +135,13 @@
   K.count = (S, k) => P.count(S, { mix: 'mixer', oven: 'oven', reg: 'reg', whip: 'whip', deco: 'deco' }[k] || k);
   K.newKitchen = () => ({ items: {}, st: {}, ordNo: 0 });
   K.st = (S, fid) => S.k.st[fid] || (S.k.st[fid] = {});
-  const STATION0 = { mix: () => ({ ings: [], st: 'idle' }), whip: () => ({ ings: [], st: 'idle' }), deco: () => ({ st: 'idle' }), oven: () => ({ h: 0, temp: 170, hot: 0 }), sink: () => ({}) };
+  const STATION0 = {
+    mix: () => ({ ings: [], st: 'idle' }), whip: () => ({ ings: [], st: 'idle' }), deco: () => ({ st: 'idle' }), oven: () => ({ h: 0, temp: 170, hot: 0 }), sink: () => ({}),
+    // 自動の機械
+    amix: () => ({ ings: [], st: 'idle' }), awhip: () => ({ ings: [], st: 'idle' }), aoven: () => ({ h: 0, temp: 170, hot: 0 }),
+    adeco: () => ({ st: 'idle', hop: {}, cr: null, r: '' }), line: () => ({ on: 1, hop: {}, q: [], r: '' }),
+  };
+  K.STATION0 = STATION0;
   function addFurn(S, k, x, z, r) { S.fu = S.fu || {}; const id = 'f' + (S.fseq = (S.fseq || 0) + 1); S.fu[id] = { k, x, z, r: r || 0 }; const st = P.KINDS[k].station; if (st) S.k.st[id] = STATION0[st](); return id; }
   K.addFurn = addFurn;
   // 最初のお店：机1・棚1・クリーム台1・商品棚1・洗い場1・冷蔵棚1・冷蔵庫1・レジ1・ゴミ箱1、ケーキの型1・お皿1。材料はなし
@@ -182,6 +194,14 @@
       case 'turn': if (!((it.t === 'pan' && it.st === 'baked') || it.t === 'deco' || it.t === 'cake')) return '焼けたスポンジをのせよう'; return one();
       case 'basin': if (!((it.t === 'plate' && !(it.s || []).length) || (it.t === 'pan' && it.st === 'empty'))) return '流しにはお皿・ケーキ型を入れます'; return one();
       case 'crate': if (it.t !== 'crate') return '在庫棚には段ボールだけ置けます'; return one();
+      case 'boxes': {
+        // カウンター裏の箱入れ：ケーキの箱だけ（空の箱もここに戻せる）
+        if (!((it.t === 'ing' && it.ing === 'box') || (it.t === 'box' && !(it.s || []).length))) return 'ここにはケーキの箱だけしまえます';
+        const cnt = here.reduce((a, x) => a + units(x), 0);
+        if (cnt + (it.t === 'ing' ? it.n : 1) > P.SLOT_CAP.boxes) return 'いっぱいです（' + P.SLOT_CAP.boxes + '枚まで）';
+        return '';
+      }
+      case 'out': return 'ここは全自動ラインの出口です（できたケーキを取り出す所）';
       default: return 'そこには置けません';
     }
   };
@@ -288,9 +308,25 @@
       const st = P.KINDS[S.fu[fid].k].station; if (!st) { delete k.st[fid]; continue; }
       const b = k.st[fid];
       if (!b || typeof b !== 'object') k.st[fid] = STATION0[st]();
-      else if (st === 'mix' || st === 'whip') { b.ings = _.toArr(b.ings).filter((x) => x); b.df = _.toArr(b.df).filter((x) => x); if (!b.st) b.st = 'idle'; }
-      else if (st === 'oven' && b.temp == null) b.temp = 170;
+      else if (st === 'mix' || st === 'whip' || st === 'amix' || st === 'awhip') { b.ings = _.toArr(b.ings).filter((x) => x); b.df = _.toArr(b.df).filter((x) => x); if (!b.st) b.st = 'idle'; }
+      else if ((st === 'oven' || st === 'aoven') && b.temp == null) b.temp = 170;
       else if (st === 'deco' && !b.st) b.st = 'idle';
+      else if (st === 'adeco' || st === 'line') {
+        if (!b.st) b.st = 'idle';
+        b.hop = cleanHop(b.hop);
+        if (b.cr && !(typeof b.cr === 'object' && b.cr.k && b.cr.n > 0)) b.cr = null;
+        if (b.cr) b.cr.df = _.toArr(b.cr.df).filter((x) => x);
+        if (b.tl) b.tl = _.toArr(b.tl).filter((x) => x);
+        if (st === 'line') {
+          if (b.on == null) b.on = 1;
+          b.q = _.toArr(b.q).filter((j) => j && typeof j === 'object' && j.r && sim.recipe(S, j.r)).map((j) => { j.d = _.toArr(j.d).map((x) => +x || 0); if (j.d.length !== 5) j.d = [6000, 12000, 6000, 4000, 3000]; return j; });
+        }
+      }
+    }
+    // カウンター裏の箱入れ（前からあるお店にも1つ付ける）
+    if (!k.bh && Object.keys(S.fu).length) {
+      k.bh = 1;
+      if (!P.list(S, 'boxhole').length) { const reg = P.list(S, 'reg')[0], sp = P.findSpot(S, 'boxhole', reg ? [S.fu[reg].x, S.fu[reg].z] : null); if (sp) addFurn(S, 'boxhole', sp.x, sp.z, sp.r); }
     }
     for (const fid in k.st) if (!S.fu[fid]) delete k.st[fid];
     if (S.dayT == null) S.dayT = 0;
@@ -309,7 +345,7 @@
     for (const id of Object.keys(k.items).sort()) {
       const it = k.items[id], sd = P.slotDef(S, it.at);
       if (it.t === 'crate' && sd && sd.kind !== 'table' && sd.type !== 'crate') { if (!toFloor(S, it)) delete k.items[id]; continue; }
-      if (it.t === 'ing' && sd && it.n > STACK_CAP.ing) {
+      if (it.t === 'ing' && sd && it.n > slotCapT(sd.type, 'i:' + it.ing)) {
         const part = split(S, id, it.n - STACK_CAP.ing), kinds = D.ING[it.ing] && D.ING[it.ing].cold ? ['cshelf', 'shelf', 'table'] : ['shelf', 'cshelf', 'table'];
         for (const kd of kinds) for (const fid of P.list(S, kd)) for (const sl of P.slots(S, fid)) {
           if (!(part.n > 0) || K.inSlot(S, sl).length || P.slotDef(S, sl).type !== 'any') continue;
@@ -322,6 +358,12 @@
     delete S.ovens; delete S.showcase;
     if (!k.kn && Object.keys(S.fu).length) giveKnife(S);
   };
+  // 機械の投入口：{ 材料: [個数, 原価の合計] }
+  function cleanHop(h) {
+    const out = {};
+    if (h && typeof h === 'object') for (const ing in h) { const v = _.toArr(h[ing]); if (D.ING[ing] && +v[0] > 0) out[ing] = [+v[0], Math.max(0, +v[1] || 0)]; }
+    return out;
+  }
   // 古いお店（家具が無い）を新しい形に移す。持っていた設備・在庫・並んでいたケーキはできるだけ引きつぐ
   function migrate(S) {
     const old = { inv: S.inv || {}, cases: _.toArr(S.showcase).filter((c) => c && typeof c === 'object' && c.p > 0), ovens: _.toArr(S.ovens).length, items: S.k.items || {} };
@@ -402,6 +444,7 @@
     if (it.res) return ng('アルバイトが使っています');
     const sd = P.slotDef(S, it.at);
     if (sd && sd.type === 'turn' && it.t === 'deco' && /^(run|spread)$/.test(K.st(S, sd.fid).st)) return ng('クリームを塗っているところです（塗り終えてから）');
+    if (sd && sd.type === 'turn' && it.t === 'deco' && K.st(S, sd.fid).st === 'auto') return ng('自動デコ機が仕上げているところです');
     if (sd && sd.type === 'basin' && K.st(S, sd.fid).by && K.st(S, sd.fid).by !== a.pid && now - (K.st(S, sd.fid).t0 || 0) < 120000) return ng('ほかの人が洗っているところです');
     if (sd && sd.type === 'oven') takeFromOven(S, it, now);
     if (it.t === 'tray') it.t = 'cake';
@@ -453,9 +496,11 @@
     }
     if (sd.type === 'turn' && src.t === 'pan') {
       // 焼けた型を回転台に → 型から外す（空の型は汚れて手に残る）
-      const warm = now < (src.cool || 0);
-      add(S, { t: 'deco', b: src.b, q: src.q, df: _.union(src.df, warm ? ['melt'] : []), c: src.c, cr: null, crq: 1, sq: 1, tops: {}, tp: [], warm: warm ? 1 : 0, at: a.slot, pl: now });
+      // 自動デコ機は、温かいスポンジは冷めるまで待ってから塗る（溶けない）
+      const warm = now < (src.cool || 0), auto = sd.kind === 'adeco';
+      add(S, { t: 'deco', b: src.b, q: src.q, df: _.union(src.df, warm && !auto ? ['melt'] : []), c: src.c, cr: null, crq: 1, sq: 1, tops: {}, tp: [], warm: warm && !auto ? 1 : 0, cu: warm && auto ? src.cool : 0, at: a.slot, pl: now });
       Object.assign(src, { st: 'empty', dirty: 1, b: null, q: 0, df: [], c: 0, cool: 0, lab: '' });
+      if (auto) return ok(warm ? '自動デコ機にのせた（冷めてから自動で仕上げます。空の型は洗い場へ）' : '自動デコ機にのせた（空の型は洗い場へ）');
       return ok(warm ? 'まだ温かい…クリームが溶けるかも（空の型は洗い場へ）' : 'スポンジを回転台にのせた（空の型は洗い場へ）');
     }
     if (src.t === 'box' && !(src.s || []).length) {
@@ -485,6 +530,13 @@
     if (it.t === 'knife') return ng('ケーキナイフは捨てません。机や棚に置こう');
     if (it.t === 'crate' && it.n > 0 && (it.sp || 0) < 2) return ng('中身が入っています。開けて棚に置こう');
     if (it.t === 'crate' && !(it.n > 0)) { del(S, hid); return ok('段ボールを片づけた'); }
+    if (it.t === 'pan' && it.st !== 'empty') {
+      // 型に入った生地・スポンジは中身だけ捨てる（型は汚れて手に残る）
+      S.today.waste += Math.round(itemCost(it));
+      if ((it.sp || 0) >= 2) S.today.spoiled = (S.today.spoiled || 0) + 1;
+      Object.assign(it, { st: 'empty', dirty: 1, b: null, q: 0, df: [], c: 0, cool: 0, lab: '' }); delete it.bk; delete it.tg;
+      return ok('中身を捨てた（型は洗い場で洗おう）');
+    }
     S.today.waste += Math.round(itemCost(it));
     if ((it.sp || 0) >= 2) S.today.spoiled = (S.today.spoiled || 0) + 1;
     del(S, hid);
@@ -498,21 +550,31 @@
     if (it.t === 'plate') { S.today.broken = (S.today.broken || 0) + 1; S.today.waste += Math.round(itemCost(it)); del(S, hid); _.fx(S, 'break', 'パリン！お皿を落として割ってしまった…'); return ok(); }
     return A.trash(S, a);
   };
-  // ボウルに材料を入れる（手に持った材料から1つ）
-  A.addIng = function (S, a) {
-    const b = station(S, a.fid, 'mix') || station(S, a.fid, 'whip'); if (!b) return ng();
+  // ボウルに材料を入れる（手に持った材料から1つ。all=1 なら持っている分を全部）
+  // 全自動ライン・自動デコ機は投入口へ
+  const bowlOf = (S, fid) => station(S, fid, 'mix') || station(S, fid, 'whip') || station(S, fid, 'amix') || station(S, fid, 'awhip');
+  K.bowlOf = bowlOf;
+  const stKind = (S, fid) => { const f = S.fu && S.fu[fid]; return f && P.KINDS[f.k] ? P.KINDS[f.k].station : null; };
+  A.addIng = function (S, a, now) {
+    const kd = stKind(S, a.fid);
+    if (kd === 'line' || kd === 'adeco') return hopLoad(S, a, kd);
+    const b = bowlOf(S, a.fid); if (!b) return ng();
     if (b.by) return ng('アルバイトが使っています');
-    if (b.st !== 'idle') return ng(b.st === 'run' ? '回しているところです' : 'ボウルを空けてから入れよう');
+    if (b.st !== 'idle') return ng(b.st === 'run' ? (b.auto ? '自動で混ぜているところです' : '回しているところです') : 'ボウルを空けてから入れよう');
     const [hid, h] = heldIt(S, a);
     if (!h || h.t !== 'ing' || h.ing === 'box') return ng('棚から材料を持ってこよう');
     if ((h.sp || 0) >= 2) return ng(ingName(h.ing) + 'は傷んでいて使えません');
     if (b.ings.length >= 10) return ng('ボウルがいっぱいです');
-    const t = lotsTake(h.lots, 1); h.n -= 1; if (h.n <= 0) del(S, hid);
-    b.c = (b.c || 0) + t.cost; b.ings.push(h.ing);
+    const n = a.all ? Math.min(h.n, 10 - b.ings.length) : 1;
+    for (let k = 0; k < n; k++) { const t = lotsTake(h.lots, 1); h.n -= 1; b.c = (b.c || 0) + t.cost; b.ings.push(h.ing); }
+    if (h.n <= 0) del(S, hid);
+    b.lt = now || S._now || 0;
     return ok();
   };
   A.run = function (S, a, now) {
     if (station(S, a.fid, 'deco')) return runDeco(S, a, now);
+    if (station(S, a.fid, 'amix') || station(S, a.fid, 'awhip')) return ng('自動で混ぜます（材料をそろえるだけでOK）');
+    if (station(S, a.fid, 'adeco')) return ng('自動で塗ります（スポンジ・クリーム・トッピングをセットするだけ）');
     const kind = station(S, a.fid, 'mix') ? 'mix' : 'whip';
     const b = station(S, a.fid, kind); if (!b) return ng();
     if (b.by && a.pid) return ng('アルバイトが使っています');
@@ -541,7 +603,7 @@
   };
   // 生地を型に流す（ケーキ型を持ってミキサーへ。横の型置きに置いてあればそれに）
   A.pour = function (S, a, now) {
-    const b = station(S, a.fid, 'mix'); if (!b || b.st !== 'done') return ng('まだ生地ができていません');
+    const b = station(S, a.fid, 'mix') || station(S, a.fid, 'amix'); if (!b || b.st !== 'done') return ng('まだ生地ができていません');
     if (!b.k) return ng('失敗した生地は捨てよう');
     let pid = K.held(S, a.pid), pan = pid && items(S)[pid];
     if (!pan || pan.t !== 'pan') { pid = K.at(S, slot0(a.fid)); pan = pid && items(S)[pid]; }
@@ -554,14 +616,30 @@
   };
   A.scoop = function (S, a, now) {
     if (needHand(S, a)) return needHand(S, a);
-    const b = station(S, a.fid, 'whip'); if (!b || b.st !== 'done') return ng('まだクリームができていません');
+    const b = station(S, a.fid, 'whip') || station(S, a.fid, 'awhip'); if (!b || b.st !== 'done') return ng('まだクリームができていません');
     if (!b.k) return ng('失敗したクリームは捨てよう');
     add(S, { t: 'cream', k: b.k, q: b.q, df: b.df || [], n: b.n || D.CREAM_YIELD, c: (b.c || 0) / D.CREAM_YIELD, day: S.day, at: 'h:' + a.pid, pl: now });
     S.k.st[a.fid] = { ings: [], st: 'idle' };
     return ok();
   };
-  A.dump = function (S, a) {
-    const b = station(S, a.fid, 'mix') || station(S, a.fid, 'whip'); if (!b || (!b.ings.length && b.st !== 'done')) return ng('空です');
+  A.dump = function (S, a, now) {
+    const kd = stKind(S, a.fid);
+    if (kd === 'adeco') {
+      // 自動デコ機：クリームのタンクを空ける
+      const b = K.st(S, a.fid); if (!b.cr || !(b.cr.n > 0)) return ng('クリームのタンクは空です');
+      if (b.st === 'auto') return ng('仕上げているところです');
+      S.today.waste += Math.round((b.cr.c || 0) * b.cr.n); b.cr = null;
+      return ok('クリームのタンクを空けた');
+    }
+    if (kd === 'line') {
+      // 全自動ライン：投入口の材料を棚に戻す（入りきらない分は廃棄）
+      const b = K.st(S, a.fid); const ks = Object.keys(b.hop || {}); if (!ks.length) return ng('投入口は空です');
+      let back = 0, waste = 0;
+      for (const ing of ks) { const [n, c] = b.hop[ing], u = n ? c / n : 0, put = K.invAdd(S, ing, n, Math.round(u)); back += put; waste += (n - put) * u; }
+      b.hop = {}; S.today.waste += Math.round(waste);
+      return ok('投入口の材料を棚に戻した（' + back + '個）' + (waste > 0 ? '。入りきらない分は廃棄' : ''));
+    }
+    const b = bowlOf(S, a.fid); if (!b || (!b.ings.length && b.st !== 'done')) return ng('空です');
     if (b.by) return ng('アルバイトが使っています');
     S.today.waste += Math.round(b.c || 0);
     S.k.st[a.fid] = { ings: [], st: 'idle' };
@@ -569,6 +647,7 @@
   };
   // オーブン：温度を変える（電源も入る）／電源を切る
   A.oven = function (S, a, now) {
+    if (station(S, a.fid, 'aoven')) return ng('自動オーブンは温度を自動で合わせます（生地を入れるだけ）');
     const o = station(S, a.fid, 'oven'); if (!o) return ng();
     if (a.op === 'off') { o.h = 0; return ok('オーブンを止めた'); }
     const T = D.OVEN_TEMPS; const cur = o.h ? T.indexOf(o.temp) : -1;
@@ -583,6 +662,8 @@
     const o = K.st(S, fid);
     if (it.st !== 'raw' || !o) return;
     if (!o.h) { it.wait = 1; return; }
+    // 自動オーブン：温度が合って予熱が終わってから焼き始める
+    if (stKind(S, fid) === 'aoven' && (now < (o.hot || 0) || o.temp !== (D.BASES[it.b] || {}).temp)) { it.wait = 1; return; }
     const cold = now < (o.hot || 0), B = D.BASES[it.b];
     it.st = 'baking'; it.wait = 0;
     it.bk = { t0: now, dur: _.ovenDur(S, it.b, o.temp, cold), dT: o.temp - B.temp, cold: cold ? 1 : 0, temp: o.temp };
@@ -696,7 +777,7 @@
     h.s.pop(); tr.p += 1; return ok();
   };
   // ケーキナイフで6等分に切る（机・棚・ショーケース・デコ台・お皿の上など、台の上ならどこでも）
-  const CUT_OK = { any: 1, tray: 1, turn: 1, dry: 1 };
+  const CUT_OK = { any: 1, tray: 1, turn: 1, dry: 1, out: 1 };
   A.cut = function (S, a) {
     const [, kn] = heldIt(S, a);
     if (!kn || kn.t !== 'knife') return ng('ケーキナイフを持とう');
@@ -768,17 +849,17 @@
     if (!cr.open) return ng('先に段ボールを開けよう');
     if (!(cr.n > 0)) return ng('段ボールは空です（捨てよう）');
     if ((cr.sp || 0) >= 2) return ng(ingName(cr.ing) + 'は常温に置きすぎて傷んでいます。ゴミ箱へ（廃棄）');
-    const sd = P.slotDef(S, a.slot); if (!sd || sd.type !== 'any') return ng('棚や机に置こう');
+    const sd = P.slotDef(S, a.slot); if (!sd || !(sd.type === 'any' || (sd.type === 'boxes' && cr.ing === 'box'))) return ng(sd && sd.type === 'boxes' ? '箱入れにはケーキの箱だけしまえます' : '棚や机に置こう');
     const ex = K.inSlot(S, a.slot).map((id) => items(S)[id]);
     if (ex.length && !(ex[0].t === 'ing' && ex[0].ing === cr.ing)) return ng('ここには「' + K.label(S, ex[0]) + '」が置いてあります');
-    const cur = ex.length ? ex[0].n : 0, room = STACK_CAP.ing - cur;
+    const cap = slotCapT(sd.type, 'i:' + cr.ing), cur = ex.length ? ex[0].n : 0, room = cap - cur;
     if (room <= 0) return ng('いっぱいです');
     const k = Math.min(a.all ? cr.n : 1, room), half = (cr.sp || 0) >= 1;
     const part = { t: 'ing', ing: cr.ing, n: k, lots: newLots(S, cr.ing, k, cr.u, half), wm: cr.wm || 0, w0: 0, sp: cr.sp || 0 };
     if (ex.length) mergeInto(S, ex[0], part); else add(S, Object.assign(part, { at: a.slot, pl: now }));
     cr.n -= k; S.today.shelved = (S.today.shelved || 0) + k;
     if (!cr.n) { cr.wm = 0; cr.w0 = 0; cr.sp = 0; }
-    return ok(cr.n ? (k < (a.all ? cr.n + k : 1) ? 'この枠はいっぱい（1枠10個まで）。残りはほかの枠へ' : '') : (cr.ing === 'box' ? 'ケーキの箱' : ingName(cr.ing)) + 'を全部しまった' + (half ? '（ぬるくなっていたので日持ちが短め）' : '') + '（空の段ボールはゴミ箱へ・床に置いてもOK）');
+    return ok(cr.n ? (k < (a.all ? cr.n + k : 1) ? 'この枠はいっぱい（1枠' + cap + '個まで）。残りはほかの枠へ' : '') :(cr.ing === 'box' ? 'ケーキの箱' : ingName(cr.ing)) + 'を全部しまった' + (half ? '（ぬるくなっていたので日持ちが短め）' : '') + '（空の段ボールはゴミ箱へ・床に置いてもOK）');
   };
   // 洗う：流しに入れたお皿・型を、なぞって泡立て → 水で流す（q は泡立ての点数）
   A.washStart = function (S, a, now) {
@@ -816,6 +897,7 @@
   };
   A.fbuy = function (S, a, now) {
     const Kd = P.KINDS[a.k]; if (!Kd) return ng();
+    if (Kd.lv &&sim.shopLevel(S).lv < Kd.lv) return ng('「' + Kd.name + '」は店舗レベル ' + Kd.lv + ' で買えるようになります');
     if (S.funds < Kd.price) return ng('資金が足りません');
     S.funds -= Kd.price; S.today.capex = (S.today.capex || 0) + Kd.price;
     const pend = (S.k.pend = S.k.pend || []); pend.push(a.k);
@@ -963,6 +1045,23 @@
     } else delete S.cust[id];
   }
   function leave(S, c, now, say) { c.st = 'out'; c.tEnd = now + R.WALK_MS; c.say = say || ''; c.sayT = now; c.seat = -1; S.today.miss++; S.today.cust++; }
+  // お客さんに帰ってもらう（ねらって「帰ってもらう」）。渡した商品は返してもらう
+  A.shoo = function (S, a, now) {
+    const c = S.cust[a.c]; if (!c || c.st === 'out') return ng('もう帰るところです');
+    const was = c.st;
+    c.res = null;
+    if (was === 'eat') { endEat(S, a.c, c, now); c.say = 'ごちそうさまでした…'; c.sayT = now; return ok('お客さんに帰ってもらいました（お皿は席に残ります）'); }
+    let back = '';
+    const gid = K.at(S, 'c:' + a.c), it = gid && items(S)[gid];
+    if (it) {
+      // 渡した箱・お皿は返してもらう（手が空いていれば手に、だめなら机・棚に。置けなければ廃棄）
+      if (!K.held(S, a.pid)) { it.at = 'h:' + a.pid; it.pl = now; back = '（商品は返してもらいました）'; }
+      else { const sl = K.findSlot(S, it, ['table', 'fridge', 'shelf']); if (sl) { it.at = sl; it.pl = now; back = '（商品は机・棚に戻しました）'; } else { S.today.waste += Math.round(itemCost(it)); del(S, gid); } }
+    }
+    leave(S, c, now, was === 'w' || was === 'pay' ? 'えっ…じゃあ、いいです' : 'あ、はい…また来ます');
+    if (was === 'w' || was === 'pay') _.rate(S, 2.2, 0.015);
+    return ok('お客さんに帰ってもらいました' + back);
+  };
   K.sendAway = function (S, now, msg) { for (const id in S.cust) { const c = S.cust[id]; if (c.st === 'in' || c.st === 'q') { c.st = 'out'; c.tEnd = now + R.WALK_MS; c.say = msg || ''; c.sayT = now; c.seat = -1; } } };
   // 注文を受ける（レジで先頭のお客さん）
   A.takeOrder = function (S, a, now) {
@@ -1098,11 +1197,240 @@
   K.deliveryFree = (S) => (S.k.truck ? 0 : KD.deliv);
 
   // =====================================================================
+  //  自動の機械（店舗レベルで解放。材料・型・スポンジをセットするだけで動く）
+  //   自動ミキサー amix・自動ホイッパー awhip：材料がそろうと自動で混ぜる（順番は気にしない）
+  //   自動オーブン aoven：温度を合わせて予熱 → 焼き上がりで自動で止める
+  //   自動デコ機 adeco：冷めたスポンジ＋タンクのクリーム＋投入口のトッピングで自動で仕上げる
+  //   全自動ライン line：投入口の材料だけで、生地 → オーブン → 冷却 → クリーム → トッピング → 出口
+  // =====================================================================
+  const AUTO_MS = { wait: 2200, coat: 6000, top: 700, fin: 1500 };
+  K.AUTO_MS = AUTO_MS;
+  const HOP_CAP = { line: 40, adeco: 20 };
+  K.HOP_CAP = HOP_CAP;
+  const hopN = (b, ing) => (b && b.hop && b.hop[ing] ? b.hop[ing][0] : 0);
+  K.hopN = hopN;
+  function hopAdd(b, ing, n, cost) { b.hop = b.hop || {}; const h = b.hop[ing] || [0, 0]; h[0] += n; h[1] += cost; b.hop[ing] = h; }
+  function hopTake(b, ing, n) { const h = b.hop && b.hop[ing]; if (!h || h[0] < n) return -1; const c = h[1] * (n / h[0]); h[0] -= n; h[1] -= c; if (h[0] <= 0) delete b.hop[ing]; return c; }
+  function hopHasAll(b, req) { for (const k in req) if (hopN(b, k) < req[k]) return false; return true; }
+  function hopTakeAll(b, req) { if (!hopHasAll(b, req)) return -1; let c = 0; for (const k in req) c += hopTake(b, k, req[k]); return c; }
+  K.hopHasAll = hopHasAll;
+  // 投入口に材料を入れる（全自動ライン：何でも／自動デコ機：トッピングだけ）
+  function hopLoad(S, a, kd) {
+    const b = K.st(S, a.fid), [hid, h] = heldIt(S, a);
+    if (!h || h.t !== 'ing' || h.ing === 'box') return ng('棚から材料を持ってこよう');
+    if ((h.sp || 0) >= 2) return ng(ingName(h.ing) + 'は傷んでいて使えません');
+    if (kd === 'adeco' && !D.TOPS[h.ing]) return ng('自動デコ機に入れるのはトッピング（いちご・チョコなど）です。クリームは「クリームをセット」');
+    if (kd === 'adeco' && b.st === 'auto' && b.ph === 'top') return ng('トッピングをのせているところです');
+    b.hop = b.hop || {};
+    if (kd === 'adeco' && !b.hop[h.ing] && Object.keys(b.hop).length >= 4) return ng('トッピングは4種類までです');
+    const cap = HOP_CAP[kd], room = cap - hopN(b, h.ing); if (room <= 0) return ng('いっぱいです（1種類' + cap + '個まで）');
+    const n = Math.min(room, a.all ? h.n : 1), t = lotsTake(h.lots, n); h.n -= n; if (h.n <= 0) del(S, hid);
+    hopAdd(b, h.ing, n, t.cost);
+    return ok();
+  }
+  // 自動デコ機にクリームをセット（すくったクリームを持って）
+  A.mcream = function (S, a) {
+    const b = station(S, a.fid, 'adeco'); if (!b) return ng();
+    const [hid, cr] = heldIt(S, a); if (!cr || cr.t !== 'cream') return ng('クリームを持ってこよう（クリーム台ですくう）');
+    if ((cr.sp || 0) >= 2) return ng('傷んだクリームは使えません');
+    if (b.cr && b.cr.n > 0 && b.cr.k !== cr.k) return ng('タンクに「' + (D.CREAMS[b.cr.k] || {}).name + '」が入っています（使い切るか空けてから）');
+    const tk = b.cr && b.cr.n > 0 ? b.cr : { k: cr.k, q: 0, n: 0, c: 0, df: [] };
+    if (tk.n >= 4) return ng('タンクがいっぱいです（4台分まで）');
+    const k = Math.min(cr.n || 1, 4 - tk.n);
+    tk.q = (tk.q * tk.n + (cr.q || 0.5) * k) / (tk.n + k); tk.c = (tk.c * tk.n + (cr.c || 0) * k) / (tk.n + k);
+    tk.df = _.union(tk.df, cr.df, (cr.sp || 0) >= 1 ? ['soft'] : []); tk.n += k;
+    b.cr = tk; cr.n -= k; if (!(cr.n > 0)) del(S, hid);
+    return ok((D.CREAMS[tk.k] || {}).name + 'をタンクにセットした（' + tk.n + '台分）');
+  };
+  // 自動デコ機・全自動ラインで作るケーキ（'' はおまかせ）
+  A.amode = function (S, a) {
+    const kd = stKind(S, a.fid); if (kd !== 'adeco' && kd !== 'line') return ng();
+    const b = K.st(S, a.fid);
+    const list = [''].concat(Object.keys(S.known).filter((r) => S.known[r] && sim.recipe(S, r)));
+    const r = a.r != null ? String(a.r) : list[(list.indexOf(b.r || '') + 1) % list.length];
+    if (r && !(S.known[r] && sim.recipe(S, r))) return ng('まだ作れないケーキです');
+    b.r = r;
+    return ok('作るケーキ：' + (r ? sim.recipe(S, r).name : 'おまかせ（足りない物から）'));
+  };
+  A.lineOn = function (S, a) { const b = station(S, a.fid, 'line'); if (!b) return ng(); b.on = b.on ? 0 : 1; return ok(b.on ? '全自動ラインを動かした' : '全自動ラインを止めた（途中のケーキは最後まで進みます）'); };
+  // 作りかけ（ラインの上・デコ中・できたけれどまだ並べていない）のケーキの数
+  function pipeCount(S, r) {
+    let n = 0;
+    for (const fid of P.list(S, 'line')) n += _.toArr((K.st(S, fid) || {}).q).filter((j) => j && j.r === r).length;
+    for (const id in items(S)) { const it = items(S)[id]; if (it.t === 'cake' && it.r === r) n++; }
+    return n;
+  }
+  // 機械で作る候補：指定があればそれ。おまかせなら販売中で、足りない・少ない物から
+  function autoRecipes(S, want) {
+    if (want && S.known[want] && sim.recipe(S, want)) return [want];
+    const short = K.shortage(S), stock = K.shelfStock(S), hs = K.holeStock(S);
+    const have = (r) => { const n = sim.pieceCount(sim.recipe(S, r)); return (stock[r] || 0) + (hs[r] || 0) * n + pipeCount(S, r) * n; };
+    return _.menuRecipes(S).filter((r) => (short[r] || 0) > 0 || have(r) < 12).sort((a, b) => (short[b] || 0) - (short[a] || 0) || have(a) - have(b));
+  }
+  K.autoRecipes = autoRecipes;
+  // ---- 自動ミキサー・自動ホイッパー ----
+  function tickBowlAuto(S, fid, b, kd, now) {
+    if (b.by) return;
+    const find = (ings) => (kd === 'amix' ? baseFromIngs(ings) : creamFromIngs(ings));
+    if (b.st === 'idle') {
+      if (!b.ings.length) { b.why = ''; return; }
+      const id = find(b.ings);
+      if (!id) { b.why = b.ings.length >= 10 ? '分量が合いません（ボウルを空けよう）' : ''; return; }
+      if (now - (b.lt || 0) < AUTO_MS.wait) { b.why = 'そろった！まもなく自動で混ぜます'; return; }
+      const g = K.gauge(S, kd === 'amix' ? 'mix' : 'whip');
+      Object.assign(b, { st: 'run', t0: now, sec: g.sec * 0.8 + 1.2, m: 0, auto: 1, why: '' });
+      return;
+    }
+    if (b.st === 'run' && b.auto && now >= b.t0 + b.sec * 1000) {
+      const id = find(b.ings);
+      Object.assign(b, { st: 'done', m: 1, k: id, q: id ? 0.95 : 0, df: [] });
+      if (kd === 'awhip') b.n = D.CREAM_YIELD;
+    }
+    // 自動ミキサー：横の型置きにきれいな型があれば自動で流し込む
+    if (kd === 'amix' && b.st === 'done' && b.k) {
+      const pid = K.at(S, slot0(fid)), pan = pid && items(S)[pid];
+      if (pan && pan.t === 'pan' && pan.st === 'empty' && !pan.dirty && !pan.wet && !pan.res) A.pour(S, { fid, pid: '~' }, now);
+    }
+  }
+  // ---- 自動オーブン ----
+  function tickAOven(S, fid, o, now) {
+    const id = K.at(S, slot0(fid)), it = id && items(S)[id];
+    if (!it || it.t !== 'pan' || it.st === 'empty') { if (o.h && !o.idle) o.idle = now; if (o.h && now - (o.idle || now) > 60000) o.h = 0; return; }
+    o.idle = 0;
+    const B = D.BASES[it.b];
+    if (it.st === 'raw' && B) {
+      const heat = D.PREHEAT_MS * _.eqv(S, 'oven').heat;
+      if (!o.h || o.temp !== B.temp) { o.hot = now + (o.h ? heat * 0.5 : heat); o.h = 1; o.temp = B.temp; it.wait = 1; return; }
+      if (now >= (o.hot || 0) && !it.res) putInOven(S, it, fid, now);
+      return;
+    }
+    if (it.st === 'baking' && it.bk && !it.res && now - it.bk.t0 >= it.bk.dur) { takeFromOven(S, it, now); it.auto = 1; }
+  }
+  // ---- 自動デコ機 ----
+  function decoCands(S, b, dk) {
+    const known = Object.keys(S.known).filter((r) => S.known[r] && sim.recipe(S, r) && sim.recipe(S, r).base === dk.b && (!dk.cr || sim.recipe(S, r).cream === dk.cr));
+    if (b.r) return known.includes(b.r) ? [b.r] : [];
+    const pref = autoRecipes(S, '').filter((r) => known.includes(r));
+    return [...new Set(pref.concat(known.filter((r) => S.menu[r] && S.menu[r].on), known))];
+  }
+  function whyDeco(S, b, dk, cands) {
+    if (!cands.length) return b.r ? 'このスポンジでは「' + ((sim.recipe(S, b.r) || {}).name || '') + '」は作れません（設定を変えよう）' : 'このスポンジで作れるケーキがありません';
+    const R2 = sim.recipe(S, cands[0]), miss = [];
+    if (R2.cream && R2.cream !== 'none' && !dk.cr && !(b.cr && b.cr.k === R2.cream && b.cr.n > 0)) miss.push('クリーム「' + D.CREAMS[R2.cream].name + '」をセット');
+    for (const k in R2.tops || {}) if (hopN(b, k) < R2.tops[k]) miss.push(ingName(k) + 'をあと' + (R2.tops[k] - hopN(b, k)) + 'つ補充');
+    return R2.name + '：' + miss.join('・');
+  }
+  // このデコ機で、いまの材料のまま仕上げられるか（冷蔵庫に移した作りかけを戻すとき）
+  K.decoReady = function (S, fid, dk) {
+    const b = K.st(S, fid), cands = decoCands(S, b, dk);
+    return cands.some((r) => { const R2 = sim.recipe(S, r); const cOK = (R2.cream || 'none') === 'none' ? !dk.cr : dk.cr === R2.cream || (!dk.cr && b.cr && b.cr.k === R2.cream && b.cr.n > 0); return cOK && (Object.keys(dk.tops || {}).length || hopHasAll(b, R2.tops || {})); });
+  };
+  K.decoNeed = function (S, fid) { const b = K.st(S, fid), did = K.at(S, slot0(fid)), dk = did && items(S)[did]; if (!dk || dk.t !== 'deco') return null; const c = decoCands(S, b, dk); return c.length ? sim.recipe(S, c[0]) : null; };
+  function tickADeco(S, fid, b, now) {
+    const did = K.at(S, slot0(fid)), dk = did && items(S)[did];
+    if (!dk || dk.t !== 'deco' || dk.res) {
+      b.ws = 0;
+      if (b.st !== 'idle' || b.ph) { if (b.tc) S.today.waste += Math.round(b.tc); Object.assign(b, { st: 'idle', ph: '', tc: 0, tl: [] }); }
+      b.why = dk && dk.t === 'cake' ? '完成！ショーケースへ運ぼう' : '';
+      return;
+    }
+    if (b.ph) {
+      if (now < (b.t1 || 0)) return;
+      const ph = b.ph; b.ph = '';
+      if (ph === 'coat') {
+        const tk = b.cr; b.st = 'idle';
+        if (!tk || !(tk.n > 0) || tk.k !== b.ck) return;
+        Object.assign(dk, { cr: tk.k, crq: tk.q, sq: 0.95 }); dk.df = _.union(dk.df, tk.df || []); dk.c = (dk.c || 0) + (tk.c || 0);
+        tk.n -= 1; if (tk.n <= 0) b.cr = null;
+        return;
+      }
+      if (ph === 'top') {
+        const tl = _.toArr(b.tl).filter((x) => x), n = tl.length;
+        dk.tp = tl.map((k, i) => { const a = (i / Math.max(1, n)) * Math.PI * 2 + 0.3, rr = n === 1 ? 0 : 0.55; return [Math.round(Math.cos(a) * rr * 100) / 100, Math.round(Math.sin(a) * rr * 100) / 100, k, Math.round((b.tc || 0) / Math.max(1, n))]; });
+        dk.tops = {}; tl.forEach((k) => (dk.tops[k] = (dk.tops[k] || 0) + 1)); dk.c = (dk.c || 0) + (b.tc || 0);
+        b.tc = 0; b.tl = []; b.ph = 'fin'; b.t1 = now + AUTO_MS.fin;
+        return;
+      }
+      b.st = 'idle';
+      if (ph === 'fin') { const r = A.finish(S, { fid }, now); b.why = r.ok ? '' : r.msg; if (r.ok) b.made = (b.made || 0) + 1; }
+      return;
+    }
+    if (now < (dk.cu || 0)) { b.why = 'スポンジが冷めるのを待っています（あと' + Math.ceil((dk.cu - now) / 1000) + '秒）'; return; }
+    // 手でトッピングをのせてあれば、そのまま仕上げる
+    if (Object.keys(dk.tops || {}).length) { Object.assign(b, { st: 'auto', ph: 'fin', t1: now + AUTO_MS.fin }); return; }
+    const cands = decoCands(S, b, dk);
+    const creamOK = (R2) => ((R2.cream || 'none') === 'none' ? !dk.cr : dk.cr === R2.cream || (!dk.cr && b.cr && b.cr.k === R2.cream && b.cr.n > 0));
+    const rid = cands.find((r) => { const R2 = sim.recipe(S, r); return creamOK(R2) && hopHasAll(b, R2.tops || {}); });
+    if (!rid) { b.why = whyDeco(S, b, dk, cands); if (!b.ws) b.ws = now; return; }
+    const R2 = sim.recipe(S, rid);
+    b.rr = rid; b.why = ''; b.ws = 0;
+    if (R2.cream && R2.cream !== 'none' && !dk.cr) { Object.assign(b, { st: 'auto', ph: 'coat', ck: R2.cream, t1: now + AUTO_MS.coat }); return; }
+    const tl = [], cnt = Object.assign({}, R2.tops || {}), ks = Object.keys(cnt);
+    for (let more = true; more;) { more = false; for (const k of ks) if (cnt[k] > 0) { tl.push(k); cnt[k]--; more = true; } }
+    if (tl.length) { Object.assign(b, { tc: hopTakeAll(b, R2.tops), tl, st: 'auto', ph: 'top', t1: now + AUTO_MS.top * tl.length + 800 }); return; }
+    Object.assign(b, { st: 'auto', ph: 'fin', t1: now + AUTO_MS.fin });
+  }
+  // ---- 全自動ライン ----
+  // 段階の時間：生地 → オーブン → 冷却 → クリーム → トッピング（ミリ秒）
+  K.lineDur = function (S, rid) {
+    const r = sim.recipe(S, rid), B = D.BASES[r.base];
+    const nt = Object.values(r.tops || {}).reduce((a, x) => a + x, 0);
+    return [7000 * (_.eqv(S, 'mixer').fast || 1), Math.max(9000, _.ovenDur(S, r.base, B.temp) * 0.75), Math.max(4000, 9000 * _.eqv(S, 'cooler').cool), r.cream && r.cream !== 'none' ? 6000 : 2500, 2500 + 600 * nt].map(Math.round);
+  };
+  K.LINE_STAGES = ['生地', 'オーブン', '冷却', 'クリーム', 'トッピング'];
+  // 1台分に要る材料（クリームは1回で2台分できるので、残りがあれば材料は要らない）
+  function lineReq(S, b, r) {
+    const need = {}, addG = (g) => { for (const k in g || {}) need[k] = (need[k] || 0) + g[k]; };
+    addG(D.BASES[r.base].ing); addG(r.tops);
+    if (r.cream && r.cream !== 'none' && !(b.cr && b.cr.k === r.cream && b.cr.n > 0)) addG(D.CREAMS[r.cream].ing);
+    return need;
+  }
+  K.lineReq = (S, fid, rid) => lineReq(S, K.st(S, fid), sim.recipe(S, rid));
+  function tickLine(S, fid, b, now) {
+    b.q = _.toArr(b.q).filter((j) => j && j.r);
+    const outs = P.slots(S, fid);
+    // できあがり → 出口へ（出口がいっぱいならラインの最後で待つ）
+    for (const j of b.q.slice()) {
+      if (now < j.t0 + j.d.reduce((a, x) => a + x, 0)) continue;
+      const r = sim.recipe(S, j.r); if (!r) { b.q.splice(b.q.indexOf(j), 1); continue; }
+      const sl = outs.find((x) => !K.inSlot(S, x).length);
+      if (!sl) { if (!j.wt) { j.wt = 1; _.fx(S, 'info', '全自動ライン：出口がいっぱいです。できたケーキを取り出そう'); } continue; }
+      const n = sim.pieceCount(r);
+      add(S, Object.assign({ t: 'cake', r: j.r, q: j.q, df: [], p: n, n, c: Math.round(j.c || 0), d: S.day, at: sl, pl: now }, sim.wholeable(r) ? { w: 1 } : {}));
+      b.q.splice(b.q.indexOf(j), 1); b.made = (b.made || 0) + 1;
+    }
+    if (!b.on) { b.why = '停止中'; return; }
+    if (!sim.working(S)) { b.why = ''; return; }
+    if (b.q.some((j) => j.wt)) { b.why = '出口がいっぱい（ケーキを取り出そう）'; return; }
+    const cand = autoRecipes(S, b.r);
+    if (!cand.length) { b.why = '作る物はいまのところ十分あります（おまかせ）'; b.need = ''; return; }
+    const rid = cand.find((r) => hopHasAll(b, lineReq(S, b, sim.recipe(S, r))));
+    if (!rid) { b.why = '材料が足りません（投入口に入れよう）'; b.need = cand[0]; return; }
+    const d = K.lineDur(S, rid), gap = Math.max(d[0], d[1] / 3, d[2] / 2, d[3], d[4]);
+    const last = b.q.length ? Math.max(...b.q.map((j) => j.t0)) : -1e15;
+    if (now - last < gap || b.q.length >= 8) { b.why = ''; return; }
+    const r = sim.recipe(S, rid);
+    let cost = hopTakeAll(b, D.BASES[r.base].ing) + (Object.keys(r.tops || {}).length ? hopTakeAll(b, r.tops) : 0);
+    if (r.cream && r.cream !== 'none') {
+      if (!(b.cr && b.cr.k === r.cream && b.cr.n > 0)) { const cc = hopTakeAll(b, D.CREAMS[r.cream].ing); b.cr = { k: r.cream, n: D.CREAM_YIELD, c: cc / D.CREAM_YIELD, q: 1, df: [] }; }
+      cost += b.cr.c || 0; b.cr.n -= 1; if (b.cr.n <= 0) b.cr = null;
+    }
+    const q = clamp(0.9 + 0.015 * ((S.eq && S.eq.oven) || 0) + 0.01 * ((S.eq && S.eq.mixer) || 0) + _.gauss() * 0.01, 0.85, 0.99);
+    b.seq = (b.seq || 0) + 1;
+    b.q.push({ i: b.seq, r: rid, t0: now, d, c: Math.round(cost), q: Math.round(q * 100) / 100 });
+    b.why = ''; b.need = '';
+  }
+
+  // =====================================================================
   //  毎ティック
   // =====================================================================
   K.tick = function (S, now) {
     for (const fid in S.fu) {
       const kd = P.KINDS[S.fu[fid].k].station, b = S.k.st[fid]; if (!b) continue;
+      if (kd === 'amix' || kd === 'awhip') tickBowlAuto(S, fid, b, kd, now);
+      else if (kd === 'aoven') tickAOven(S, fid, b, now);
+      else if (kd === 'adeco') tickADeco(S, fid, b, now);
+      else if (kd === 'line') tickLine(S, fid, b, now);
       if (kd === 'oven') { const id = K.at(S, slot0(fid)); if (id) { const it = items(S)[id]; if (it.st === 'raw' && b.h) putInOven(S, it, fid, now); } }
       if ((kd === 'mix' || kd === 'whip') && b.st === 'run' && !b.by && K.prog(b, now) > 1.8) A.run(S, { fid, pid: '' }, now);
       if (kd === 'deco' && b.st === 'spread' && now - (b.t0 || 0) > 180000) { b.st = 'idle'; b.by = null; }
@@ -1146,10 +1474,16 @@
     }
     for (const fid in S.k.st) {
       const kd = P.KINDS[S.fu[fid].k].station, b = S.k.st[fid];
-      if (kd === 'mix' || kd === 'whip') { waste += b.c || 0; S.k.st[fid] = { ings: [], st: 'idle' }; }
+      if (kd === 'mix' || kd === 'whip' || kd === 'amix' || kd === 'awhip') { waste += b.c || 0; S.k.st[fid] = { ings: [], st: 'idle' }; }
       else if (kd === 'deco') S.k.st[fid] = { st: 'idle' };
-      else if (kd === 'oven') b.h = 0;
+      else if (kd === 'oven' || kd === 'aoven') b.h = 0;
       else if (kd === 'sink') b.by = null;
+      else if (kd === 'adeco' || kd === 'line') {
+        // クリームのタンク・ラインの泡立てたクリームは1日で片づけ。トッピング・材料の投入口は冷蔵なので翌日も使える
+        if (b.cr) waste += (b.cr.c || 0) * (b.cr.n || 0);
+        if (b.tc) waste += b.tc;
+        Object.assign(b, { cr: null, st: 'idle', ph: '', tc: 0, tl: [] });
+      }
     }
     waste += K.expireLots(S);
     return Math.round(waste);
@@ -1191,6 +1525,160 @@
     return false;
   }
   const W_NAME = (S, fid) => { const f = S.fu[fid], k = f && f.k, same = P.list(S, k); return ((P.KINDS[k] || {}).name || '家具') + (same.length > 1 ? (same.indexOf(fid) + 1) : ''); };
+  // ---------------------------------------------------------------------
+  //  機械係：自動の機械に材料・型・クリームをセットし、できた物を次の機械・ショーケースへ運ぶ
+  //   物を運ぶときは、アルバイトの手（'h:staff番号'）に持って歩き、着いたら置く
+  // ---------------------------------------------------------------------
+  const fidOf = (at) => { const p = String(at || '').split(':'); return p[0] === 'f' ? p[1] : null; };
+  const handOf = (S, tag) => { const id = K.held(S, tag); return id ? [id, items(S)[id]] : [null, null]; };
+  const byExp = (S) => (a, b) => ((items(S)[a].lots[0] || [0, 9999])[1]) - ((items(S)[b].lots[0] || [0, 9999])[1]);
+  const grabIds = (S, ing) => K.stacks(S, ing).filter((id) => stackOK(items(S)[id]) && free(S, id)).sort(byExp(S));
+  const stackFid = (S, ing) => { const id = grabIds(S, ing)[0]; return id ? fidOf(items(S)[id].at) : null; };
+  // 棚の材料を手に取る（古い物から）。取れた数
+  function grab(S, tag, ing, n) {
+    let got = null, left = n;
+    for (const id of grabIds(S, ing)) { if (left <= 0) break; const k = Math.min(left, items(S)[id].n), part = split(S, id, k); if (items(S)[id].n <= 0) del(S, id); if (got) mergeInto(S, got, part); else got = part; left -= k; }
+    if (!got) return 0;
+    add(S, Object.assign(got, { at: 'h:' + tag, pl: S._now || 0 }));
+    return got.n;
+  }
+  // アルバイトの手の物を片づける（汚れ物は流し、材料は棚、ほかは棚・机。置けなければ床か廃棄）
+  function dropHand(S, tag, now) {
+    const [id, it] = handOf(S, tag); if (!id) return;
+    if (it.t === 'ing') { const u = lotsCost(it.lots, it.n) / Math.max(1, it.n), n = K.invAdd(S, it.ing, it.n, Math.round(u)); if (n < it.n) S.today.waste += Math.round((it.n - n) * u); del(S, id); return; }
+    let sl = null;
+    if (it.dirty && (it.t === 'pan' || it.t === 'plate')) for (const f of P.list(S, 'sink')) if (!K.canPut(S, slot0(f), it)) { sl = slot0(f); break; }
+    if (!sl) sl = K.findSlot(S, it, it.t === 'cake' ? ['fridge', 'table'] : ['shelf', 'table', 'rack', 'cshelf', 'fridge']);
+    if (sl) { const r = A.put(S, { pid: tag, slot: sl }, now); if (r.ok && !K.held(S, tag)) return; }
+    const [id2, it2] = handOf(S, tag); if (!id2) return;
+    if ((it2.t === 'crate' || it2.t === 'fcrate') && toFloor(S, it2)) return;
+    S.today.waste += Math.round(itemCost(it2)); del(S, id2);
+  }
+  K.dropHand = dropHand;
+  // 運ぶ途中（半分の時間）で手に取る
+  function feedHalf(S, st, slot, now) {
+    const j = st.job, tag = 'staff' + slot, I = items(S); j.hd = 1;
+    if (K.held(S, tag)) dropHand(S, tag, now);
+    if (j.k === 'f-carry' || j.k === 'f-cream') {
+      const it = I[j.id];
+      if (!it || it.res !== tag || String(it.at).startsWith('h:') || String(it.at).startsWith('c:')) { if (it && it.res === tag) it.res = null; st.job = null; return; }
+      const sd = P.slotDef(S, it.at); if (sd && sd.type === 'oven') takeFromOven(S, it, now);
+      if (it.t === 'tray') it.t = 'cake';
+      it.res = null; it.at = 'h:' + tag; it.pl = now; clearFloor(it);
+    } else if (j.k === 'f-hop') { if (!grab(S, tag, j.ing, j.n)) st.job = null; }
+  }
+  function feedPlan(S, st, slot, now, job, T) {
+    const tag = 'staff' + slot, I = items(S), want = st.opt && S.known[st.opt] && sim.recipe(S, st.opt) ? st.opt : '';
+    if (K.held(S, tag)) { dropHand(S, tag, now); return; }
+    const carry = (id, to, fid) => { I[id].res = tag; job({ k: 'f-carry', id, to, fid, from: fidOf(I[id].at), end: now + T }); return true; };
+    const grabbable = (ing) => grabIds(S, ing).length > 0;
+    const caseSlot = (it) => { const creamy = !!K.spoilSec(S, Object.assign({}, it, { t: 'cake' })); for (const kd of creamy ? ['scase', 'pcase'] : ['scase', 'pcase', 'pcaseN']) for (const f of P.list(S, kd)) for (const sl of P.slots(S, f)) if (!K.inSlot(S, sl).length) return sl; return null; };
+    const plan = (b) => { const rs = autoRecipes(S, (b && b.r) || want); return rs.length ? sim.recipe(S, rs[0]) : null; };
+    // 1) できたケーキ → ショーケース（いっぱいなら自動デコ機の分は冷蔵庫へ）
+    for (const fid of P.list(S, 'line').concat(P.list(S, 'adeco'))) for (const sl of P.slots(S, fid)) {
+      const id = K.at(S, sl), it = id && I[id];
+      if (!it || it.t !== 'cake' || it.res) continue;
+      const to = caseSlot(it) || (S.fu[fid].k === 'adeco' ? K.findSlot(S, it, ['fridge']) : null);
+      if (to) return carry(id, to, fidOf(to));
+    }
+    // 2) 全自動ライン：投入口に材料（作る予定のケーキ2種類×2台分）
+    for (const fid of P.list(S, 'line')) {
+      const b = K.st(S, fid); if (!b.on) continue;
+      const need = {};
+      autoRecipes(S, b.r || want).slice(0, 2).forEach((r) => { const R2 = sim.recipe(S, r); [D.BASES[R2.base].ing, R2.cream && R2.cream !== 'none' ? D.CREAMS[R2.cream].ing : {}, R2.tops || {}].forEach((g) => { for (const k in g) need[k] = (need[k] || 0) + g[k] * 2; }); });
+      for (const ing in need) { const have = hopN(b, ing), n = Math.min(10, HOP_CAP.line - have); if (have < need[ing] && n > 0 && grabbable(ing)) return job({ k: 'f-hop', fid, ing, n, from: stackFid(S, ing), end: now + T }); }
+    }
+    // 3) 自動デコ機：冷めたスポンジをのせる・クリームをセット・トッピングを補充
+    for (const fid of P.list(S, 'adeco')) {
+      const b = K.st(S, fid), did = K.at(S, slot0(fid)), dk = did && I[did];
+      // 仕上げられないまま止まっている作りかけ → いったん冷蔵庫へ（後ろのスポンジを先に）
+      if (dk && dk.t === 'deco' && b.st !== 'auto' && b.ws && now - b.ws > 40000 && Object.keys(I).some((id) => free(S, id) && ((I[id].t === 'pan' && I[id].st === 'baked') || (I[id].t === 'deco' && id !== did && K.decoReady(S, fid, I[id]))))) {
+        const to = K.findSlot(S, dk, ['fridge']); if (to) return carry(did, to, fidOf(to));
+      }
+      if (!dk) {
+        // 冷蔵庫に移した作りかけで、いま仕上げられる物を戻す
+        const back = Object.keys(I).find((id) => free(S, id) && I[id].t === 'deco' && (P.slotDef(S, I[id].at) || {}).type !== 'turn' && K.decoReady(S, fid, I[id]));
+        if (back) return carry(back, slot0(fid), fid);
+        const rs = b.r ? [b.r] : autoRecipes(S, want), bases = rs.map((r) => sim.recipe(S, r).base);
+        // 温かいままでもOK（自動デコ機が冷めるまで待つ）。オーブンの中の物から先に（オーブンを空けるため）
+        const inOv = (id) => ((P.slotDef(S, I[id].at) || {}).type === 'oven' ? 0 : 1);
+        const pid = Object.keys(I).filter((id) => { const it = I[id]; return free(S, id) && it.t === 'pan' && it.st === 'baked' && bases.includes(it.b); }).sort((a, b2) => inOv(a) - inOv(b2) || (I[a].cool || 0) - (I[b2].cool || 0))[0];
+        if (pid) return carry(pid, slot0(fid), fid);
+      }
+      const R2 = dk && dk.t === 'deco' ? K.decoNeed(S, fid) : !dk ? plan(b) : null;
+      if (!R2) continue;
+      if (R2.cream && R2.cream !== 'none' && !(dk && dk.cr) && !(b.cr && b.cr.n > 0)) {
+        const cid = Object.keys(I).find((id) => free(S, id) && I[id].t === 'cream' && I[id].k === R2.cream && (I[id].sp || 0) < 2);
+        if (cid) { I[cid].res = tag; return job({ k: 'f-cream', id: cid, fid, from: fidOf(I[cid].at), end: now + T }); }
+        const wf = P.list(S, 'awhip').concat(P.list(S, 'whip')).find((f) => { const w = K.st(S, f); return w.st === 'done' && w.k === R2.cream && !w.by && (w.n || 0) > 0; });
+        if (wf) { K.st(S, wf).by = tag; return job({ k: 'f-scoop', wf, fid, from: wf, end: now + T }); }
+      }
+      // トッピングは2台分だけ（ほかで使う材料を取りすぎない）
+      for (const k in R2.tops || {}) { const have = hopN(b, k), n = Math.min(10, HOP_CAP.adeco - have, R2.tops[k] * 2 - have); if (n > 0 && grabbable(k)) return job({ k: 'f-hop', fid, ing: k, n, from: stackFid(S, k), end: now + T }); }
+    }
+    // 4) 自動ホイッパー：自動デコ機で使うクリームを作る
+    for (const fid of P.list(S, 'awhip')) {
+      const w = K.st(S, fid); if (w.st !== 'idle' || w.ings.length || w.by) continue;
+      const need = [];
+      for (const df of P.list(S, 'adeco')) { const b = K.st(S, df), R2 = K.decoNeed(S, df) || plan(b); if (R2 && R2.cream && R2.cream !== 'none' && !(b.cr && b.cr.k === R2.cream && b.cr.n > 0)) need.push(R2.cream); }
+      // 冷蔵庫で待っている作りかけ（クリームがまだ）の分も
+      Object.values(I).forEach((it) => { if (it.t === 'deco' && !it.cr && (P.slotDef(S, it.at) || {}).type !== 'turn') { const r = Object.keys(S.known).map((x) => sim.recipe(S, x)).find((x) => x && x.base === it.b && x.cream && x.cream !== 'none' && S.menu[Object.keys(S.known).find((y) => sim.recipe(S, y) === x)] ); if (r) need.push(r.cream); } });
+      const busy = (c) => Object.values(I).some((it) => it.t === 'cream' && it.k === c && (it.sp || 0) < 2) || P.list(S, 'awhip').concat(P.list(S, 'whip')).some((f) => { const x = K.st(S, f); return x !== w && (x.st !== 'idle' || x.by || (x.ings || []).length) && (x.k === c || creamFromIngs(x.ings || []) === c || String(x.by).startsWith('staff')); });
+      const k = need.find((c) => !busy(c) && K.hasAll(S, D.CREAMS[c].ing));
+      if (k) { w.by = tag; return job({ k: 'f-load', fid, what: k, kind: 'whip', from: stackFid(S, Object.keys(D.CREAMS[k].ing)[0]), end: now + T }); }
+    }
+    // 5) 自動オーブン：焼けた型を冷ましに出す → 生地の入った型を入れる（自動ミキサーの横の型から）
+    for (const fid of P.list(S, 'aoven')) {
+      const id = K.at(S, slot0(fid)), it = id && I[id];
+      if (it && !it.res && it.t === 'pan' && it.st === 'baked') { const to = K.findSlot(S, it, ['rack', 'table', 'shelf', 'fridge', 'cshelf']); if (to) return carry(id, to, fidOf(to)); continue; }
+      if (it) continue;
+      const tp = (x) => ((P.slotDef(S, I[x].at) || {}).type === 'mixpan' ? 0 : 1);
+      const raw = Object.keys(I).filter((x) => free(S, x) && I[x].t === 'pan' && I[x].st === 'raw' && (P.slotDef(S, I[x].at) || {}).type !== 'oven').sort((a, b2) => tp(a) - tp(b2))[0];
+      if (raw) return carry(raw, slot0(fid), fid);
+    }
+    // 6) 自動ミキサー：横の型置きにきれいな型 → 足りないケーキの生地の材料を入れる
+    for (const fid of P.list(S, 'amixer')) {
+      const b = K.st(S, fid), ps = slot0(fid);
+      if (!K.inSlot(S, ps).length) { const pan = cleanPan(S); if (pan) return carry(pan, ps, fid); }
+      if (b.st !== 'idle' || b.ings.length || b.by) continue;
+      const inPipe = (base) => Object.values(I).filter((it) => (it.t === 'pan' && it.b === base && it.st !== 'empty') || (it.t === 'deco' && it.b === base)).length + P.list(S, 'amixer').filter((f) => { const x = K.st(S, f); return x !== b && (x.k === base || ((x.ings || []).length && baseFromIngs(x.ings) === base)); }).length;
+      const base = autoRecipes(S, want).map((r) => sim.recipe(S, r).base).find((bs) => inPipe(bs) < 2 && K.hasAll(S, D.BASES[bs].ing));
+      if (base) { b.by = tag; return job({ k: 'f-load', fid, what: base, kind: 'mix', from: stackFid(S, D.BASES[base].order[0]), end: now + T }); }
+    }
+  }
+  function feedFinish(S, st, slot, j, now) {
+    const tag = 'staff' + slot, I = items(S);
+    if (j.k === 'f-carry' || j.k === 'f-cream') {
+      const it = I[j.id];
+      if (!it || it.at !== 'h:' + tag) { if (it && it.res === tag) it.res = null; return false; }
+      const r = j.k === 'f-cream' ? (S.fu[j.fid] ? A.mcream(S, { pid: tag, fid: j.fid }, now) : ng()) : P.slotDef(S, j.to) ? A.put(S, { pid: tag, slot: j.to }, now) : ng();
+      dropHand(S, tag, now);
+      return !!r.ok;
+    }
+    if (j.k === 'f-hop') {
+      const [, h] = handOf(S, tag);
+      if (h && h.t === 'ing' && S.fu[j.fid]) hopLoad(S, { pid: tag, fid: j.fid, all: 1 }, stKind(S, j.fid));
+      dropHand(S, tag, now);
+      return !!h;
+    }
+    if (j.k === 'f-load') {
+      const b = S.fu[j.fid] && K.st(S, j.fid); if (b && b.by === tag) b.by = null;
+      const G = j.kind === 'mix' ? D.BASES[j.what] : D.CREAMS[j.what]; if (!b || !G) return false;
+      const req = G.ing, order = G.order || Object.keys(req);
+      if (b.st !== 'idle' || (b.ings || []).length || !K.hasAll(S, req)) return false;
+      const c = K.takeAll(S, req); b.ings = []; order.forEach((k) => { for (let n = 0; n < req[k]; n++) b.ings.push(k); }); b.c = c; b.lt = now;
+      return true;
+    }
+    if (j.k === 'f-scoop') {
+      const w = S.fu[j.wf] && K.st(S, j.wf); if (w && w.by === tag) w.by = null;
+      if (!w || w.st !== 'done' || K.held(S, tag)) return false;
+      if (!A.scoop(S, { pid: tag, fid: j.wf }, now).ok) return false;
+      const r2 = S.fu[j.fid] ? A.mcream(S, { pid: tag, fid: j.fid }, now) : ng();
+      dropHand(S, tag, now);
+      return !!r2.ok;
+    }
+    return false;
+  }
   function staffTick(S, now) {
     if (!S.staff || !(S.phase === 'prep' || S.phase === 'open')) return;
     const recs = _.menuRecipes(S).map((rid) => [rid, sim.recipe(S, rid)]);
@@ -1198,7 +1686,11 @@
       if (!st) return;
       const sp = (D.STAFF.speed[st.lv - 1] || 0.3) * (st.sp || 1); // レベル × その人の手際
       const dur = (k) => ((D.STAFF.jobSec[k] || 10) * 1000) / sp * (k === 'mix' ? _.eqv(S, 'mixer').fast || 1 : 1);
-      if (st.job) { if (now >= st.job.end) finish(S, st, slot, now); return; }
+      if (st.job) {
+        if (String(st.job.k).startsWith('f-') && !st.job.hd && now >= (st.job.t0 + st.job.end) / 2) feedHalf(S, st, slot, now);
+        if (st.job && now >= st.job.end) finish(S, st, slot, now);
+        return;
+      }
       if (st.wait && now < st.wait) return;
       st.wait = now + 1200;
       const job = (o) => { st.job = Object.assign(o, { t0: now }); };
@@ -1293,6 +1785,8 @@
           if (!inPipe && (fixed || (K.shortage(S)[rid] || 0) > 0 || !(K.shelfStock(S)[rid] || K.holeStock(S)[rid])) && doMix(r.base, true)) return;
           if (inPipe) return; // この1台を仕上げるまで、ほかのお菓子には手を出さない
         }
+      } else if (st.task === 'feed') {
+        feedPlan(S, st, slot, now, job, dur('feed'));
       } else if (st.task === 'wash') {
         const dirty = Object.keys(I).find((id) => { const it = I[id], at = String(it.at); return !it.res && (it.t === 'plate' || (it.t === 'pan' && it.st === 'empty')) && it.dirty && !at.startsWith('h:') && !at.startsWith('c:'); });
         const fid = P.list(S, 'sink').find((f) => !K.st(S, f).by);
@@ -1418,13 +1912,14 @@
     } else if (j.k === 'pay') {
       const c = S.cust[j.c]; if (c) c.res = null;
       if (c && c.st === 'pay') { const gid = K.at(S, 'c:' + j.c), it = gid && I[gid]; settle(S, c, it ? it.s : [], now); if (it && it.t === 'box') del(S, gid); } else done = false;
-    }
+    } else if (String(j.k).startsWith('f-')) done = feedFinish(S, st, slot, j, now);
     if (!done) return;
     st.xp = (st.xp || 0) + 1; st.done = (st.done || 0) + 1;
     while (st.lv < 10 && st.xp >= D.STAFF.xp[st.lv]) { st.lv++; _.fx(S, 'info', st.name + ' さんが Lv' + st.lv + ' に！仕事が速くなった'); }
   }
   K.releaseStaff = function (S, slot) {
     const tag = 'staff' + slot;
+    if (K.held(S, tag)) dropHand(S, tag, S._now || 0);
     for (const id in S.k.items) if (S.k.items[id].res === tag) S.k.items[id].res = null;
     for (const fid in S.k.st) if (S.k.st[fid].by === tag) S.k.st[fid].by = null;
     for (const id in S.cust) if (S.cust[id].res === tag) S.cust[id].res = null;
