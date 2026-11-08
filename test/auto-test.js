@@ -144,7 +144,7 @@ function fullAuto(label, setup) {
   S.staff.forEach((st) => { if (st) st.lv = 8; });
   for (const r in S.menu) S.menu[r].on = ['short', 'chocolate', 'baked_cheese'].includes(r);
   S.furn.table = 2;
-  A({ t: 'start' }); tick(150000, 250);
+  A({ t: 'start' }); tick(200000, 250); // 倉庫は店の横の別棟なので、材料を取りに行く分すこし長めに準備
   const pre = Object.values(S.k.items).filter((i) => i.t === 'tray').length;
   A({ t: 'sign' });
   let g = 0; while (S.phase === 'open' && g++ < 20000) tick(250);

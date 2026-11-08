@@ -565,6 +565,9 @@
       g.strokeStyle = 'rgba(120,105,90,.35)'; g.lineWidth = 3; g.strokeRect(24, 30, w / 2 - 36, h - 60); g.strokeRect(w / 2 + 12, 30, w / 2 - 36, h - 60);
       g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = 2; g.strokeRect(27, 33, w / 2 - 42, h - 66); g.strokeRect(w / 2 + 15, 33, w / 2 - 42, h - 66);
     }),
+    // 倉庫の床（コンクリート・1.5mごとの目地）と、外壁（波板）
+    concrete: () => canvas(512, 512, (g, w, h) => { g.fillStyle = '#B9B6B0'; g.fillRect(0, 0, w, h); noise(g, w, h, 7000, 0.12, ['#9E9A93', '#D3D0CA']); g.strokeStyle = 'rgba(90,86,80,.45)'; g.lineWidth = 3; g.strokeRect(1.5, 1.5, w - 3, h - 3); }),
+    siding: () => canvas(256, 256, (g, w, h) => { for (let x = 0; x < w; x += 16) { const gr = g.createLinearGradient(x, 0, x + 16, 0); gr.addColorStop(0, '#AEB7B2'); gr.addColorStop(0.45, '#E3E8E4'); gr.addColorStop(1, '#A3ACA7'); g.fillStyle = gr; g.fillRect(x, 0, 16, h); } noise(g, w, h, 900, 0.06, ['#8F9893', '#FFFFFF']); }),
     asphalt: () => canvas(256, 256, (g, w, h) => { g.fillStyle = '#6B6B6E'; g.fillRect(0, 0, w, h); noise(g, w, h, 3000, 0.25, ['#4A4A4D', '#8A8A8D']); }),
     sidewalk: () => canvas(256, 256, (g, w, h) => { g.fillStyle = '#B9B4AC'; g.fillRect(0, 0, w, h); noise(g, w, h, 1500, 0.15, ['#9E988F', '#D2CDC5']); g.strokeStyle = '#8F897F'; g.lineWidth = 3; g.strokeRect(0, 0, w, h); g.beginPath(); g.moveTo(w / 2, 0); g.lineTo(w / 2, h); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke(); }),
     grass: () => canvas(256, 256, (g, w) => { g.fillStyle = '#6E9A4E'; g.fillRect(0, 0, w, w); for (let k = 0; k < 2500; k++) { g.fillStyle = rnd() < 0.5 ? '#5E8A40' : '#86B263'; g.fillRect(rnd() * w, rnd() * w, 1.5, 4); } }),

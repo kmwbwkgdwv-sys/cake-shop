@@ -56,45 +56,97 @@
   P.START = ['table', 'shelf', 'whip', 'scase', 'sink', 'cshelf', 'fridge', 'reg', 'trash', 'boxhole'];
 
   // ---------------------------------------------------------------------
-  //  間取り（増床レベルで大きさが変わる。倉庫とパソコン室は裏に並ぶ）
+  //  間取り（増床レベルで大きさが変わる）
+  //  倉庫は店の左横に建てた別棟（渡り廊下でつながる）。拡張するたびに建物ごと大きくなる
   // ---------------------------------------------------------------------
-  // lv = 増床の段階、st = 倉庫の拡張の段階（1段ごとに奥行き +1.3m）
-  P.STORE_STEP = 1.3;
+  // lv = 増床の段階、st = 倉庫の拡張の段階
+  P.STORE_W = [6.2, 7.2, 8.2, 9.2]; // 倉庫の中の幅（店から外向き）
+  P.STORE_D = [5.0, 6.4, 7.8, 9.2]; // 倉庫の中の奥行き（裏から手前）
+  P.WALL = 0.2; P.GAP = 1.2; // 外の壁の厚さ・店と倉庫のあいだ（渡り廊下の長さ）
   P.geom = function (lv, st) {
     const sz = D.SHOP_SIZES[clamp(lv || 0, 0, D.SHOP_SIZES.length - 1)];
-    const RX = sz.rx, RZ = sz.rz, CZ = -RZ + sz.kd;
+    const RX = sz.rx, RZ = sz.rz, CZ = -RZ + sz.kd, TW = P.WALL;
     st = clamp(st || 0, 0, 3);
     const g = { RX, RZ, CZ, lv: lv || 0, st };
-    // 倉庫（左奥・広め。拡張すると手前に広がる）とパソコン室（そのとなり）
-    g.store = { x0: -RX, x1: -RX + 6.2, z0: -RZ, z1: -RZ + 4.6 + st * P.STORE_STEP, door: -RX + 4.9, dw: 1.4 };
+    // 倉庫（別棟の中）と渡り廊下。廊下は店の左の壁と倉庫の右の壁のドアをつなぐ
+    const sx1 = -RX - TW - P.GAP - TW;
+    g.store = { x0: sx1 - P.STORE_W[st], x1: sx1, z0: -RZ, z1: -RZ + P.STORE_D[st] };
+    g.link = { z: -RZ + 2.6, w: 1.6, x0: sx1 + TW, x1: -RX - TW, wt: 0.15 }; // 廊下の中（x0〜x1）、ドアの幅 w
+    g.ox = g.store.x0 - TW; // 倉庫の外の壁（路地側）の外側
+    // 倉庫の裏口（路地側の壁。トラックはこの前に止まる）
+    g.backDoor = { x: g.store.x0, z: -RZ + 2.6, w: 1.4 };
     g.pc = { x0: -RX + 6.2, x1: -RX + 9.4, z0: -RZ, z1: -RZ + 3.4, door: -RX + 7.8, dw: 1.2 };
-    g.backDoor = { x: -RX, z: -RZ + 2.3, w: 1.2 };
     // カウンターは売り場の右寄りだけ。左は壁で仕切る（右の端は通路で売り場へ出られる）
     g.counter = { z: CZ, d: 0.78, x0: Math.max(-RX + 4, RX - 9.6), x1: RX - 1.8 };
     g.kitchen = { x0: -RX, x1: RX, z0: -RZ, z1: CZ - g.counter.d / 2 };
     g.hall = [-RX, CZ - g.counter.d / 2, g.counter.x0, CZ - g.counter.d / 2 + 0.16]; // 厨房と売り場の仕切りの壁
-    const th = 0.14, sd = g.store, pc = g.pc;
-    // 壁（家具はここにかからない）
+    const th = 0.14, pc = g.pc, sd = g.store, lk = g.link, bd = g.backDoor;
+    // 店の中の壁（家具はここにかからない）：パソコン室
     g.walls = [
-      [sd.x0, sd.z1 - th / 2, sd.door - sd.dw / 2, sd.z1 + th / 2],
-      [sd.door + sd.dw / 2, sd.z1 - th / 2, sd.x1 + th / 2, sd.z1 + th / 2],
       [pc.x0, pc.z1 - th / 2, pc.door - pc.dw / 2, pc.z1 + th / 2],
       [pc.door + pc.dw / 2, pc.z1 - th / 2, pc.x1 + th / 2, pc.z1 + th / 2],
-      [sd.x1 - th / 2, -RZ, sd.x1 + th / 2, sd.z1],
+      [pc.x0 - th / 2, -RZ, pc.x0 + th / 2, pc.z1 + th / 2],
       [pc.x1 - th / 2, -RZ, pc.x1 + th / 2, pc.z1],
     ];
-    // 家具を置けない所：パソコン室の中、ドアの前、裏口の前、カウンターの通路
+    // 家具を置けない所：パソコン室の中、ドアの前（廊下の両側・倉庫の裏口）、カウンターの通路
     g.noBuild = [
       [pc.x0, -RZ, pc.x1 + th / 2, pc.z1 + th / 2],
-      [sd.door - sd.dw / 2 - 0.15, sd.z1 - 1.15, sd.door + sd.dw / 2 + 0.15, sd.z1 + 1.25],
       [pc.door - pc.dw / 2 - 0.15, pc.z1 - 0.1, pc.door + pc.dw / 2 + 0.15, pc.z1 + 1.25],
-      [-RX, g.backDoor.z - g.backDoor.w / 2 - 0.2, -RX + 1.25, g.backDoor.z + g.backDoor.w / 2 + 0.2],
+      [-RX, lk.z - lk.w / 2 - 0.2, -RX + 1.3, lk.z + lk.w / 2 + 0.2],
+      [sd.x1 - 1.3, lk.z - lk.w / 2 - 0.2, sd.x1, lk.z + lk.w / 2 + 0.2],
+      [sd.x0, bd.z - bd.w / 2 - 0.2, sd.x0 + 1.3, bd.z + bd.w / 2 + 0.2],
       [g.counter.x1 - 0.1, g.counter.z - 1.5, RX, g.counter.z + 0.5],
     ];
-    g.key = [lv, RX, RZ, CZ, st, 3].join(',');
-    // 床に段ボールを置ける外の路地（トラックと建物のあいだ）
-    g.alley = { x0: -RX - 5.4, x1: -RX - 0.12, z0: -RZ - 2.6, z1: RZ - 0.3 };
+    // 家具を置ける所（厨房・倉庫）
+    g.areas = [Object.assign({ id: 'kit' }, g.kitchen), Object.assign({ id: 'store', front: 1 }, sd)];
+    g.key = [lv, RX, RZ, CZ, st, 4].join(',');
+    // 床に段ボールを置ける外の路地（トラックと倉庫のあいだ）
+    g.alley = { x0: g.ox - 5.2, x1: g.ox - 0.02, z0: -RZ - 2.6, z1: RZ - 0.3 };
+    g.truck = { x: g.ox - 3.25, z: bd.z + 3.0 };
     return g;
+  };
+  // どこにいるか：厨房 kit・パソコン室 pc・渡り廊下 link・倉庫 store・外 out
+  P.zoneOf = function (g, x, z) {
+    const sd = g.store, lk = g.link;
+    if (x >= sd.x0 && x <= sd.x1 && z >= sd.z0 && z <= sd.z1) return 'store';
+    if (x > lk.x0 - P.WALL && x < lk.x1 + P.WALL && Math.abs(z - lk.z) < lk.w / 2 + 0.05) return 'link';
+    if (x < -g.RX) return 'out';
+    if (z < g.pc.z1 && x >= g.pc.x0 && x < g.pc.x1) return 'pc';
+    return 'kit';
+  };
+  // となりの場所へ行くときに通るドアの前後の点
+  P.doorPts = function (g, a, b) {
+    const lk = g.link, mid = (lk.x0 + lk.x1) / 2, bd = g.backDoor, pc = g.pc;
+    const pair = (p, q) => [p, q];
+    if (a === 'kit' && b === 'pc') return pair([pc.door, pc.z1 + 0.6], [pc.door, pc.z1 - 0.6]);
+    if (a === 'pc' && b === 'kit') return pair([pc.door, pc.z1 - 0.6], [pc.door, pc.z1 + 0.6]);
+    if (a === 'kit' && b === 'link') return pair([-g.RX + 0.6, lk.z], [mid, lk.z]);
+    if (a === 'link' && b === 'kit') return pair([mid, lk.z], [-g.RX + 0.6, lk.z]);
+    if (a === 'link' && b === 'store') return pair([mid, lk.z], [g.store.x1 - 0.6, lk.z]);
+    if (a === 'store' && b === 'link') return pair([g.store.x1 - 0.6, lk.z], [mid, lk.z]);
+    if (a === 'store' && b === 'out') return pair([bd.x + 0.6, bd.z], [bd.x - P.WALL - 0.6, bd.z]);
+    return pair([bd.x - P.WALL - 0.6, bd.z], [bd.x + 0.6, bd.z]); // out → store
+  };
+  // 次に向かう場所（厨房 → 廊下 → 倉庫 → 外 の一本道。パソコン室は厨房から）
+  P.nextZone = function (a, b) {
+    if (a === b) return b;
+    if (a === 'pc') return 'kit';
+    if (a === 'kit') return b === 'pc' ? 'pc' : 'link';
+    if (a === 'link') return b === 'kit' || b === 'pc' ? 'kit' : 'store';
+    if (a === 'store') return b === 'out' ? 'out' : 'link';
+    return 'store';
+  };
+  // 歩く道のり（ドアを通って）
+  P.walkLen = function (g, ax, az, bx, bz) {
+    let x = ax, z = az, len = 0;
+    for (let i = 0; i < 6; i++) {
+      const za = P.zoneOf(g, x, z), zb = P.zoneOf(g, bx, bz);
+      if (za === zb) break;
+      const d = P.doorPts(g, za, P.nextZone(za, zb));
+      len += Math.hypot(d[0][0] - x, d[0][1] - z) + Math.hypot(d[1][0] - d[0][0], d[1][1] - d[0][1]);
+      x = d[1][0]; z = d[1][1];
+    }
+    return len + Math.hypot(bx - x, bz - z);
   };
   P.geomOf = (S) => P.geom(S && S.up ? S.up.floor || 0 : 0, S && S.up ? S.up.storage || 0 : 0);
 
@@ -126,15 +178,15 @@
   // 置けるか：厨房・倉庫の中か、裏の路地（トラック・裏口・荷おろしの所はだめ）。壁・通路・家具・ほかの段ボールと重ならない
   P.floorOk = function (S, it, x, z, r, id) {
     const g = P.geomOf(S), b = P.floorBox(it, x, z, r), m = 0.01;
-    const kz = g.kitchen, al = g.alley;
-    const inK = b[0] >= kz.x0 + 0.02 && b[2] <= kz.x1 - 0.02 && b[1] >= kz.z0 + 0.02 && b[3] <= kz.z1 - 0.02;
+    const al = g.alley, inR = (a) => b[0] >= a.x0 + 0.02 && b[2] <= a.x1 - 0.02 && b[1] >= a.z0 + 0.02 && b[3] <= a.z1 - 0.02;
+    const inK = g.areas.some(inR);
     const inA = b[0] >= al.x0 && b[2] <= al.x1 && b[1] >= al.z0 && b[3] <= al.z1;
     if (!inK && !inA) return '厨房・倉庫の中か、裏の路地に置こう';
     if (inA) {
-      const bd = g.backDoor.z, tx = -g.RX - 3.45, tz = bd + 3.0;
+      const bd = g.backDoor.z, tx = g.truck.x, tz = g.truck.z, ox = g.ox;
       if (hit(b, [tx - 1.3, tz - 3.0, tx + 1.3, tz + 2.9], m)) return 'トラックの所には置けません';
-      if (hit(b, [-g.RX - 2.25, bd + 0.2, -g.RX - 0.75, bd + 3.6], m)) return '荷おろしの場所はあけておこう';
-      if (hit(b, [-g.RX - 1.4, bd - g.backDoor.w / 2 - 0.3, -g.RX, bd + g.backDoor.w / 2 + 0.3], m)) return '裏口の前はふさがないで';
+      if (hit(b, [ox - 2.05, bd + 0.2, ox - 0.55, bd + 3.6], m)) return '荷おろしの場所はあけておこう';
+      if (hit(b, [ox - 1.2, bd - g.backDoor.w / 2 - 0.3, ox, bd + g.backDoor.w / 2 + 0.3], m)) return '倉庫の裏口の前はふさがないで';
     } else {
       for (const w of g.walls) if (hit(b, w, m)) return '壁にぶつかっています';
       for (const w of g.noBuild) if (hit(b, w, m)) return 'ドアや通路をふさいでしまいます';
@@ -143,11 +195,11 @@
     for (const o of P.floorItems(S)) { if (o === id) continue; if (hit(b, P.floorBox(S.k.items[o]), 0.002)) return 'ほかの段ボールと重なっています'; }
     return '';
   };
-  // 空いている床（near の近くから。倉庫の裏口のそば → 厨房）
+  // 空いている床（near の近くから。ふだんは倉庫の裏口のそば → 倉庫 → 厨房）
   P.floorSpot = function (S, it, near) {
-    const g = P.geomOf(S), kz = g.kitchen, c = [];
-    const n = near || [-g.RX + 1.2, g.backDoor.z + 1.6];
-    for (let z = kz.z0 + 0.3; z < kz.z1 - 0.3; z += 0.25) for (let x = kz.x0 + 0.3; x < kz.x1 - 0.3; x += 0.25) c.push([Math.round(x * 100) / 100, Math.round(z * 100) / 100, Math.hypot(x - n[0], z - n[1])]);
+    const g = P.geomOf(S), c = [];
+    const n = near || [g.backDoor.x + 1.2, g.backDoor.z + 1.6];
+    for (const a of g.areas) for (let z = a.z0 + 0.3; z < a.z1 - 0.3; z += 0.25) for (let x = a.x0 + 0.3; x < a.x1 - 0.3; x += 0.25) c.push([Math.round(x * 100) / 100, Math.round(z * 100) / 100, P.walkLen(g, n[0], n[1], x, z)]);
     c.sort((a, b) => a[2] - b[2]);
     for (const q of c) for (const r of [0, 1]) if (!P.floorOk(S, it, q[0], q[1], r)) return { x: q[0], z: q[1], r };
     return null;
@@ -173,8 +225,7 @@
       return '';
     }
     const b = P.box({ k, x, z, r });
-    const kz = g.kitchen;
-    if (b[0] < kz.x0 + 0.02 || b[2] > kz.x1 - 0.02 || b[1] < kz.z0 + 0.02 || b[3] > kz.z1 - 0.02) return '厨房・倉庫の中に置こう';
+    if (!g.areas.some((a) => b[0] >= a.x0 + 0.02 && b[2] <= a.x1 - 0.02 && b[1] >= a.z0 + 0.02 && b[3] <= a.z1 - 0.02)) return '厨房・倉庫の中に置こう';
     for (const w of g.walls) if (hit(b, w, 0.01)) return '壁にぶつかっています';
     for (const w of g.noBuild) if (hit(b, w, 0.01)) return 'ドアや通路をふさいでしまいます';
     for (const o in S.fu) { if (o === id) continue; const f = S.fu[o]; if (P.KINDS[f.k].counter) continue; if (hit(b, P.box(f), 0.002)) return 'ほかの家具と重なっています'; }
@@ -190,18 +241,22 @@
       for (const v of xs) if (!P.valid(S, null, k, v, g.counter.z, 0)) return { x: v, z: g.counter.z, r: 0 };
       return null;
     }
-    const cand = [];
-    const kz = g.kitchen, step = 0.1;
-    for (let r = 0; r < 4; r++) {
-      const [w, d] = P.size(k, r);
-      for (let z = kz.z0 + d / 2 + 0.03; z < kz.z1 - d / 2; z += step) for (let x = kz.x0 + w / 2 + 0.03; x < kz.x1 - w / 2; x += step) {
-        const X = Math.round(x * 100) / 100, Z = Math.round(z * 100) / 100;
-        // 向き：壁を背にする（奥の壁→前向き、左の壁→右向き…）
-        const back = Z - d / 2 - kz.z0, left = X - w / 2 - kz.x0, right = kz.x1 - X - w / 2;
-        const want = back < 0.12 ? 0 : left < 0.12 ? 1 : right < 0.12 ? 3 : 0;
-        if (r !== want) continue;
-        const wallD = Math.min(back, left, right);
-        cand.push([X, Z, r, (near ? Math.hypot(X - near[0], Z - near[1]) : 0) + (wallD < 0.12 ? 0 : 6 + wallD)]);
+    const cand = [], step = 0.1;
+    // 棚・冷蔵棚・冷蔵庫・在庫棚はなるべく倉庫へ、ほかの機械は厨房へ（near があれば、その近くの場所を優先）
+    const storeKind = /^(shelf|cshelf|fridge|crack)$/.test(k), nearZ = near ? P.zoneOf(g, near[0], near[1]) : null;
+    for (const a of g.areas) {
+      const pen = nearZ ? (nearZ === a.id || (nearZ === 'link' && a.id === 'store') ? 0 : 8) : (a.id === 'store') === storeKind ? 0 : 30;
+      for (let r = 0; r < 4; r++) {
+        const [w, d] = P.size(k, r);
+        for (let z = a.z0 + d / 2 + 0.03; z < a.z1 - d / 2; z += step) for (let x = a.x0 + w / 2 + 0.03; x < a.x1 - w / 2; x += step) {
+          const X = Math.round(x * 100) / 100, Z = Math.round(z * 100) / 100;
+          // 向き：壁を背にする（奥の壁→前向き、左の壁→右向き、右の壁→左向き、倉庫の手前の壁→奥向き）
+          const back = Z - d / 2 - a.z0, left = X - w / 2 - a.x0, right = a.x1 - X - w / 2, front = a.front ? a.z1 - Z - d / 2 : 99;
+          const want = back < 0.12 ? 0 : left < 0.12 ? 1 : right < 0.12 ? 3 : front < 0.12 ? 2 : 0;
+          if (r !== want) continue;
+          const wallD = Math.min(back, left, right, front);
+          cand.push([X, Z, r, pen + (near ? Math.hypot(X - near[0], Z - near[1]) : 0) + (wallD < 0.12 ? 0 : 6 + wallD)]);
+        }
       }
     }
     cand.sort((a, b) => a[3] - b[3]);

@@ -148,6 +148,7 @@
   K.setup = function (S) {
     S.fu = {}; S.fseq = 0;
     if (!S.k) S.k = K.newKitchen();
+    S.k.wh = 2; // 倉庫は別棟（新しい間取り）
     P.startLayout((S.up && S.up.floor) || 0).forEach(([k, x, z, r]) => addFurn(S, k, x, z, r));
     const sh = P.list(S, 'shelf')[0];
     add(S, { t: 'pan', st: 'empty', at: 'f:' + sh + ':0', pl: 0 });
@@ -280,6 +281,7 @@
     if (!k.st || typeof k.st !== 'object') k.st = {};
     if (!S.fu || typeof S.fu !== 'object' || !Object.keys(S.fu).length) migrate(S);
     for (const id in S.fu) { const f = S.fu[id]; if (!f || !P.KINDS[f.k]) { delete S.fu[id]; continue; } f.x = +f.x || 0; f.z = +f.z || 0; f.r = (+f.r || 0) % 4; }
+    if (!(k.wh >= 2)) moveStore(S);
     // 間取りが変わって壁・通路・ほかの家具にかかった家具は、近くの空いている所へ（全員の画面で同じ結果になる）
     for (const id of Object.keys(S.fu).sort()) {
       const f = S.fu[id]; if (f.bad || !P.valid(S, id, f.k, f.x, f.z, f.r)) continue;
@@ -364,6 +366,29 @@
     if (h && typeof h === 'object') for (const ing in h) { const v = _.toArr(h[ing]); if (D.ING[ing] && +v[0] > 0) out[ing] = [+v[0], Math.max(0, +v[1] || 0)]; }
     return out;
   }
+  // 前の間取り（倉庫が店の中の左奥）のお店：倉庫にあった家具と床の段ボールを、店の横に建てた倉庫へそのまま引っ越す
+  function moveStore(S) {
+    S.k.wh = 2;
+    const g = P.geomOf(S), RX = g.RX, RZ = g.RZ, st = g.st;
+    const old = { x0: -RX, x1: -RX + 6.2, z0: -RZ, z1: -RZ + 4.6 + st * 1.3 }, dx = g.store.x0 - old.x0, dz = g.store.z0 - old.z0;
+    const inOld = (b) => b[0] >= old.x0 - 0.05 && b[2] <= old.x1 + 0.1 && b[1] >= old.z0 - 0.05 && b[3] <= old.z1 + 0.1;
+    const moved = [];
+    for (const id of Object.keys(S.fu).sort()) {
+      const f = S.fu[id]; if (P.KINDS[f.k].counter || !inOld(P.box(f))) continue;
+      const nx = Math.round((f.x + dx) * 100) / 100, nz = Math.round((f.z + dz) * 100) / 100;
+      if (!P.valid(S, id, f.k, nx, nz, f.r)) { f.x = nx; f.z = nz; moved.push(id); continue; }
+      const keep = S.fu[id]; delete S.fu[id];
+      const sp = P.findSpot(S, keep.k, [nx, nz]);
+      S.fu[id] = sp && P.zoneOf(g, sp.x, sp.z) === 'store' ? Object.assign(keep, sp) : keep;
+    }
+    for (const id of Object.keys(S.k.items || {}).sort()) {
+      const it = S.k.items[id]; if (!it || it.at !== 'fl' || !(it.t === 'crate' || it.t === 'fcrate')) continue;
+      if (!inOld(P.floorBox(it))) continue;
+      const nx = it.fx + dx, nz = it.fz + dz; if (!P.floorOk(S, it, nx, nz, it.fr, id)) { it.fx = nx; it.fz = nz; }
+    }
+    return moved.length;
+  }
+  K.moveStore = moveStore;
   // 古いお店（家具が無い）を新しい形に移す。持っていた設備・在庫・並んでいたケーキはできるだけ引きつぐ
   function migrate(S) {
     const old = { inv: S.inv || {}, cases: _.toArr(S.showcase).filter((c) => c && typeof c === 'object' && c.p > 0), ovens: _.toArr(S.ovens).length, items: S.k.items || {} };
@@ -1679,6 +1704,19 @@
     }
     return false;
   }
+  // 取りに行って運ぶ仕事は、歩く時間も足す（倉庫は店の横の別棟なので遠い。行って戻る分）
+  const WALK_V = 2.2;
+  function walkMs(S, o) {
+    const g = P.geomOf(S), I = items(S);
+    const posF = (fid) => { const f = fid && S.fu[fid]; return f ? P.stand(f, 0.6) : null; };
+    const posI = (id) => { const it = id && I[id]; if (!it) return null; const at = String(it.at); if (at.startsWith('dl:')) return [g.truck.x, g.truck.z - 3.3]; if (at === 'fl') return [it.fx, it.fz]; const sd = P.slotDef(S, at); return sd ? posF(sd.fid) : null; };
+    const a = (o.k === 'stock' ? posI(o.id) : null) || posF(o.from) || posI(o.id);
+    const toF = o.k === 'stock' ? o.dest || null : o.fid || (o.to && P.slotDef(S, o.to) ? P.slotDef(S, o.to).fid : null);
+    const b = posF(toF) || (o.k === 'stock' ? [(g.store.x0 + g.store.x1) / 2, (g.store.z0 + g.store.z1) / 2] : null);
+    if (!a || !b) return 0;
+    return Math.min(45000, Math.round((2 * P.walkLen(g, a[0], a[1], b[0], b[1]) / WALK_V) * 1000));
+  }
+  K.walkMs = walkMs;
   function staffTick(S, now) {
     if (!S.staff || !(S.phase === 'prep' || S.phase === 'open')) return;
     const recs = _.menuRecipes(S).map((rid) => [rid, sim.recipe(S, rid)]);
@@ -1693,7 +1731,7 @@
       }
       if (st.wait && now < st.wait) return;
       st.wait = now + 1200;
-      const job = (o) => { st.job = Object.assign(o, { t0: now }); };
+      const job = (o) => { if (String(o.k).startsWith('f-') || o.k === 'stock') o.end += walkMs(S, o); st.job = Object.assign(o, { t0: now }); };
       const I = items(S), tag = 'staff' + slot;
       // ---- 作業の部品（各係・お菓子係で使う）。仕事を始めたら true ----
       const panCount = (base, sts) => Object.values(I).filter((it) => it.t === 'pan' && sts.includes(it.st) && (!base || it.b === base)).length;

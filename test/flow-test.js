@@ -203,10 +203,10 @@ A({ t: 'pick', id: K.inSlot(S, P.slots(S, ck)[3])[0] }); ok(held() && held().t =
 clearHand(); for (const sl of P.slots(S, ck)) for (const id of K.inSlot(S, sl)) delete S.k.items[id];
 delete S.fu[ck];
 // ---- 倉庫の拡張（店舗レベル2から）----
-const z1a = P.geomOf(S).store.z1; S.xp = 0;
+const sa = P.geomOf(S).store, area = (q) => (q.x1 - q.x0) * (q.z1 - q.z0), z1a = sa.z1; S.xp = 0;
 ok(!A({ t: 'upgrade', id: 'storage', quiet: 1 }).ok, 'storage expansion is locked at Lv1');
 S.xp = 200; S.funds += 30000; const fu0 = JSON.stringify(Object.keys(S.fu).sort());
-ok(A({ t: 'upgrade', id: 'storage' }).ok && Math.abs(P.geomOf(S).store.z1 - z1a - P.STORE_STEP) < 1e-6, 'storage expanded: ' + z1a.toFixed(2) + ' → ' + P.geomOf(S).store.z1.toFixed(2));
+ok(A({ t: 'upgrade', id: 'storage' }).ok && P.geomOf(S).store.z1 > z1a && P.geomOf(S).store.x0 < sa.x0 && P.geomOf(S).store.x1 === sa.x1, 'storage (annex) expanded: ' + area(sa).toFixed(1) + '㎡ → ' + area(P.geomOf(S).store).toFixed(1) + '㎡');
 ok(Object.keys(S.fu).every((id) => !S.fu[id].bad && !P.valid(S, id, S.fu[id].k, S.fu[id].x, S.fu[id].z, S.fu[id].r)) && JSON.stringify(Object.keys(S.fu).sort()) === fu0, 'all furniture still valid after the storage expansion');
 ok(!A({ t: 'upgrade', id: 'storage', quiet: 1 }).ok, 'the next storage step needs Lv4');
 // ---- 追加のケーキナイフ ----

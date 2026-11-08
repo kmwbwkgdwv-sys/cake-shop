@@ -799,7 +799,7 @@
       return `<label class="small">${lbl} <select data-sopt="${i}"><option value="">${auto}</option>${list.map(([k, n]) => `<option value="${k}" ${st.opt === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>`;
     };
     const stars = (sp) => '★'.repeat(Math.max(1, Math.min(5, Math.round((sp - 0.7) / 0.15)))) + '☆'.repeat(5 - Math.max(1, Math.min(5, Math.round((sp - 0.7) / 0.15))));
-    body.innerHTML = `<div class="banner sky">${ic('user')}<span>アルバイトは1人1つの業務を担当（最大8人。店舗Lv2から雇える）。人によって<b>手際</b>がちがい、作業の速さが変わります。働くほどレベルが上がって速く・上手に。「お菓子係」は作るお菓子を指定でき、生地から仕上げまで1人で作ります。「仕入れ係」はトラックの段ボールを指定の場所へ運びます。「機械係」は自動の機械に材料をセットして、できた物を次の機械やショーケースへ運びます。日給は閉店時に支払い。</span></div><div class="list">${D.STAFF.slots.map((sl, i) => {
+    body.innerHTML = `<div class="banner sky">${ic('user')}<span>アルバイトは1人1つの業務を担当（最大8人。店舗Lv2から雇える）。人によって<b>手際</b>がちがい、作業の速さが変わります。働くほどレベルが上がって速く・上手に。「お菓子係」は作るお菓子を指定でき、生地から仕上げまで1人で作ります。「仕入れ係」はトラックの段ボールを指定の場所へ運びます。「機械係」は店の横の倉庫まで材料を取りに行って自動の機械にセットし、できた物を次の機械やショーケースへ運びます。日給は閉店時に支払い。</span></div><div class="list">${D.STAFF.slots.map((sl, i) => {
       const st = s.staff[i];
       if (!st) {
         const lock = SL < sl.lv, sp = D.STAFF.speed[sl.start - 1] * (sl.sp || 1);

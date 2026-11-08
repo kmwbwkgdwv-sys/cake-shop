@@ -497,7 +497,7 @@
   function moveForFloor(S, from, to) {
     const P = CS.plan, st = S.up.storage || 0, a = P.geom(from, st), b = P.geom(to, st), dx = b.store.x0 - a.store.x0, dz = b.store.z0 - a.store.z0;
     for (const id in S.fu) { const f = S.fu[id]; if (P.KINDS[f.k].counter) { f.x += dx; f.z = b.counter.z; } else { f.x += dx; f.z += dz; } }
-    for (const id in S.k.items) { const it = S.k.items[id]; if (it.at === 'fl' && it.fx > -a.RX) { it.fx += dx; it.fz += dz; } }
+    for (const id in S.k.items) { const it = S.k.items[id]; if (it.at === 'fl') { it.fx += dx; it.fz += dz; } } // 厨房・倉庫・路地とも、奥の左の角に合わせて動く
     for (const id in S.fu) { const f = S.fu[id]; if (P.valid(S, id, f.k, f.x, f.z, f.r)) { const old = S.fu[id]; delete S.fu[id]; const sp = P.findSpot(S, old.k, [old.x, old.z]); S.fu[id] = sp ? Object.assign(old, sp) : old; } }
     CS.kitchen.normalize(S);
   }

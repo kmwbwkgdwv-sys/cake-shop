@@ -71,7 +71,9 @@ async def main():
       ('reg_front', "const W=CS.world, [id,f]=T.fr('reg'); W.me.x=f.x-0.3; W.me.z=W.dims.CZ+2.4; W.me.yaw=0; W.me.pitch=-0.25"),
       ('reg_back', "const W=CS.world, [id,f]=T.fr('reg'); W.me.x=f.x-0.4; W.me.z=W.dims.CZ-0.8; W.me.yaw=Math.PI; W.me.pitch=-0.45"),
       ('salesfloor', "const W=CS.world; W.me.x=6; W.me.z=W.dims.RZ-1.2; W.me.yaw=Math.PI*0.25+Math.PI*0.75; W.me.pitch=-0.05"),
-      ('backdoor', "const W=CS.world; W.me.x=-W.dims.RX+2.6; W.me.z=W.L.backDoor[1]+0.4; W.me.yaw=Math.PI/2; W.me.pitch=-0.1"),
+      ('backdoor', "const W=CS.world, g=W.L.g; W.me.x=g.store.x0+2.6; W.me.z=W.L.backDoor[1]+0.4; W.me.yaw=Math.PI/2; W.me.pitch=-0.1"),
+      ('link', "const W=CS.world, g=W.L.g; W.me.x=-W.dims.RX+2.4; W.me.z=g.link.z+1.2; W.me.yaw=Math.PI/2-0.35; W.me.pitch=-0.05"),
+      ('annex_out', "const W=CS.world, g=W.L.g; W.me.x=g.ox-4.6; W.me.z=g.backDoor.z+9; W.me.yaw=-0.42; W.me.pitch=0.02"),
       ('outside', "const W=CS.world; W.me.x=0.3; W.me.z=W.dims.RZ+2.6; W.me.yaw=0.3; W.me.pitch=-0.15"),
       ('town', "const W=CS.world; W.me.x=-2; W.me.z=W.dims.RZ+3.2; W.me.yaw=Math.PI*0.75; W.me.pitch=0.02"),
       ('town2', "const W=CS.world; W.me.x=3; W.me.z=W.dims.RZ+3.2; W.me.yaw=-Math.PI*0.7; W.me.pitch=0.05"),
@@ -85,7 +87,7 @@ async def main():
       ('pc_ing', "CS.game.openPC('ing'); setTimeout(()=>{ const b=document.querySelector('#sheet .sh-body, #sheet .sh .body, #sheet [class*=body]'); if(b) b.scrollTop=99999; }, 500)"),
       ('pc_staff', "CS.ui.closeSheet(); const S=T.S(); S.xp=900; CS.ui.room.act({t:'hire',slot:0}).then(()=>CS.ui.room.act({t:'hire',slot:1})).then(()=>CS.ui.room.act({t:'staffTask',slot:0,task:'chef',opt:'short'})).then(()=>CS.ui.room.act({t:'staffTask',slot:1,task:'stock',opt:''})).then(()=>CS.game.openPC('staff'))"),
       ('storage3', "CS.ui.closeSheet(); 0 || (()=>{})();"),
-      ('storage3b', "const S=T.S(); S.up.storage=3; CS.kitchen.normalize(S); T.emit(); const W=CS.world, g=CS.plan.geomOf(S); W.me.x=g.store.door+0.3; W.me.z=g.store.z1+3.0; W.me.yaw=0.15; W.me.pitch=-0.12"),
+      ('storage3b', "const S=T.S(); S.up.storage=3; CS.kitchen.normalize(S); T.emit(); const W=CS.world, g=CS.plan.geomOf(S); W.me.x=g.store.x1-0.7; W.me.z=g.store.z1-0.5; W.me.yaw=Math.PI/4+0.3; W.me.pitch=-0.12"),
     ]
     MODE = sys.argv[4] if len(sys.argv) > 4 else 'all'
     if MODE == 'act': views = []

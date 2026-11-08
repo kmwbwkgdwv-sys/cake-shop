@@ -26,16 +26,18 @@
     const g = P.geomOf(s);
     RX = g.RX; RZ = g.RZ; CZ = g.CZ;
     const L = { g, lv: g.lv, key: g.key, store: g.store, pc: g.pc };
-    L.backDoor = [-RX, g.backDoor.z];
-    // トラック（荷台の後ろが裏口のそば）。段ボールは荷台の中に積んである
-    L.truck = { x: -RX - 3.45, z: g.backDoor.z + 3.0 };
-    L.alley = [-RX - 5.6, -RZ - 3.0];
+    L.backDoor = [g.backDoor.x, g.backDoor.z]; // 倉庫（別棟）の裏口
+    // トラック（荷台の後ろが倉庫の裏口のそば）。段ボールは荷台の中に積んである
+    L.truck = { x: g.truck.x, z: g.truck.z };
+    L.alley = [g.ox - 5.4, -RZ - 3.0];
     L.board = [-RX + 0.09, CZ + 2.1];
     L.sign = [1.75, RZ + 0.95];
     // パソコン室：奥の壁ぞいの机
     L.desk = [g.pc.x0 + 1.25, -RZ + 0.42];
     L.pcScr = [L.desk[0] + 0.05, 1.08, -RZ + 0.27];
     L.lamps = []; for (let x = -RX + 1.8; x <= RX - 1.2; x += 3.4) for (let z = -RZ + 1.8; z <= RZ - 1.2; z += 3.2) L.lamps.push([x, z]);
+    // 倉庫の照明
+    { const sd = g.store, nx = Math.max(1, Math.round((sd.x1 - sd.x0) / 3)), nz = Math.max(1, Math.round((sd.z1 - sd.z0) / 2.9)); for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) L.lamps.push([sd.x0 + ((i + 0.5) * (sd.x1 - sd.x0)) / nx, sd.z0 + ((j + 0.5) * (sd.z1 - sd.z0)) / nz]); }
     // 売り場のテーブル（家具の数だけ）
     L.tables = []; for (let z = CZ + 3.4; z <= RZ - 1.3; z += 1.9) for (let x = -RX + 1.8; x <= -2.6; x += 2.1) L.tables.push([x, z]);
     for (let z = CZ + 6.4; z <= RZ - 1.4; z += 1.9) for (let x = 3.6; x <= RX - 1.8; x += 2.1) L.tables.push([x, z]);
@@ -222,6 +224,7 @@
       subway: e.texFromCanvas(MD.TX.subway(), true), mat: e.texFromCanvas(MD.TX.mat(), true), clock: e.texFromCanvas(MD.TX.clock(), false),
       art: [0, 1, 2].map((k) => e.texFromCanvas(MD.TX.art(k), false)),
     });
+    if (!T.concrete) { T.concrete = e.texFromCanvas(MD.TX.concrete(), true); T.siding = e.texFromCanvas(MD.TX.siding(), true); }
     W.frTex = W.frTex || ledTex('❄ 冷蔵庫', '3℃');
     W.csTex = W.csTex || ledTex('❄ 冷蔵棚', '4℃');
     const BB = {};
@@ -233,7 +236,7 @@
     ground(Geo.plane(160, 40, 40, 10), T.asphalt, [0, -0.03, RZ + 9], 0.85);
     ground(Geo.plane(90, 5, 22, 1.25), T.walk, [0, -0.01, RZ + 2.5], 0.8);
     ground(Geo.plane(90, 40, 22, 10), T.grass, [0, -0.02, -RZ - 20], 0.95);
-    ground(Geo.plane(30, 90, 7, 22), T.walk, [-RX - 15.2, -0.015, 0], 0.8); ground(Geo.plane(30, 90, 7, 22), T.walk, [RX + 15.2, -0.015, 0], 0.8);
+    ground(Geo.plane(60, 90, 14, 22), T.walk, [-RX - 30.2, -0.015, 0], 0.8); ground(Geo.plane(30, 90, 7, 22), T.walk, [RX + 15.2, -0.015, 0], 0.8);
     // ---------- 床・天井 ----------
     const FZ = CZ + g.counter.d / 2;
     // 床は重ねずに敷く（重なった床は奥でちらつく）：厨房のタイルから、パソコン室・仕切りの前の木の床の所を抜く
@@ -241,6 +244,7 @@
     if (g.hall[2] - g.hall[0] >= 0.2 && FZ - g.hall[3] > 0.01) wood.push([g.hall[0], g.hall[3], g.hall[2], FZ]);
     const tiles = W.rectSub([[-RX, -RZ, RX, FZ]], wood.slice(1));
     const floorMesh = (rects, tile, rough) => { const gg = CS.gl.geo(); rects.forEach(([x0, z0, x1, z1]) => CS.gl.quad(gg, [x0, 0, z1], [x1, 0, z1], [x1, 0, z0], [x0, 0, z0], [0, 1, 0], [[x0 / tile, -z1 / tile], [x1 / tile, -z1 / tile], [x1 / tile, -z0 / tile], [x0 / tile, -z0 / tile]], true)); return e.mesh(gg, null, { rough }); };
+    W._floorMesh = floorMesh;
     const kf = new Node(floorMesh(tiles, 0.6, 0.4), { tex: T.ktile, cast: false, ao: 0 }); kf.p = [0, 0.001, 0]; sc.add(kf);
     const ff = new Node(floorMesh(wood, 1.2, 0.38), { tex: T.parquet, cast: false, ao: 0 }); ff.p = [0, 0.001, 0]; sc.add(ff);
     Pt('brass', Geo.box(RX * 2, 0.006, 0.04), [0, 0.004, FZ]);
@@ -258,30 +262,26 @@
       return n;
     };
     wall('back', [[0, WH / 2, -RZ - 0.1, RX * 2 + 0.4, WH, 0.2]], []);
-    const bd = L.backDoor[1], bw = g.backDoor.w / 2;
-    wall('left', [[-RX - 0.1, WH / 2, (bd - bw - RZ) / 2, 0.2, WH, bd - bw + RZ], [-RX - 0.1, WH / 2, (bd + bw + RZ) / 2, 0.2, WH, RZ - bd - bw], [-RX - 0.1, 2.65, bd, 0.2, 1.1, bw * 2]], [[-RX + 0.03, 0.5, (FZ + RZ) / 2, 0.06, 1.0, RZ - FZ]]);
+    // 左の壁：倉庫（別棟）への渡り廊下の入口がある
+    const lz = g.link.z, lw = g.link.w / 2;
+    wall('left', [[-RX - 0.1, WH / 2, (lz - lw - RZ) / 2, 0.2, WH, lz - lw + RZ], [-RX - 0.1, WH / 2, (lz + lw + RZ) / 2, 0.2, WH, RZ - lz - lw], [-RX - 0.1, (WH + 2.1) / 2, lz, 0.2, WH - 2.1, lw * 2]], [[-RX + 0.03, 0.5, (FZ + RZ) / 2, 0.06, 1.0, RZ - FZ]]);
     wall('right', [[RX + 0.1, WH / 2, 0, 0.2, WH, RZ * 2]], [[RX - 0.03, 0.5, (FZ + RZ) / 2, 0.06, 1.0, RZ - FZ]]);
     // 厨房の壁はサブウェイタイル（床から 1.9m）
-    { const TB = new Builder(), th = 1.9, tg = { rough: 0.16 }, sz1 = g.store.z1;
-      TB.put(Geo.box(RX - g.pc.x1, th, 0.02, 1), [(g.pc.x1 + RX) / 2, th / 2, -RZ + 0.012], 0, 1, [1, 1, 1], tg);
-      TB.put(Geo.box(0.02, th, FZ - sz1), [-RX + 0.012, th / 2, (sz1 + FZ) / 2], 0, 1, [1, 1, 1], tg);
+    { const TB = new Builder(), th = 1.9, tg = { rough: 0.16 };
+      [[-RX, g.pc.x0 - 0.07], [g.pc.x1 + 0.07, RX]].forEach(([a, b]) => { TB.put(Geo.box(b - a, th, 0.02, 1), [(a + b) / 2, th / 2, -RZ + 0.012], 0, 1, [1, 1, 1], tg); Pt('steel', Geo.box(b - a, 0.03, 0.035), [(a + b) / 2, th + 0.015, -RZ + 0.02]); });
+      [[-RZ, lz - lw], [lz + lw, FZ]].forEach(([a, b]) => { TB.put(Geo.box(0.02, th, b - a, 1), [-RX + 0.012, th / 2, (a + b) / 2], 0, 1, [1, 1, 1], tg); Pt('steel', Geo.box(0.035, 0.03, b - a), [-RX + 0.02, th + 0.015, (a + b) / 2]); });
       TB.put(Geo.box(0.02, th, FZ + RZ, 1), [RX - 0.012, th / 2, (FZ - RZ) / 2], 0, 1, [1, 1, 1], tg);
       sc.add(new Node(TB.build(e), { tex: T.subway, ao: 0, cast: false }));
-      Pt('steel', Geo.box(RX - g.pc.x1, 0.03, 0.035), [(g.pc.x1 + RX) / 2, th + 0.015, -RZ + 0.02]);
-      Pt('steel', Geo.box(0.035, 0.03, FZ - sz1), [-RX + 0.02, th + 0.015, (sz1 + FZ) / 2]);
       Pt('steel', Geo.box(0.035, 0.03, FZ + RZ), [RX - 0.02, th + 0.015, (FZ - RZ) / 2]);
     }
     // 天井の回り縁
     [[0, -RZ + 0.04, RX * 2, 0.08], [0, RZ - 0.04, RX * 2, 0.08]].forEach(([x, z, w, d]) => Pt('paint', Geo.box(w, 0.09, d), [x, WH - 0.045, z], 0, 1, rgb('#F4F0E9')));
     [-RX + 0.04, RX - 0.04].forEach((x) => Pt('paint', Geo.box(0.08, 0.09, RZ * 2), [x, WH - 0.045, 0], 0, 1, rgb('#F4F0E9')));
-    // 裏口（開けっぱなしの鉄の扉。倉庫から外の路地へ出られる）
-    Pt('steel', Geo.box(0.05, 2.1, 1.1), [-RX - 0.26, 1.05, bd - bw - 0.56], 0, 1, rgb('#8E959C'));
-    Pt('steel', Geo.cyl(0.015, 0.015, 0.22, 8), [-RX - 0.3, 1.05, bd - bw - 0.95], [PI / 2, 0, 0]);
-    [bd - bw - 0.03, bd + bw + 0.03].forEach((z) => Pt('steel', Geo.box(0.26, 2.15, 0.06), [-RX - 0.1, 1.075, z], 0, 1, rgb('#6E757C')));
-    Pt('steel', Geo.box(0.26, 0.06, bw * 2 + 0.12), [-RX - 0.1, 2.15, bd], 0, 1, rgb('#6E757C'));
-    block(-RX - 0.2, -RZ - 0.25, -RX, bd - bw); block(-RX - 0.2, bd + bw, -RX, RZ + 0.25);
-    block(-RX - 0.32, bd - bw - 1.15, -RX - 0.2, bd - bw);
-    block(-RX - 0.2, -RZ - 8, RX + 1, -RZ);
+    // 渡り廊下の入口の枠（倉庫へ）
+    [lz - lw - 0.03, lz + lw + 0.03].forEach((z) => Pt('steel', Geo.box(0.26, 2.15, 0.06), [-RX - 0.1, 1.075, z], 0, 1, rgb('#6E757C')));
+    Pt('steel', Geo.box(0.26, 0.06, lw * 2 + 0.12), [-RX - 0.1, 2.13, lz], 0, 1, rgb('#6E757C'));
+    block(-RX - 0.2, -RZ - 0.25, -RX, lz - lw); block(-RX - 0.2, lz + lw, -RX, RZ + 0.25);
+    block(g.ox, -RZ - 8, RX + 1, -RZ);
     // 正面：腰壁・窓・入口（幅 1.44m）
     const fz = RZ + 0.1, DW = 0.72, ww = RX - 1.8, wc = (RX + 0.6) / 2;
     const front = wall('front', [
@@ -308,9 +308,10 @@
     block(-RX - 0.2, RZ - 0.02, -DW, RZ + 0.25); block(DW, RZ - 0.02, RX + 1, RZ + 0.25);
     block(-DW - 0.05, RZ + 0.2, -DW + 0.05, RZ + 0.92); block(DW - 0.05, RZ + 0.2, DW + 0.05, RZ + 0.92);
     // 壁ごしに手が届かないように（照準用）
-    W.rayWalls = [[-RX - 0.2, -RZ, -RX, bd - bw], [-RX - 0.2, bd + bw, -RX, RZ], [-RX, RZ, -DW, RZ + 0.2], [DW, RZ, RX, RZ + 0.2]].concat(g.walls);
+    W.rayWalls = [[-RX - 0.2, -RZ, -RX, lz - lw], [-RX - 0.2, lz + lw, -RX, RZ], [-RX, RZ, -DW, RZ + 0.2], [DW, RZ, RX, RZ + 0.2]].concat(g.walls);
 
     W.buildRooms(e, sc, L, Pt, T);
+    W.buildStore(e, sc, L, Pt, T);
     W.buildCounter(e, sc, L, Pt, T);
     if (g.hall[2] - g.hall[0] > 0.2) W.rayWalls.push(g.hall);
     // ---------- 売り場 ----------
@@ -376,7 +377,7 @@
     });
     // ドアの上の壁と枠
     const th = 0.14;
-    [[g.store.door, g.store.dw, g.store.z1], [g.pc.door, g.pc.dw, g.pc.z1]].forEach(([x, w, z]) => {
+    [[g.pc.door, g.pc.dw, g.pc.z1]].forEach(([x, w, z]) => {
       WB.put(Geo.box(w, WH - 2.15, th, 1), [x, (WH + 2.15) / 2, z], 0, 1, [1, 1, 1], pw);
       [x - w / 2, x + w / 2].forEach((xx) => TRM.put(Geo.box(0.06, 2.15, th + 0.04), [xx, 1.075, z], 0, 1, C.walnut, trim));
       TRM.put(Geo.box(w + 0.12, 0.06, th + 0.04), [x, 2.15, z], 0, 1, C.walnut, trim);
@@ -385,7 +386,6 @@
     sc.add(new Node(TRM.build(e), { ao: 0 }));
     // 入口の上の表示
     const sign = (text, sub, x, z) => { const n = textCard(text, sub); n.p = [x, 2.42, z]; sc.add(n); };
-    sign('倉庫', 'STORAGE', g.store.door, g.store.z1 + th / 2 + 0.012);
     sign('パソコン室', 'OFFICE・PC', g.pc.door, g.pc.z1 + th / 2 + 0.012);
     // ---- パソコン室：机とパソコン・本棚・ホワイトボード・観葉植物 ----
     const [bx, bz] = L.desk;
@@ -413,6 +413,61 @@
     Pt('paint', Geo.cyl(0.18, 0.14, 0.36, 16), [px1 - 0.35, 0.18, g.pc.z1 - 0.45], 0, 1, C.terracotta);
     for (let i = 0; i < 6; i++) Pt('plant', Geo.sphere(0.12, 10, 8), [px1 - 0.35 + Math.sin(i * 2.4) * 0.1, 0.48 + i * 0.07, g.pc.z1 - 0.45 + Math.cos(i * 2.4) * 0.1], [i * 0.5, 0, 0.3], [1, 1.6, 0.5], shade(C.leaf, (i % 3) * 0.08));
     block(px1 - 0.6, g.pc.z1 - 0.7, px1, g.pc.z1 - 0.2);
+  };
+  // 倉庫（店の左横に建てた別棟）と渡り廊下。拡張すると建物ごと大きくなる
+  W.buildStore = function (e, sc, L, Pt, T) {
+    const g = L.g, sd = g.store, lk = g.link, TW = P.WALL, ox = g.ox, DH = 2.12, PH = 2.62;
+    const lz = lk.z, lw = lk.w / 2, wt = lk.wt, bz = g.backDoor.z, bw = g.backDoor.w / 2;
+    const xr = sd.x1 + TW, zb = sd.z0 - TW, zf = sd.z1 + TW, px1 = -g.RX - TW;
+    // 床（コンクリート）：倉庫・渡り廊下・裏口の敷居
+    const fl = new Node(W._floorMesh([[sd.x0, sd.z0, sd.x1, sd.z1], [sd.x1, lz - lw, -g.RX, lz + lw], [ox, bz - bw, sd.x0, bz + bw]], 1.5, 0.6), { tex: T.concrete, cast: false, ao: 0 }); fl.p = [0, 0.001, 0]; sc.add(fl);
+    // 天井（倉庫・渡り廊下）
+    const ceil = (x0, z0, x1, z1, y) => { const n = new Node(e.mesh(Geo.plane(x1 - x0, z1 - z0, (x1 - x0) / 2, (z1 - z0) / 2), null, { rough: 0.9 }), { tex: T.ceil, cast: false, ao: 0, r: [PI, 0, 0] }); n.p = [(x0 + x1) / 2, y, (z0 + z1) / 2]; sc.add(n); };
+    ceil(ox, zb, xr, zf, WH); ceil(xr, lz - lw - wt, px1, lz + lw + wt, PH);
+    // 外壁（波板）。[x0, z0, x1, z1, y0, y1]
+    const parts = [
+      [ox, zb, xr, sd.z0, 0, WH], [ox, sd.z1, xr, zf, 0, WH],
+      [ox, sd.z0, sd.x0, bz - bw, 0, WH], [ox, bz + bw, sd.x0, sd.z1, 0, WH], [ox, bz - bw, sd.x0, bz + bw, DH + 0.02, WH],
+      [sd.x1, sd.z0, xr, lz - lw, 0, WH], [sd.x1, lz + lw, xr, sd.z1, 0, WH], [sd.x1, lz - lw, xr, lz + lw, DH + 0.02, WH],
+      // 渡り廊下の両側の壁（低め）
+      [xr, lz - lw - wt, px1, lz - lw, 0, PH], [xr, lz + lw, px1, lz + lw + wt, 0, PH],
+    ];
+    const WB = new Builder(), CAP = new Builder(), cap = rgb('#59615D');
+    parts.forEach(([x0, z0, x1, z1, y0, y1]) => {
+      WB.put(Geo.box(x1 - x0, y1 - y0, z1 - z0, 1), [(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2], 0, 1, [1, 1, 1], { rough: 0.55 });
+      if (y0 === 0) { CAP.put(Geo.box(x1 - x0 + 0.04, 0.12, z1 - z0 + 0.04), [(x0 + x1) / 2, 0.06, (z0 + z1) / 2], 0, 1, rgb('#3E4441'), { rough: 0.6 }); block(x0, z0, x1, z1); W.rayWalls.push([x0, z0, x1, z1]); }
+    });
+    // 屋根のふち（笠木）と渡り廊下の屋根
+    [[ox - 0.04, zb - 0.04, xr + 0.04, zf + 0.04]].forEach(([x0, z0, x1, z1]) => {
+      CAP.put(Geo.box(x1 - x0, 0.1, 0.24), [(x0 + x1) / 2, WH + 0.05, z0 + 0.12], 0, 1, cap, { rough: 0.5 });
+      CAP.put(Geo.box(x1 - x0, 0.1, 0.24), [(x0 + x1) / 2, WH + 0.05, z1 - 0.12], 0, 1, cap, { rough: 0.5 });
+      CAP.put(Geo.box(0.24, 0.1, z1 - z0), [x0 + 0.12, WH + 0.05, (z0 + z1) / 2], 0, 1, cap, { rough: 0.5 });
+      CAP.put(Geo.box(0.24, 0.1, z1 - z0), [x1 - 0.12, WH + 0.05, (z0 + z1) / 2], 0, 1, cap, { rough: 0.5 });
+    });
+    CAP.put(Geo.box(px1 - xr + 0.1, 0.12, lk.w + 2 * wt + 0.3), [(xr + px1) / 2, PH + 0.06, lz], 0, 1, cap, { rough: 0.5 });
+    sc.add(new Node(WB.build(e), { tex: T.siding, ao: 0, cast: false }));
+    sc.add(new Node(CAP.build(e), { ao: 0, cast: false }));
+    // 渡り廊下の入口（倉庫側）の枠と、裏口の開けっぱなしの鉄の扉
+    const steel = rgb('#6E757C');
+    [lz - lw - 0.03, lz + lw + 0.03].forEach((z) => Pt('steel', Geo.box(TW + 0.06, DH, 0.06), [sd.x1 + TW / 2, DH / 2, z], 0, 1, steel));
+    Pt('steel', Geo.box(TW + 0.06, 0.06, lw * 2 + 0.12), [sd.x1 + TW / 2, DH, lz], 0, 1, steel);
+    [bz - bw - 0.03, bz + bw + 0.03].forEach((z) => Pt('steel', Geo.box(TW + 0.06, DH, 0.06), [ox + TW / 2, DH / 2, z], 0, 1, steel));
+    Pt('steel', Geo.box(TW + 0.06, 0.06, bw * 2 + 0.12), [ox + TW / 2, DH, bz], 0, 1, steel);
+    Pt('steel', Geo.box(0.05, 2.06, bw * 2 - 0.1), [ox - 0.06, 1.03, bz - bw - (bw * 2 - 0.1) / 2 - 0.02], 0, 1, rgb('#8E959C'));
+    Pt('steel', Geo.cyl(0.015, 0.015, 0.22, 8), [ox - 0.1, 1.05, bz - bw * 2 - 0.02], [PI / 2, 0, 0]);
+    block(ox - 0.12, bz - bw * 2 - 0.1, ox, bz - bw);
+    // 看板：外（路地側・正面側）と中（厨房から倉庫へ／倉庫からお店へ）
+    const board = (text, sub, w, h, p, ry) => { const n = textCard(text, sub, w, h); n.p = p; n.r = [0, ry, 0]; sc.add(n); };
+    board('倉庫', 'STORAGE', 1.5, 0.56, [ox - 0.012, 2.72, bz + bw + 1.3], -PI / 2);
+    board('倉庫', 'STORAGE', 1.5, 0.56, [(ox + xr) / 2, 2.6, zf + 0.012], 0);
+    board('倉庫', 'STORAGE →', 0.62, 0.23, [-g.RX + 0.012, 2.42, lz], PI / 2);
+    board('お店へ', 'TO KITCHEN →', 0.62, 0.23, [sd.x1 - 0.012, 2.42, lz], -PI / 2);
+    // 中：壁ぞいの配管と、床の黄色い線（通路の目安）
+    Pt('steel', Geo.cyl(0.03, 0.03, sd.x1 - sd.x0, 8), [(sd.x0 + sd.x1) / 2, WH - 0.25, sd.z0 + 0.12], [0, 0, PI / 2], 1, rgb('#9AA0A6'));
+    const YB = new Builder(), yl = rgb('#E2B93B');
+    [lz - lw, lz + lw].forEach((z) => YB.put(Geo.box(1.3, 0.004, 0.06), [sd.x1 - 0.65, 0.004, z], 0, 1, yl));
+    [bz - bw, bz + bw].forEach((z) => YB.put(Geo.box(1.3, 0.004, 0.06), [sd.x0 + 0.65, 0.004, z], 0, 1, yl));
+    sc.add(new Node(YB.build(e), { cast: false, ao: 0 }));
   };
   // カウンター（売り場との境目。右の端は通路）
   W.buildCounter = function (e, sc, L, Pt) {
@@ -483,13 +538,13 @@
       Pt('paint', Geo.box(0.8, 0.05, 0.8), [x, WH - 0.025, z], 0, 1, rgb('#F2F0EC'));
       for (let k = 0; k < 5; k++) Pt('paint', Geo.box(0.62, 0.012, 0.02), [x, WH - 0.054, z - 0.24 + k * 0.12], 0, 1, rgb('#CFCBC4'));
     });
-    // 裏口：非常口の表示・壁の消火器
+    // 倉庫の裏口の非常口の表示・渡り廊下の入口の横の消火器
     const bd = L.backDoor[1];
-    LB.put(Geo.box(0.04, 0.14, 0.36), [-RX + 0.04, 2.35, bd], 0, 1, rgb('#2FBF71'));
-    const ex = g.store.door + g.store.dw / 2 + 0.35, ez = g.store.z1 + 0.13;
+    LB.put(Geo.box(0.04, 0.14, 0.36), [g.store.x0 + 0.04, 2.35, bd], 0, 1, rgb('#2FBF71'));
+    const ex = -RX + 0.13, ez = g.link.z + g.link.w / 2 + 0.45;
     Pt('gloss', Geo.cyl(0.07, 0.07, 0.48, 16), [ex, 1.15, ez], 0, 1, rgb('#C21F24'), { rough: 0.25 });
     Pt('paint', Geo.cyl(0.03, 0.03, 0.08, 10), [ex, 1.43, ez], 0, 1, C.dark);
-    Pt('steel', Geo.box(0.16, 0.04, 0.06), [ex, 0.9, ez - 0.03], 0, 1, rgb('#8E959C'));
+    Pt('steel', Geo.box(0.06, 0.04, 0.16), [ex - 0.03, 0.9, ez], 0, 1, rgb('#8E959C'));
     // 外：街灯・花のプランター
     const OB = new Builder(), iron = { rough: 0.4, metal: 0.6 };
     [-(RX - 1.2), RX - 1.2].forEach((x) => {
@@ -631,23 +686,23 @@
   };
   // 裏の路地（トラックが材料を届けに来る）
   W.buildAlley = function (e, sc, L, T) {
-    const bd = L.backDoor[1], x0 = L.alley[0], len = RZ + 40;
+    const bd = L.backDoor[1], x0 = L.alley[0], len = RZ + 40, ox = L.g.ox;
     const g = new Node(e.mesh(Geo.plane(-x0 - RX + 0.2, len, 1.6, len / 4), null, { rough: 0.85 }), { tex: T.asphalt, cast: false, ao: 0 });
     g.p = [(x0 - RX) / 2, -0.008, RZ - len / 2]; sc.add(g);
     const B = new Builder(), paint = { rough: 0.7 };
     [L.truck.x - 1.35, L.truck.x + 1.35].forEach((x) => B.put(Geo.box(0.08, 0.004, 5.6), [x, 0.002, L.truck.z], 0, 1, rgb('#E9E6DF'), paint));
     B.put(Geo.box(2.78, 0.004, 0.08), [L.truck.x, 0.002, L.truck.z + 2.8], 0, 1, rgb('#E9E6DF'), paint);
     const wall = new Node(e.mesh(Geo.box(0.3, 2.3, RZ + 30, 1), null, { rough: 0.85 }), { tex: T.facade, cast: false }); wall.p = [x0 - 0.15, 1.15, RZ - (RZ + 30) / 2 - 0.5]; sc.add(wall);
-    B.put(Geo.rbox(1.5, 1.05, 0.9, 0.04), [-RX - 0.7, 0.55, -RZ - 1.6], [0, PI / 2, 0], 1, rgb('#2F5D44'), { rough: 0.5 }); B.put(Geo.box(0.95, 0.06, 1.55), [-RX - 0.7, 1.1, -RZ - 1.6], [0.12, 0, 0], 1, rgb('#244A36'), { rough: 0.5 });
-    block(-RX - 1.2, -RZ - 2.4, -RX - 0.2, -RZ - 0.8);
-    for (let k = 0; k < 4; k++) { const y = 0.07 + k * 0.14; for (let i = 0; i < 5; i++) B.put(Geo.box(0.12, 0.025, 1.2), [-RX - 0.75 - 0.4 + i * 0.2, y + 0.06, bd + 4.6], 0, 1, rgb('#B08A60'), { rough: 0.8 }); B.put(Geo.box(1.0, 0.1, 0.1), [-RX - 0.75, y, bd + 4.1], 0, 1, rgb('#9A7550'), { rough: 0.8 }); B.put(Geo.box(1.0, 0.1, 0.1), [-RX - 0.75, y, bd + 5.1], 0, 1, rgb('#9A7550'), { rough: 0.8 }); }
-    block(-RX - 1.3, bd + 3.95, -RX - 0.2, bd + 5.25);
-    B.put(Geo.box(0.16, 0.08, 0.3), [-RX - 0.28, 2.42, bd], 0, 1, rgb('#2A2624'), { rough: 0.4 });
+    B.put(Geo.rbox(1.5, 1.05, 0.9, 0.04), [ox - 0.7, 0.55, -RZ - 1.6], [0, PI / 2, 0], 1, rgb('#2F5D44'), { rough: 0.5 }); B.put(Geo.box(0.95, 0.06, 1.55), [ox - 0.7, 1.1, -RZ - 1.6], [0.12, 0, 0], 1, rgb('#244A36'), { rough: 0.5 });
+    block(ox - 1.2, -RZ - 2.4, ox - 0.2, -RZ - 0.8);
+    for (let k = 0; k < 4; k++) { const y = 0.07 + k * 0.14; for (let i = 0; i < 5; i++) B.put(Geo.box(0.12, 0.025, 1.2), [ox - 0.75 - 0.4 + i * 0.2, y + 0.06, bd + 4.6], 0, 1, rgb('#B08A60'), { rough: 0.8 }); B.put(Geo.box(1.0, 0.1, 0.1), [ox - 0.75, y, bd + 4.1], 0, 1, rgb('#9A7550'), { rough: 0.8 }); B.put(Geo.box(1.0, 0.1, 0.1), [ox - 0.75, y, bd + 5.1], 0, 1, rgb('#9A7550'), { rough: 0.8 }); }
+    block(ox - 1.3, bd + 3.95, ox - 0.2, bd + 5.25);
+    B.put(Geo.box(0.16, 0.08, 0.3), [ox - 0.28, 2.42, bd], 0, 1, rgb('#2A2624'), { rough: 0.4 });
     sc.add(new Node(B.build(e)));
-    const lamp = new Node(e.mesh(Geo.box(0.12, 0.03, 0.24), '#FFF1D2'), { em: 1, cast: false, recv: false }); lamp.p = [-RX - 0.3, 2.37, bd]; sc.add(lamp);
+    const lamp = new Node(e.mesh(Geo.box(0.12, 0.03, 0.24), '#FFF1D2'), { em: 1, cast: false, recv: false }); lamp.p = [ox - 0.3, 2.37, bd]; sc.add(lamp);
     if (!W.dockCv) { W.dockCv = document.createElement('canvas'); W.dockCv.width = 256; W.dockCv.height = 96; const c = W.dockCv.getContext('2d'); c.fillStyle = '#1F2A24'; c.fillRect(0, 0, 256, 96); c.fillStyle = '#E8D3A6'; c.textAlign = 'center'; c.font = '700 40px "Zen Kaku Gothic New",sans-serif'; c.fillText('搬入口', 128, 52); c.font = '500 18px "Zen Kaku Gothic New",sans-serif'; c.fillText('DELIVERY', 128, 80); }
     W.dockTex = W.dockTex || e.texFromCanvas(W.dockCv, false);
-    const sign = new Node(e.mesh(Geo.card(0.75, 0.28), null, { rough: 0.6 }), { tex: W.dockTex, cast: false }); sign.p = [-RX - 0.21, 2.62, bd]; sign.r = [0, -PI / 2, 0]; sc.add(sign);
+    const sign = new Node(e.mesh(Geo.card(0.75, 0.28), null, { rough: 0.6 }), { tex: W.dockTex, cast: false }); sign.p = [ox - 0.21, 2.62, bd]; sign.r = [0, -PI / 2, 0]; sc.add(sign);
     W.buildTruck(e, sc);
   };
   // 配送トラック（前が +z。荷台は後ろが開いていて、中に段ボールが積んである）
@@ -1762,7 +1817,7 @@
       if (inside !== wantIn) goal = Math.abs(o.x) > 0.35 ? [0, inside ? RZ - 0.7 : RZ + 1.0] : [0, wantIn ? RZ - 0.9 : RZ + 1.2];
       const dx = goal[0] - o.x, dz = goal[1] - o.z, d = Math.hypot(dx, dz);
       let mode = 'idle';
-      if (d > 0.08) { const v = Math.min(d, dt * 1.6); o.x += (dx / d) * v; o.z += (dz / d) * v; o.r = angLerp(o.r, Math.atan2(dx, dz), 1 - Math.exp(-dt * 10)); mode = 'walk'; }
+      if (d > 0.08) { const v = Math.min(d, dt * 2.4); o.x += (dx / d) * v; o.z += (dz / d) * v; o.r = angLerp(o.r, Math.atan2(dx, dz), 1 - Math.exp(-dt * 10)); mode = 'walk'; }
       else if (c.st === 'eat') { const st = W.seatPos(s, c.seat); if (st) { o.r = angLerp(o.r, st.r, 1 - Math.exp(-dt * 8)); mode = 'sit'; } }
       else if (c.st === 'q' || c.st === 'w' || c.st === 'in' || c.st === 'pay') o.r = angLerp(o.r, PI, 1 - Math.exp(-dt * 6));
       o.atSpot = d <= 0.3 && goal === tgt;
@@ -1811,20 +1866,16 @@
     if (fid) { const q = at(fid, 0.75); if (q) return q; }
     return { x: 0, z: -RZ + 4, fx: 0, fz: -RZ };
   }
-  // 厨房・倉庫・パソコン室・外（路地）を行き来するときはドアを通る
-  function zoneOf(x, z) { const g = W.L.g; if (x < -RX) return 'out'; if (z < g.store.z1 && x < g.store.x1) return 'store'; if (z < g.pc.z1 && x >= g.pc.x0 && x < g.pc.x1) return 'pc'; return 'kit'; }
-  function doorPts(a, b) {
-    const g = W.L.g, bd = W.L.backDoor[1];
-    if ((a === 'kit' && b === 'store') || (a === 'store' && b === 'kit')) { const p = [[g.store.door, g.store.z1 + 0.6], [g.store.door, g.store.z1 - 0.6]]; return a === 'kit' ? p : [p[1], p[0]]; }
-    if ((a === 'kit' && b === 'pc') || (a === 'pc' && b === 'kit')) { const p = [[g.pc.door, g.pc.z1 + 0.6], [g.pc.door, g.pc.z1 - 0.6]]; return a === 'kit' ? p : [p[1], p[0]]; }
-    const p = [[-RX + 0.6, bd], [-RX - 0.6, bd]]; return a === 'store' ? p : [p[1], p[0]];
-  }
+  // 厨房・パソコン室・渡り廊下・倉庫（別棟）・外（路地）を行き来するときはドアを通る
   function waypoint(o, t) {
-    const zo = zoneOf(o.x, o.z), zt = zoneOf(t.x, t.z);
+    const g = W.L.g, zo = P.zoneOf(g, o.x, o.z), zt = P.zoneOf(g, t.x, t.z);
     if (zo === zt) return [t.x, t.z];
-    const next = zo === 'kit' ? (zt === 'pc' ? 'pc' : 'store') : zo === 'store' ? (zt === 'out' ? 'out' : 'kit') : zo === 'out' ? 'store' : 'kit';
-    const door = doorPts(zo, next);
-    return Math.hypot(o.x - door[0][0], o.z - door[0][1]) < 0.3 ? door[1] : door[0];
+    const door = P.doorPts(g, zo, P.nextZone(zo, zt)), d1 = door[1];
+    // ドアの手前の点まで来た／もうドアを通り抜けている途中（壁にさえぎられずに向こうの点が近い）なら、向こう側の点へ
+    if (Math.hypot(o.x - door[0][0], o.z - door[0][1]) < 0.3) return d1;
+    const d01 = Math.hypot(d1[0] - door[0][0], d1[1] - door[0][1]);
+    if (Math.hypot(o.x - d1[0], o.z - d1[1]) < d01 && !(W.rayWalls || []).some((w) => segHit(o.x, o.z, d1[0], d1[1], w))) return d1;
+    return door[0];
   }
   W.updateStaff = function (dt, s) {
     const list = s.staff || [];
@@ -1839,7 +1890,7 @@
       o.carry = !!t.carry;
       const dx = gx - o.x, dz = gz - o.z, d = Math.hypot(dx, dz);
       let mode = 'idle';
-      if (d > 0.06 || gx !== t.x || gz !== t.z) { const v = Math.min(d, dt * 1.6); if (d > 1e-4) { o.x += (dx / d) * v; o.z += (dz / d) * v; o.r = angLerp(o.r, Math.atan2(dx, dz), 1 - Math.exp(-dt * 10)); } mode = 'walk'; }
+      if (d > 0.06 || gx !== t.x || gz !== t.z) { const v = Math.min(d, dt * 2.4); if (d > 1e-4) { o.x += (dx / d) * v; o.z += (dz / d) * v; o.r = angLerp(o.r, Math.atan2(dx, dz), 1 - Math.exp(-dt * 10)); } mode = 'walk'; }
       else { o.r = angLerp(o.r, Math.atan2(t.fx - o.x, t.fz - o.z), 1 - Math.exp(-dt * 6)); mode = m.job ? 'work' : 'idle'; }
       o.ch.node.p = [o.x, 0, o.z]; o.ch.node.r = [0, o.r, 0];
       o.ch.anim(dt, mode, 0.8);
