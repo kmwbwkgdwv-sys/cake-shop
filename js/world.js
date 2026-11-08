@@ -236,7 +236,7 @@
     ground(Geo.plane(160, 40, 40, 10), T.asphalt, [0, -0.03, RZ + 9], 0.85);
     ground(Geo.plane(90, 5, 22, 1.25), T.walk, [0, -0.01, RZ + 2.5], 0.8);
     ground(Geo.plane(90, 40, 22, 10), T.grass, [0, -0.02, -RZ - 20], 0.95);
-    ground(Geo.plane(60, 90, 14, 22), T.walk, [-RX - 30.2, -0.015, 0], 0.8); ground(Geo.plane(30, 90, 7, 22), T.walk, [RX + 15.2, -0.015, 0], 0.8);
+    ground(Geo.plane(30, 90, 7, 22), T.walk, [RX + 15.2, -0.015, 0], 0.8);
     // ---------- 床・天井 ----------
     const FZ = CZ + g.counter.d / 2;
     // 床は重ねずに敷く（重なった床は奥でちらつく）：厨房のタイルから、パソコン室・仕切りの前の木の床の所を抜く
@@ -245,6 +245,8 @@
     const tiles = W.rectSub([[-RX, -RZ, RX, FZ]], wood.slice(1));
     const floorMesh = (rects, tile, rough) => { const gg = CS.gl.geo(); rects.forEach(([x0, z0, x1, z1]) => CS.gl.quad(gg, [x0, 0, z1], [x1, 0, z1], [x1, 0, z0], [x0, 0, z0], [0, 1, 0], [[x0 / tile, -z1 / tile], [x1 / tile, -z1 / tile], [x1 / tile, -z0 / tile], [x0 / tile, -z0 / tile]], true)); return e.mesh(gg, null, { rough }); };
     W._floorMesh = floorMesh;
+    // 左の歩道（路地のアスファルトの下には敷かない＝重ねない）
+    { const n = new Node(floorMesh(W.rectSub([[-RX - 60.2, -45, -RX - 0.2, 45]], [[L.alley[0], -45, -RX + 0.1, RZ]]), 4.3, 0.8), { tex: T.walk, cast: false, ao: 0 }); n.p = [0, -0.015, 0]; sc.add(n); }
     const kf = new Node(floorMesh(tiles, 0.6, 0.4), { tex: T.ktile, cast: false, ao: 0 }); kf.p = [0, 0.001, 0]; sc.add(kf);
     const ff = new Node(floorMesh(wood, 1.2, 0.38), { tex: T.parquet, cast: false, ao: 0 }); ff.p = [0, 0.001, 0]; sc.add(ff);
     Pt('brass', Geo.box(RX * 2, 0.006, 0.04), [0, 0.004, FZ]);
@@ -268,18 +270,20 @@
     wall('right', [[RX + 0.1, WH / 2, 0, 0.2, WH, RZ * 2]], [[RX - 0.03, 0.5, (FZ + RZ) / 2, 0.06, 1.0, RZ - FZ]]);
     // 厨房の壁はサブウェイタイル（床から 1.9m）
     { const TB = new Builder(), th = 1.9, tg = { rough: 0.16 };
-      [[-RX, g.pc.x0 - 0.07], [g.pc.x1 + 0.07, RX]].forEach(([a, b]) => { TB.put(Geo.box(b - a, th, 0.02, 1), [(a + b) / 2, th / 2, -RZ + 0.012], 0, 1, [1, 1, 1], tg); Pt('steel', Geo.box(b - a, 0.03, 0.035), [(a + b) / 2, th + 0.015, -RZ + 0.02]); });
+      [[-RX, g.pc.x0 - 0.07]].forEach(([a, b]) => { TB.put(Geo.box(b - a, th, 0.02, 1), [(a + b) / 2, th / 2, -RZ + 0.012], 0, 1, [1, 1, 1], tg); Pt('steel', Geo.box(b - a, 0.03, 0.035), [(a + b) / 2, th + 0.015, -RZ + 0.02]); });
       [[-RZ, lz - lw], [lz + lw, FZ]].forEach(([a, b]) => { TB.put(Geo.box(0.02, th, b - a, 1), [-RX + 0.012, th / 2, (a + b) / 2], 0, 1, [1, 1, 1], tg); Pt('steel', Geo.box(0.035, 0.03, b - a), [-RX + 0.02, th + 0.015, (a + b) / 2]); });
-      TB.put(Geo.box(0.02, th, FZ + RZ, 1), [RX - 0.012, th / 2, (FZ - RZ) / 2], 0, 1, [1, 1, 1], tg);
+      const rz0 = g.pc.z1 + 0.07;
+      TB.put(Geo.box(0.02, th, FZ - rz0, 1), [RX - 0.012, th / 2, (FZ + rz0) / 2], 0, 1, [1, 1, 1], tg);
       sc.add(new Node(TB.build(e), { tex: T.subway, ao: 0, cast: false }));
-      Pt('steel', Geo.box(0.035, 0.03, FZ + RZ), [RX - 0.02, th + 0.015, (FZ - RZ) / 2]);
+      Pt('steel', Geo.box(0.035, 0.03, FZ - rz0), [RX - 0.02, th + 0.015, (FZ + rz0) / 2]);
     }
     // 天井の回り縁
     [[0, -RZ + 0.04, RX * 2, 0.08], [0, RZ - 0.04, RX * 2, 0.08]].forEach(([x, z, w, d]) => Pt('paint', Geo.box(w, 0.09, d), [x, WH - 0.045, z], 0, 1, rgb('#F4F0E9')));
     [-RX + 0.04, RX - 0.04].forEach((x) => Pt('paint', Geo.box(0.08, 0.09, RZ * 2), [x, WH - 0.045, 0], 0, 1, rgb('#F4F0E9')));
     // 渡り廊下の入口の枠（倉庫へ）
-    [lz - lw - 0.03, lz + lw + 0.03].forEach((z) => Pt('steel', Geo.box(0.26, 2.15, 0.06), [-RX - 0.1, 1.075, z], 0, 1, rgb('#6E757C')));
-    Pt('steel', Geo.box(0.26, 0.06, lw * 2 + 0.12), [-RX - 0.1, 2.13, lz], 0, 1, rgb('#6E757C'));
+    // 枠は開口の角にまたがるように置く（壁の切り口と同じ面にならない＝ちらつかない）
+    [lz - lw, lz + lw].forEach((z) => Pt('steel', Geo.box(0.26, 2.13, 0.06), [-RX - 0.1, 1.065, z], 0, 1, rgb('#6E757C')));
+    Pt('steel', Geo.box(0.26, 0.06, lw * 2 + 0.06), [-RX - 0.1, 2.12, lz], 0, 1, rgb('#6E757C'));
     block(-RX - 0.2, -RZ - 0.25, -RX, lz - lw); block(-RX - 0.2, lz + lw, -RX, RZ + 0.25);
     block(g.ox, -RZ - 8, RX + 1, -RZ);
     // 正面：腰壁・窓・入口（幅 1.44m）
@@ -399,7 +403,7 @@
     block(bx - 0.76, -RZ, bx + 0.76, bz + 0.36);
     W.pcScreen = new Node(e.mesh(Geo.box(0.5, 0.28, 0.005), '#FFFFFF', { rough: 0.2 }), { em: 1, color: rgb('#3E6A8A'), cast: false });
     W.pcScreen.p = [L.pcScr[0], 1.08, L.pcScr[2]]; W.pcScreen.r = [-0.08, 0, 0];
-    const px1 = g.pc.x1 - th / 2, px0 = g.pc.x0 + th / 2;
+    const px1 = g.pc.x1 >= RX - 1e-6 ? RX : g.pc.x1 - th / 2, px0 = g.pc.x0 + th / 2;
     // 本棚（左の壁ぞい）
     Pt('walnut', Geo.box(0.36, 1.9, 1.5), [px0 + 0.2, 0.95, -RZ + 1.75]);
     [0.4, 0.85, 1.3, 1.75].forEach((y, k) => { for (let i = 0; i < 8; i++) Pt('paint', Geo.box(0.24, 0.26 - (i % 2) * 0.04, 0.05 + (i % 3) * 0.01), [px0 + 0.24, y + 0.14, -RZ + 1.2 + i * 0.16], [(i % 4 === 3 ? 0.15 : 0), 0, 0], 1, rgb(['#7A3B3B', '#2F4A3F', '#C9A35E', '#3F6F93', '#E9DCC9'][(i + k) % 5])); Pt('walnut', Geo.box(0.32, 0.025, 1.42), [px0 + 0.22, y, -RZ + 1.75]); });
@@ -423,7 +427,7 @@
     const fl = new Node(W._floorMesh([[sd.x0, sd.z0, sd.x1, sd.z1], [sd.x1, lz - lw, -g.RX, lz + lw], [ox, bz - bw, sd.x0, bz + bw]], 1.5, 0.6), { tex: T.concrete, cast: false, ao: 0 }); fl.p = [0, 0.001, 0]; sc.add(fl);
     // 天井（倉庫・渡り廊下）
     const ceil = (x0, z0, x1, z1, y) => { const n = new Node(e.mesh(Geo.plane(x1 - x0, z1 - z0, (x1 - x0) / 2, (z1 - z0) / 2), null, { rough: 0.9 }), { tex: T.ceil, cast: false, ao: 0, r: [PI, 0, 0] }); n.p = [(x0 + x1) / 2, y, (z0 + z1) / 2]; sc.add(n); };
-    ceil(ox, zb, xr, zf, WH); ceil(xr, lz - lw - wt, px1, lz + lw + wt, PH);
+    ceil(ox, zb, xr, zf, WH); // 渡り廊下は屋根の板の裏がそのまま天井（同じ高さに2枚重ねない）
     // 外壁（波板）。[x0, z0, x1, z1, y0, y1]
     const parts = [
       [ox, zb, xr, sd.z0, 0, WH], [ox, sd.z1, xr, zf, 0, WH],
@@ -444,18 +448,20 @@
       CAP.put(Geo.box(0.24, 0.1, z1 - z0), [x0 + 0.12, WH + 0.05, (z0 + z1) / 2], 0, 1, cap, { rough: 0.5 });
       CAP.put(Geo.box(0.24, 0.1, z1 - z0), [x1 - 0.12, WH + 0.05, (z0 + z1) / 2], 0, 1, cap, { rough: 0.5 });
     });
-    CAP.put(Geo.box(px1 - xr + 0.1, 0.12, lk.w + 2 * wt + 0.3), [(xr + px1) / 2, PH + 0.06, lz], 0, 1, cap, { rough: 0.5 });
+    CAP.put(Geo.box(px1 - xr, 0.12, lk.w + 2 * wt + 0.3), [(xr + px1) / 2, PH + 0.06, lz], 0, 1, rgb('#C9CFCB'), { rough: 0.6 });
     sc.add(new Node(WB.build(e), { tex: T.siding, ao: 0, cast: false }));
     sc.add(new Node(CAP.build(e), { ao: 0, cast: false }));
     // 渡り廊下の入口（倉庫側）の枠と、裏口の開けっぱなしの鉄の扉
     const steel = rgb('#6E757C');
-    [lz - lw - 0.03, lz + lw + 0.03].forEach((z) => Pt('steel', Geo.box(TW + 0.06, DH, 0.06), [sd.x1 + TW / 2, DH / 2, z], 0, 1, steel));
-    Pt('steel', Geo.box(TW + 0.06, 0.06, lw * 2 + 0.12), [sd.x1 + TW / 2, DH, lz], 0, 1, steel);
-    [bz - bw - 0.03, bz + bw + 0.03].forEach((z) => Pt('steel', Geo.box(TW + 0.06, DH, 0.06), [ox + TW / 2, DH / 2, z], 0, 1, steel));
-    Pt('steel', Geo.box(TW + 0.06, 0.06, bw * 2 + 0.12), [ox + TW / 2, DH, bz], 0, 1, steel);
-    Pt('steel', Geo.box(0.05, 2.06, bw * 2 - 0.1), [ox - 0.06, 1.03, bz - bw - (bw * 2 - 0.1) / 2 - 0.02], 0, 1, rgb('#8E959C'));
-    Pt('steel', Geo.cyl(0.015, 0.015, 0.22, 8), [ox - 0.1, 1.05, bz - bw * 2 - 0.02], [PI / 2, 0, 0]);
-    block(ox - 0.12, bz - bw * 2 - 0.1, ox, bz - bw);
+    // 枠は開口の角にまたがるように置く（壁の切り口と同じ面にならない＝ちらつかない）
+    [lz - lw, lz + lw].forEach((z) => Pt('steel', Geo.box(TW + 0.06, DH, 0.06), [sd.x1 + TW / 2, DH / 2, z], 0, 1, steel));
+    Pt('steel', Geo.box(TW + 0.06, 0.06, lw * 2 + 0.06), [sd.x1 + TW / 2, DH, lz], 0, 1, steel);
+    [bz - bw, bz + bw].forEach((z) => Pt('steel', Geo.box(TW + 0.06, DH, 0.06), [ox + TW / 2, DH / 2, z], 0, 1, steel));
+    Pt('steel', Geo.box(TW + 0.06, 0.06, bw * 2 + 0.06), [ox + TW / 2, DH, bz], 0, 1, steel);
+    // 裏口は巻き上げたシャッター（上の箱と両わきのレール）
+    Pt('steel', Geo.box(0.26, 0.34, bw * 2 + 0.3), [ox - 0.13, DH + 0.2, bz], 0, 1, rgb('#9AA2A6'));
+    Pt('steel', Geo.box(0.28, 0.03, bw * 2 + 0.34), [ox - 0.14, DH + 0.03, bz], 0, 1, rgb('#6E757C'));
+    [bz - bw - 0.09, bz + bw + 0.09].forEach((z) => Pt('steel', Geo.box(0.07, DH + 0.02, 0.09), [ox - 0.035, (DH + 0.02) / 2, z], 0, 1, rgb('#8E959C')));
     // 看板：外（路地側・正面側）と中（厨房から倉庫へ／倉庫からお店へ）
     const board = (text, sub, w, h, p, ry) => { const n = textCard(text, sub, w, h); n.p = p; n.r = [0, ry, 0]; sc.add(n); };
     board('倉庫', 'STORAGE', 1.5, 0.56, [ox - 0.012, 2.72, bz + bw + 1.3], -PI / 2);
@@ -686,9 +692,9 @@
   };
   // 裏の路地（トラックが材料を届けに来る）
   W.buildAlley = function (e, sc, L, T) {
-    const bd = L.backDoor[1], x0 = L.alley[0], len = RZ + 40, ox = L.g.ox;
-    const g = new Node(e.mesh(Geo.plane(-x0 - RX + 0.2, len, 1.6, len / 4), null, { rough: 0.85 }), { tex: T.asphalt, cast: false, ao: 0 });
-    g.p = [(x0 - RX) / 2, -0.008, RZ - len / 2]; sc.add(g);
+    const bd = L.backDoor[1], x0 = L.alley[0], len = RZ + 40, ox = L.g.ox + P.WALL; // ox - 0.2 が倉庫の外の壁の面
+    { const G = L.g, sd = G.store, lk = G.link, holes = [[G.ox, sd.z0 - P.WALL, sd.x1 + P.WALL, sd.z1 + P.WALL], [sd.x1 + P.WALL, lk.z - lk.w / 2 - lk.wt, -RX - P.WALL, lk.z + lk.w / 2 + lk.wt]];
+      const g = new Node(W._floorMesh(W.rectSub([[x0, RZ - len, -RX + 0.1, RZ]], holes), 4, 0.85), { tex: T.asphalt, cast: false, ao: 0 }); g.p = [0, -0.008, 0]; sc.add(g); }
     const B = new Builder(), paint = { rough: 0.7 };
     [L.truck.x - 1.35, L.truck.x + 1.35].forEach((x) => B.put(Geo.box(0.08, 0.004, 5.6), [x, 0.002, L.truck.z], 0, 1, rgb('#E9E6DF'), paint));
     B.put(Geo.box(2.78, 0.004, 0.08), [L.truck.x, 0.002, L.truck.z + 2.8], 0, 1, rgb('#E9E6DF'), paint);
@@ -697,12 +703,12 @@
     block(ox - 1.2, -RZ - 2.4, ox - 0.2, -RZ - 0.8);
     for (let k = 0; k < 4; k++) { const y = 0.07 + k * 0.14; for (let i = 0; i < 5; i++) B.put(Geo.box(0.12, 0.025, 1.2), [ox - 0.75 - 0.4 + i * 0.2, y + 0.06, bd + 4.6], 0, 1, rgb('#B08A60'), { rough: 0.8 }); B.put(Geo.box(1.0, 0.1, 0.1), [ox - 0.75, y, bd + 4.1], 0, 1, rgb('#9A7550'), { rough: 0.8 }); B.put(Geo.box(1.0, 0.1, 0.1), [ox - 0.75, y, bd + 5.1], 0, 1, rgb('#9A7550'), { rough: 0.8 }); }
     block(ox - 1.3, bd + 3.95, ox - 0.2, bd + 5.25);
-    B.put(Geo.box(0.16, 0.08, 0.3), [ox - 0.28, 2.42, bd], 0, 1, rgb('#2A2624'), { rough: 0.4 });
+    B.put(Geo.box(0.16, 0.08, 0.3), [ox - 0.28, 2.42, bd + L.g.backDoor.w / 2 + 0.35], 0, 1, rgb('#2A2624'), { rough: 0.4 });
     sc.add(new Node(B.build(e)));
-    const lamp = new Node(e.mesh(Geo.box(0.12, 0.03, 0.24), '#FFF1D2'), { em: 1, cast: false, recv: false }); lamp.p = [ox - 0.3, 2.37, bd]; sc.add(lamp);
+    const lamp = new Node(e.mesh(Geo.box(0.12, 0.03, 0.24), '#FFF1D2'), { em: 1, cast: false, recv: false }); lamp.p = [ox - 0.3, 2.37, bd + L.g.backDoor.w / 2 + 0.35]; sc.add(lamp);
     if (!W.dockCv) { W.dockCv = document.createElement('canvas'); W.dockCv.width = 256; W.dockCv.height = 96; const c = W.dockCv.getContext('2d'); c.fillStyle = '#1F2A24'; c.fillRect(0, 0, 256, 96); c.fillStyle = '#E8D3A6'; c.textAlign = 'center'; c.font = '700 40px "Zen Kaku Gothic New",sans-serif'; c.fillText('搬入口', 128, 52); c.font = '500 18px "Zen Kaku Gothic New",sans-serif'; c.fillText('DELIVERY', 128, 80); }
     W.dockTex = W.dockTex || e.texFromCanvas(W.dockCv, false);
-    const sign = new Node(e.mesh(Geo.card(0.75, 0.28), null, { rough: 0.6 }), { tex: W.dockTex, cast: false }); sign.p = [ox - 0.21, 2.62, bd]; sign.r = [0, -PI / 2, 0]; sc.add(sign);
+    const sign = new Node(e.mesh(Geo.card(0.75, 0.28), null, { rough: 0.6 }), { tex: W.dockTex, cast: false }); sign.p = [ox - 0.21, 2.72, bd]; sign.r = [0, -PI / 2, 0]; sc.add(sign);
     W.buildTruck(e, sc);
   };
   // 配送トラック（前が +z。荷台は後ろが開いていて、中に段ボールが積んである）

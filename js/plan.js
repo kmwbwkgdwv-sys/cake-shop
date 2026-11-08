@@ -75,22 +75,22 @@
     g.ox = g.store.x0 - TW; // 倉庫の外の壁（路地側）の外側
     // 倉庫の裏口（路地側の壁。トラックはこの前に止まる）
     g.backDoor = { x: g.store.x0, z: -RZ + 2.6, w: 1.4 };
-    g.pc = { x0: -RX + 6.2, x1: -RX + 9.4, z0: -RZ, z1: -RZ + 3.4, door: -RX + 7.8, dw: 1.2 };
+    // パソコン室は厨房の奥の右の角
+    g.pc = { x0: RX - 3.2, x1: RX, z0: -RZ, z1: -RZ + 3.4, door: RX - 1.7, dw: 1.2 };
     // カウンターは売り場の右寄りだけ。左は壁で仕切る（右の端は通路で売り場へ出られる）
     g.counter = { z: CZ, d: 0.78, x0: Math.max(-RX + 4, RX - 9.6), x1: RX - 1.8 };
     g.kitchen = { x0: -RX, x1: RX, z0: -RZ, z1: CZ - g.counter.d / 2 };
     g.hall = [-RX, CZ - g.counter.d / 2, g.counter.x0, CZ - g.counter.d / 2 + 0.16]; // 厨房と売り場の仕切りの壁
     const th = 0.14, pc = g.pc, sd = g.store, lk = g.link, bd = g.backDoor;
-    // 店の中の壁（家具はここにかからない）：パソコン室
+    // 店の中の壁（家具はここにかからない）：パソコン室（右と奥は店の外の壁）
     g.walls = [
-      [pc.x0, pc.z1 - th / 2, pc.door - pc.dw / 2, pc.z1 + th / 2],
-      [pc.door + pc.dw / 2, pc.z1 - th / 2, pc.x1 + th / 2, pc.z1 + th / 2],
-      [pc.x0 - th / 2, -RZ, pc.x0 + th / 2, pc.z1 + th / 2],
-      [pc.x1 - th / 2, -RZ, pc.x1 + th / 2, pc.z1],
+      [pc.x0 - th / 2, pc.z1 - th / 2, pc.door - pc.dw / 2, pc.z1 + th / 2],
+      [pc.door + pc.dw / 2, pc.z1 - th / 2, pc.x1, pc.z1 + th / 2],
+      [pc.x0 - th / 2, -RZ, pc.x0 + th / 2, pc.z1 - th / 2],
     ];
     // 家具を置けない所：パソコン室の中、ドアの前（廊下の両側・倉庫の裏口）、カウンターの通路
     g.noBuild = [
-      [pc.x0, -RZ, pc.x1 + th / 2, pc.z1 + th / 2],
+      [pc.x0 - th / 2, -RZ, pc.x1, pc.z1 + th / 2],
       [pc.door - pc.dw / 2 - 0.15, pc.z1 - 0.1, pc.door + pc.dw / 2 + 0.15, pc.z1 + 1.25],
       [-RX, lk.z - lk.w / 2 - 0.2, -RX + 1.3, lk.z + lk.w / 2 + 0.2],
       [sd.x1 - 1.3, lk.z - lk.w / 2 - 0.2, sd.x1, lk.z + lk.w / 2 + 0.2],
@@ -99,7 +99,7 @@
     ];
     // 家具を置ける所（厨房・倉庫）
     g.areas = [Object.assign({ id: 'kit' }, g.kitchen), Object.assign({ id: 'store', front: 1 }, sd)];
-    g.key = [lv, RX, RZ, CZ, st, 4].join(',');
+    g.key = [lv, RX, RZ, CZ, st, 5].join(',');
     // 床に段ボールを置ける外の路地（トラックと倉庫のあいだ）
     g.alley = { x0: g.ox - 5.2, x1: g.ox - 0.02, z0: -RZ - 2.6, z1: RZ - 0.3 };
     g.truck = { x: g.ox - 3.25, z: bd.z + 3.0 };
@@ -270,10 +270,10 @@
       ['cshelf', g.store.x0 + 0.72, -RZ + 0.34, 0],
       ['fridge', g.store.x0 + 2.25, -RZ + 0.4, 0],
       ['shelf', g.store.x0 + 3.7, -RZ + 0.28, 0],
-      ['whip', g.pc.x1 + 1.4, -RZ + 0.4, 0],
-      ['sink', RX - 1.1, -RZ + 0.37, 0],
-      ['trash', RX - 0.3, -RZ + 1.4, 3],
-      ['table', g.pc.x1 + 2.4, -RZ + 7.0, 0],
+      ['whip', -RX + 3.0, -RZ + 0.4, 0],
+      ['sink', g.pc.x0 - 1.0, -RZ + 0.37, 0],
+      ['trash', RX - 0.3, g.pc.z1 + 1.0, 3],
+      ['table', -RX + 11.8, -RZ + 7.0, 0],
       ['scase', g.counter.x0 + 1.35, CZ, 0],
       ['reg', g.counter.x0 + 3.6, CZ, 0],
       ['boxhole', g.counter.x0 + 3.6, CZ, 0],

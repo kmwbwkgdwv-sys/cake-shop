@@ -62,6 +62,18 @@ const allValid = (S) => Object.keys(S.fu).every((id) => !S.fu[id].bad && !P.vali
   ok(allValid(S), 'all furniture valid after the move');
   const before = JSON.stringify(S.fu); K.normalize(S); ok(JSON.stringify(S.fu) === before, 'normalize again changes nothing');
 }
+// ---- パソコン室は厨房の奥の右の角。前の位置（右の角）にあった家具は近くの空いている所へ ----
+{
+  const S = mk(0), g = P.geomOf(S);
+  ok(g.pc.x1 === g.RX && g.pc.z0 === -g.RZ, 'the PC room is in the back-right corner of the kitchen');
+  ok(Object.keys(S.fu).every((id) => P.zoneOf(g, S.fu[id].x, S.fu[id].z) !== 'pc'), 'no starting furniture inside the PC room');
+  // 前の間取りのお店：洗い場とゴミ箱が奥の右の角にあった
+  for (const k of ['sink', 'trash']) P.list(S, k).forEach((id) => delete S.fu[id]);
+  S.fu.oldSink = { k: 'sink', x: g.RX - 1.1, z: -g.RZ + 0.37, r: 0 }; S.fu.oldTrash = { k: 'trash', x: g.RX - 0.3, z: -g.RZ + 1.4, r: 3 };
+  K.normalize(S);
+  ok(['oldSink', 'oldTrash'].every((id) => S.fu[id] && P.zoneOf(g, S.fu[id].x, S.fu[id].z) === 'kit' && !P.valid(S, id, S.fu[id].k, S.fu[id].x, S.fu[id].z, S.fu[id].r)), 'sink / trash that were in the corner moved out next to the PC room: ' + ['oldSink', 'oldTrash'].map((id) => S.fu[id].x.toFixed(2) + ',' + S.fu[id].z.toFixed(2)).join(' '));
+  ok(allValid(S), 'all furniture valid');
+}
 // ---- アルバイト：倉庫まで取りに行く時間が仕事にかかる ----
 {
   const S = mk(9600), line = K.placeNew(S, 'line'), sh = P.list(S, 'shelf')[0];

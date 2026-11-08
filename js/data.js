@@ -176,7 +176,7 @@
     xp: [0, 5, 12, 22, 35, 52, 74, 100, 132, 170],
     // 日給（手際がいい人ほど少し高い）
     wage: (lv, sp) => Math.round(((1200 + 450 * (lv - 1)) * (0.6 + 0.4 * (sp || 1))) / 10) * 10,
-    jobSec: { mix: 20, whip: 14, deco: 24, in: 5, out: 4, stock: 8, order: 5, serve: 4, wash: 10, feed: 6 },
+    jobSec: { mix: 20, whip: 14, deco: 24, in: 5, out: 4, stock: 8, order: 5, serve: 4, wash: 10, feed: 4 },
   };
   // 店舗レベル（売った数・お客さんの満足・評判で経験値がたまる）
   const SHOP_XP = [0, 150, 400, 800, 1400, 2200, 3300, 4800, 6800, 9500];
