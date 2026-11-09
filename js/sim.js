@@ -29,7 +29,7 @@
       stock: {}, k: null, dayT: 0, v: 2,
       menu: {}, known: {}, originals: {}, tested: {},
       up: {}, eq: {}, furn: { table: 2 }, staff: [0, 0, 0, 0, 0, 0, 0, 0], ad: 'none', weather: 'sun',
-      xp: 0, today: blankToday(), history: [], cust: {}, fx: [], fxi: 0, seq: 0, np: 1, bankrupt: 0,
+      xp: 0, life: 0, today: blankToday(), history: [], cust: {}, fx: [], fxi: 0, seq: 0, np: 1, bankrupt: 0,
     };
     for (const id in D.RECIPES) if ((D.RECIPES[id].lv || 1) <= 1) addKnown(S, id);
     genMarket(S, true);
@@ -55,6 +55,8 @@
     if (!S.today.issues) S.today.issues = {};
     ['batters', 'bases', 'creams', 'stock'].forEach((k) => { for (const id in S[k]) if (S[k][id]) S[k][id].df = toArr(S[k][id].df).filter((x) => x); });
     S.history = toArr(S.history);
+    // これまでの売上の合計（ランキング用）。前のバージョンのお店は、残っている記録（最大30日）と今日の分から
+    if (!(S.life >= 0)) S.life = S.history.reduce((a, h) => a + ((h && h.sales) || 0), 0) + (S.phase === 'report' ? 0 : (S.today.sales || 0) + (S.today.drinks || 0)); // 閉店後の報告中は、今日の分はもう記録に入っている
     S.fx = toArr(S.fx);
     for (const id in S.originals) { const o = S.originals[id]; if (!o.tops) o.tops = {}; }
     for (const id in S.menu) holeDefault(S, id);

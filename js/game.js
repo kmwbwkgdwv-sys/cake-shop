@@ -57,6 +57,7 @@
     UI.loading(false);
   };
   game.leave = async function (remove, silent) {
+    if (CS.rank && game.room) CS.rank.commit(); // プレイ時間・売上の記録を残す
     cancelAnimationFrame(game.raf);
     CS.world.destroy();
     const r = game.room;

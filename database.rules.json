@@ -24,8 +24,25 @@
       "transfer": {
         "$code": {
           ".read": "auth != null",
-          ".write": "auth != null && (!data.exists() || data.child('expiresAt').val() < now) && newData.exists() && root.child('cakeshop/saves').child(newData.child('saveId').val()).child('owners').child(auth.uid).exists()",
-          ".validate": "$code.length === 12 && newData.hasChildren(['saveId', 'by', 'createdAt', 'expiresAt']) && newData.child('by').val() === auth.uid && newData.child('expiresAt').isNumber() && newData.child('expiresAt').val() <= now + 259500000"
+          ".write": "auth != null && ((newData.exists() && (!data.exists() || data.child('expiresAt').val() < now) && root.child('cakeshop/saves').child(newData.child('saveId').val()).child('owners').child(auth.uid).exists()) || (!newData.exists() && data.exists() && root.child('cakeshop/saves').child(data.child('saveId').val()).child('owners').child(auth.uid).exists()))",
+          ".validate": "$code.length === 12 && newData.hasChildren(['saveId', 'by', 'createdAt', 'expiresAt']) && newData.child('by').val() === auth.uid && newData.child('expiresAt').isNumber() && newData.child('expiresAt').val() <= now + 316000000000"
+        }
+      },
+      "ranking": {
+        ".read": "auth != null",
+        ".indexOn": ["sales", "lvs", "play"],
+        "$sid": {
+          ".write": "auth != null && root.child('cakeshop/saves').child($sid).child('owners').child(auth.uid).exists()",
+          ".validate": "newData.hasChildren(['name', 'lv', 'lvs', 'sales', 'play', 't'])",
+          "name": { ".validate": "newData.isString() && newData.val().length <= 24" },
+          "shop": { ".validate": "newData.isString() && newData.val().length <= 40" },
+          "lv": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 99" },
+          "lvs": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 100000000000000" },
+          "sales": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 1000000000000" },
+          "play": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 3153600000" },
+          "t": { ".validate": "newData.isNumber() && newData.val() <= now + 60000" },
+          "skin": { ".validate": "newData.hasChildren()" },
+          "$other": { ".validate": false }
         }
       },
       "rooms": {

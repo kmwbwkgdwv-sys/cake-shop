@@ -10,7 +10,8 @@
   const CS = (G.CS = G.CS || {});
   const sim = CS.sim;
   const ROOT = 'cakeshop/';
-  const TRANSFER_TTL = 72 * 3600 * 1000;
+  // 引き継ぎコードは「控えておくバックアップ」として使うので、発行し直すまで使える（10年）
+  const TRANSFER_TTL = 3650 * 24 * 3600 * 1000;
   const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
   // ---------- 小物 ----------
@@ -98,6 +99,7 @@
     ['name', 'skin'].forEach((f) => { if ((l.edited[f] || 0) > (r.edited[f] || 0)) { out[f] = l[f]; out.edited[f] = l.edited[f]; } });
     for (const c in l.shops) { const a = out.shops[c], b = l.shops[c]; if (!a || (b.last || 0) > (a.last || 0)) out.shops[c] = b; }
     for (const k in l.stats) out.stats[k] = Math.max(out.stats[k] || 0, l.stats[k] || 0);
+    if (l.tcode && (!out.tcode || (l.tcode.at || 0) > (out.tcode.at || 0))) out.tcode = l.tcode;
     return out;
   }
 
@@ -221,18 +223,41 @@
     flush() { clearTimeout(this.timer); return this.push(); },
     refresh() { if (net.online && this.ref) return this.ref.once('value').then((s) => this.onRemote(s.val())).catch(() => {}); return Promise.resolve(); },
     // ---------- 引き継ぎコード ----------
-    async issueCode() {
+    // いまのコード（ほかの端末で発行したものも、セーブデータに入っているので同じものが出る）
+    currentCode() { const t = this.data && this.data.tcode; return t && t.code ? t : null; },
+    async codeValid(code) {
+      try { const v = (await net.ref('transfer/' + code).once('value')).val(); return !!(v && v.saveId === this.sid && (v.expiresAt || 0) > net.now()); } catch (e) { return false; }
+    },
+    // 発行：すでに使えるコードがあればそれを返す（renew なら新しいコードにして、前のコードは使えなくする）
+    async issueCode(renew) {
       if (!net.online) throw new Error('オンラインのときだけ使えます');
       await this.flush();
+      const cur = this.currentCode();
+      if (cur && !renew && (await this.codeValid(cur.code))) return { code: cur.code, expiresAt: cur.exp, at: cur.at, reused: true };
       for (let i = 0; i < 4; i++) {
         const code = rnd(12);
         const now = net.now();
         try {
           await net.ref('transfer/' + code).set({ saveId: this.sid, by: net.uid, createdAt: now, expiresAt: now + TRANSFER_TTL });
-          LS.set('cs.lastCode', { code, exp: now + TRANSFER_TTL });
-          return { code, expiresAt: now + TRANSFER_TTL };
+          if (cur && cur.code !== code) net.ref('transfer/' + cur.code).remove().catch(() => {});
+          const t = { code, exp: now + TRANSFER_TTL, at: Date.now() };
+          this.update((d) => { d.tcode = t; });
+          LS.set('cs.lastCode', { code, exp: t.exp });
+          return { code, expiresAt: t.exp, at: t.at };
         } catch (e) { if (i === 3) throw e; }
       }
+    },
+    // 今すぐ同期：送って、受け取り直す
+    async syncNow() {
+      if (!net.online) throw new Error('オフラインです');
+      const to = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('時間内に同期できませんでした（通信を確認してね）')), ms))]);
+      await to(this.flush(), 10000);
+      await to(this.refresh(), 10000);
+      if (this.dirty) await to(this.flush(), 10000);
+      if (this.status === 'error' || this.status === 'unlinked') throw new Error(this.status === 'unlinked' ? 'このデータは連携が解除されています' : '同期エラー');
+      this.lastSync = Date.now();
+      LS.set('cs.lastSync', this.lastSync);
+      return this.lastSync;
     },
     async redeem(input) {
       if (!net.online) throw new Error('オンラインのときだけ使えます');
@@ -560,7 +585,7 @@
 
   // ---------- お店リスト（セーブに記録） ----------
   function rememberShop(code, name) {
-    save.update((d) => { d.shops[code] = { name: String(name || '').slice(0, 20), last: Date.now() }; });
+    save.update((d) => { d.shops[code] = Object.assign({}, d.shops[code], { name: String(name || '').slice(0, 20), last: Date.now() }); });
   }
   function forgetShop(code) { save.update((d) => { delete d.shops[code]; }); if (code[0] === 'L') LS.del('cs.room.' + code); }
 

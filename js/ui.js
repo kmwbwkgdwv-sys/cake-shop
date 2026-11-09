@@ -35,7 +35,7 @@
       m.innerHTML = `<div class="md panel" role="dialog" aria-modal="true" aria-labelledby="md-title"><h3 id="md-title">${esc(o.title || '')}</h3><div class="md-body">${o.html || ''}</div><div class="row end">${(o.buttons || [{ label: 'OK', value: true, cls: 'pink' }]).map((b, i) => `<button class="btn ${b.cls || ''}" data-i="${i}">${b.label}</button>`).join('')}</div></div>`;
       m.hidden = false;
       const done = (v) => { m.hidden = true; m.innerHTML = ''; document.removeEventListener('keydown', onKey); resolve(v); };
-      const onKey = (e) => { if (e.key === 'Escape') done(o.cancelValue === undefined ? null : o.cancelValue); };
+      const onKey = (e) => { if (e.key === 'Escape' && !o.sticky) done(o.cancelValue === undefined ? null : o.cancelValue); };
       document.addEventListener('keydown', onKey);
       $$('.row.end .btn', m).forEach((b) => (b.onclick = () => {
         const btn = o.buttons ? o.buttons[+b.dataset.i] : { value: true };
@@ -201,8 +201,14 @@
         <button class="btn sm" id="set-sync" ${net.online ? '' : 'disabled'}>${ic('sync')} 今すぐ同期</button>
         ${net.online ? '' : `<p class="muted small" style="margin:0">${esc(net.error || 'Firebase が設定されていないため、データはこの端末だけに保存されます。')}</p>`}</div>
       <div class="card"><h3>引き継ぎ</h3><p class="muted small" style="margin:0">コードを使うと、スマホとPCなど複数の端末で同じデータを使えます。どちらで遊んでも常に最新に同期されます。</p><button class="btn pink" id="set-transfer">${ic('key')} 引き継ぎコード</button></div>
-      <div class="card"><h3>プロフィール</h3><div class="row between"><span>${esc(save.data.name)}</span><button class="btn sm" id="set-name">名前を変える</button></div></div>`;
-    $('#set-sync', body).onclick = async () => { await save.flush(); await save.refresh(); UI.toast('同期しました', 'good'); UI.renderSheet(true); };
+      <div class="card"><h3>プロフィール</h3><div class="row between"><span>${esc(save.data.name)}</span><button class="btn sm" id="set-name">名前を変える</button></div>
+        ${CS.rank ? (() => { const m = CS.rank.mine(); return `<dl class="kv"><dt>お店のレベル（最高）</dt><dd>Lv${m.lv}</dd><dt>総売上</dt><dd>${yen(m.sales)}</dd><dt>プレイ時間</dt><dd>${CS.rank.fmtPlay(m.play)}</dd></dl><button class="btn sm" id="set-rank">${ic('trophy')} ランキングを見る</button>`; })() : ''}</div>`;
+    $('#set-sync', body).onclick = async (e) => {
+      const btn = e.currentTarget; btn.disabled = true;
+      try { await save.syncNow(); if (CS.rank) await CS.rank.push(true); UI.toast('同期しました', 'good'); } catch (err) { UI.toast(err.message || String(err), 'err'); }
+      UI.renderSheet(true);
+    };
+    const rk = $('#set-rank', body); if (rk) rk.onclick = () => UI.openRanking();
     $('#set-transfer', body).onclick = () => UI.openTransfer();
     $('#set-name', body).onclick = async () => { const n = await UI.ask('名前を変える', '名前（12文字まで）', save.data.name, 12); if (n) { save.update((d) => (d.name = n), 'name'); if (UI.room) UI.room.updateMe(); UI.renderSheet(true); } };
   };
@@ -216,37 +222,23 @@
           body.innerHTML = `<div class="banner">${ic('key')} 引き継ぎには Firebase の設定が必要です（js/firebase-config.js）。いまはこの端末だけにデータが保存されています。</div>`;
           return;
         }
-        const last = CS.LS.get('cs.lastCode', null);
-        const valid = last && last.exp > net.now();
         body.innerHTML = `
           <div class="card"><h3>① 今の端末でコードを発行</h3>
-            <p class="muted small" style="margin:0">新しい端末でこのコードを入力すると、同じデータを両方の端末で使えます（片方で遊んだ内容は、もう片方にも自動で反映されます）。有効期限は72時間です。</p>
-            <div class="invite" id="tf-box" ${valid ? '' : 'hidden'}><span class="small">引き継ぎコード</span><div class="code" id="tf-code">${valid ? fmtCode(last.code) : ''}</div><span class="small" id="tf-exp">${valid ? '有効期限：' + new Date(last.exp).toLocaleString('ja-JP') : ''}</span><button class="btn sm" id="tf-copy">${ic('copy')} コピー</button></div>
-            <button class="btn pink" id="tf-issue">${ic('key')} ${valid ? 'コードを発行し直す' : 'コードを発行する'}</button></div>
+            <p class="muted small" style="margin:0">新しい端末でこのコードを入力すると、同じデータを両方の端末で使えます（片方で遊んだ内容は、もう片方にも自動で反映されます）。コードは発行し直すまで使えるので、コピーしてメモに貼るか、画像で保存しておこう。</p>
+            <div id="tf-cb"></div></div>
           <div class="card"><h3>② 新しい端末でコードを入力</h3>
             <label class="field"><span>12文字のコード（ハイフンなしでもOK）</span><input class="input code" id="tf-in" maxlength="16" autocomplete="off" placeholder="XXXX-XXXX-XXXX"></label>
             <button class="btn mint" id="tf-redeem">${ic('sync')} 引き継ぐ</button>
             <p class="muted small" style="margin:0">この端末のプロフィールは、引き継ぎ元のものに置き換わります。この端末で遊んでいたお店は一覧に残ります。</p></div>
           <div class="card soft"><h3>連携している端末</h3><p class="muted small" style="margin:0" id="tf-own">確認中…</p><button class="btn sm ghost" id="tf-unlink">この端末以外の連携を解除</button></div>`;
         save.ownersCount().then((n) => { const el = $('#tf-own', body); if (el) el.textContent = n + '台の端末でこのデータを使っています'; });
-        $('#tf-issue', body).onclick = async (e) => {
-          e.currentTarget.disabled = true;
-          try {
-            const r = await save.issueCode();
-            $('#tf-box', body).hidden = false;
-            $('#tf-code', body).textContent = fmtCode(r.code);
-            $('#tf-exp', body).textContent = '有効期限：' + new Date(r.expiresAt).toLocaleString('ja-JP');
-            CS.sound.play('ok');
-          } catch (err) { UI.toast('発行できませんでした：' + (err.message || err), 'err'); }
-          e.currentTarget.disabled = false;
-        };
-        $('#tf-copy', body).onclick = () => UI.copy($('#tf-code', body).textContent.replace(/-/g, ''), $('#tf-code', body));
+        CS.rank.codeBox($('#tf-cb', body), { renew: true });
         $('#tf-redeem', body).onclick = async (e) => {
-          const v = $('#tf-in', body).value;
+          const btn = e.currentTarget, v = $('#tf-in', body).value; // await のあとは e.currentTarget が消えるので先に取っておく
           if (!(await UI.confirm('データを引き継ぐ', 'この端末で、コードのデータを使えるようにします。よろしいですか？', '引き継ぐ'))) return;
-          e.currentTarget.disabled = true;
+          btn.disabled = true;
           try { await save.redeem(v); UI.toast('引き継ぎ完了！ようこそ ' + save.data.name + ' さん', 'big'); CS.sound.play('fanfare'); UI.closeSheet(); UI.renderTitle(); }
-          catch (err) { UI.toast(err.message || String(err), 'err'); e.currentTarget.disabled = false; }
+          catch (err) { UI.toast(err.message || String(err), 'err'); btn.disabled = false; }
         };
         $('#tf-unlink', body).onclick = async () => {
           if (!(await UI.confirm('連携を解除', 'ほかの端末ではこのデータが使えなくなります（引き継ぎ「移動」にしたいとき用）。', '解除する', true))) return;
@@ -308,6 +300,10 @@
     const d = save.data;
     $('#me-av').innerHTML = CS.models.img(CS.models.thumb.body(d.skin), 'body');
     $('#me-name').textContent = d.name;
+    if (CS.rank) {
+      let ms = $('#me-stats'); if (!ms) { ms = document.createElement('span'); ms.id = 'me-stats'; ms.className = 'me-stats'; $('#me-name').after(ms); }
+      const m = CS.rank.mine(d); ms.textContent = 'Lv' + m.lv + '・総売上 ' + CS.rank.fmtYen(m.sales) + '・' + CS.rank.fmtPlay(m.play);
+    }
     const sl = UI.syncLabel();
     const chip = $('#me-sync');
     chip.className = 'chip sync-chip ' + sl.cls; chip.innerHTML = '<span class="dot"></span>' + esc(sl.text);
@@ -393,6 +389,7 @@
     $('#btn-shops').onclick = () => UI.openShops();
     $('#btn-skin').onclick = () => UI.openSkin();
     $('#btn-transfer').onclick = () => UI.openTransfer();
+    const br = $('#btn-rank'); if (br) br.onclick = () => UI.openRanking();
     $('#btn-settings').onclick = () => UI.openSettings(false);
     $('#me-edit').onclick = () => UI.openSkin();
     // 降ってくるスプリンクル

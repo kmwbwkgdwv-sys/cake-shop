@@ -21,7 +21,8 @@
     const r = {
       key: path.split('/').pop(), path,
       child: (p) => Ref(path + '/' + p),
-      limitToLast: (n) => Ref(path, { limit: n }),
+      limitToLast: (n) => Ref(path, Object.assign({}, q, { limit: n })),
+      orderByChild: (k) => Ref(path, Object.assign({}, q, { order: k })),
       orderByKey: () => r,
       on(ev, cb, err) {
         if (path === '.info/connected') { connCbs.push((v) => cb(snap(path, v))); setTimeout(() => cb(snap(path, open)), 0); return cb; }
@@ -31,7 +32,16 @@
         return cb;
       },
       off(ev, cb) { for (const id in subs) if (subs[id].path === path && (!cb || subs[id].cb === cb)) { delete subs[id]; send({ op: 'unsub', id: +id }); } },
-      once() { return req({ op: 'get', path }).then((m) => snap(path, m.val)); },
+      once() {
+        return req({ op: 'get', path }).then((m) => {
+          let v = m.val;
+          if (q && q.order && v && typeof v === 'object') {
+            const ks = Object.keys(v).filter((k) => v[k] && v[k][q.order] != null).sort((a, b) => v[a][q.order] - v[b][q.order]);
+            const keep = q.limit ? ks.slice(-q.limit) : ks; const o = {}; keep.forEach((k) => (o[k] = v[k])); v = o;
+          }
+          return snap(path, v);
+        });
+      },
       set(v) { return req({ op: 'set', path, val: clone(v) }).then(() => undefined); },
       update(v) { return req({ op: 'update', path, vals: clone(v) }).then(() => undefined); },
       remove() { return r.set(null); },

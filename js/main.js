@@ -24,16 +24,19 @@
 
   // 端末を裏に回した・閉じるときは即保存、戻ってきたら最新を取り直す
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { CS.save.flush(); if (UI.room) UI.room.saveLocal(); }
+    if (document.hidden) { if (CS.rank) CS.rank.commit(); CS.save.flush(); if (UI.room) UI.room.saveLocal(); }
     else { CS.save.refresh(); }
   });
-  window.addEventListener('pagehide', () => { CS.save.flush(); if (UI.room) UI.room.saveLocal(); });
+  window.addEventListener('pagehide', () => { if (CS.rank) CS.rank.commit(); CS.save.flush(); if (UI.room) UI.room.saveLocal(); });
   window.addEventListener('online', () => CS.save.refresh());
   document.addEventListener('pointerdown', () => CS.sound.unlock(), { once: true });
   // iPhone の Safari：2本指で画面が拡大されて操作できなくなるのを防ぐ
   ['gesturestart', 'gesturechange'].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault(), { passive: false }));
 
   if (!CS.save.data.edited || !CS.save.data.edited.name) await UI.welcome();
+  // 起動するたびに：引き継ぎコードの発行と保存、データ同期を押してから始める
+  try { await UI.dataGate(); } catch (e) { console.error(e); }
+  UI.renderTitle();
 
   // 招待リンク (?room=XXXXXX)
   const invite = new URLSearchParams(location.search).get('room');

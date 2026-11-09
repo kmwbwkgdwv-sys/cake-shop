@@ -22,7 +22,18 @@ async def newdev(b, name, w, h, touch=False):
   await pg.goto(URL); await pg.wait_for_timeout(1500)
   if await pg.locator('#md-in').count(): await pg.fill('#md-in', name); await pg.click('#modal .btn.pink')
   await pg.wait_for_timeout(300)
+  await pass_gate(pg)
   return ctx, pg
+# 起動時の「データを守ろう」：コードを発行して保存（コピー）→ データ同期 → はじめる
+async def pass_gate(pg):
+  for _ in range(20):
+    if await pg.locator('#gs1-box').count(): break
+    await pg.wait_for_timeout(250)
+  else: return
+  await pg.click('#gs1-box [data-c=issue]'); await pg.wait_for_timeout(800)
+  await pg.click('#gs1-box [data-c=copy]'); await pg.wait_for_timeout(300)
+  await pg.click('#gs2-btn'); await pg.wait_for_timeout(1500)
+  await pg.click('#modal .row.end .btn'); await pg.wait_for_timeout(300)
 async def ev(pg, js): return await pg.evaluate(js)
 async def until(pg, js, n=30):
   for i in range(n):

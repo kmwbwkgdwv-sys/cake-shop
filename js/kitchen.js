@@ -1167,9 +1167,9 @@
     df.forEach((x) => { const X = D.DEFECTS[x]; pen += X.sat * (ct.picky > 0.6 ? 1.3 : 1); if (!worst || X.sat > D.DEFECTS[worst].sat) worst = x; });
     const waitF = clamp(((c.tPay || now) - c.tOrd) / Math.max(1, c.pw - c.tOrd), 0, 1);
     const cash = S.staff.find((x) => x && x.task === 'cashier');
-    S.today.sales += sales; S.funds += sales; S.today.cogs += Math.round(cogs); S.today.sold += units;
+    S.today.sales += sales; S.funds += sales; S.life = (S.life || 0) + sales; S.today.cogs += Math.round(cogs); S.today.sold += units;
     const dine = c.dine && c.seat >= 0;
-    if (dine && S.furn.coffee && Math.random() < 0.55 + (cash ? 0.15 : 0)) { S.today.drinks += 350; S.funds += 350; S.today.cogs += 80; c.drink = 1; }
+    if (dine && S.furn.coffee && Math.random() < 0.55 + (cash ? 0.15 : 0)) { S.today.drinks += 350; S.funds += 350; S.life = (S.life || 0) + 350; S.today.cogs += 80; c.drink = 1; }
     let sat = clamp(0.38 + surplus * 1.3 + (qs - 0.6) * 0.9 + (1 - waitF) * 0.14 + 0.04 * (S.up.interior || 0) + (dine ? 0.06 : 0) + (S.furn.speaker ? 0.03 : 0) + (cash ? 0.02 : 0) - pen, 0, 1);
     const bad = df.indexOf('spoil') >= 0;
     if (bad) { sat = Math.min(sat, 0.04); _.rate(S, 1, 0.08); }

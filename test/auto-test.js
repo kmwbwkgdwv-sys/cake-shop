@@ -156,4 +156,5 @@ const L = fullAuto('[line]', (S) => { K.placeNew(S, 'line'); });
 ok(L.pre >= 1 && L.T.sold > 15 && L.T.sales > 8000, 'Lv10: line + machine staff + cashier + stock staff run the shop with nobody (sold ' + L.T.sold + ')');
 const M = fullAuto('[machines]', (S) => { ['amixer', 'aoven', 'awhip', 'adeco', 'rack'].forEach((k) => K.placeNew(S, k)); for (let i = 0; i < 2; i++) sim.apply(S, { t: 'tbuy', k: 'pan', pid: 'p1' }, 1000); });
 ok(M.T.sold > 8, 'auto mixer → auto oven → auto whipper → auto deco with the machine staff (sold ' + M.T.sold + ')');
+{ const lifeOf = (S) => S.history.reduce((a, h) => a + h.sales, 0) + (S.phase === 'report' ? 0 : S.today.sales + S.today.drinks); ok(L.S.life > 0 && Math.abs(L.S.life - lifeOf(L.S)) < 1, 'lifetime sales (for the ranking) = all sales so far: ' + L.S.life + ' vs ' + lifeOf(L.S) + ' (hist ' + L.S.history.length + ', drinks ' + L.S.today.drinks + ')'); }
 console.log(fail ? fail + ' FAILED' : 'ALL OK');
