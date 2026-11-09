@@ -46,17 +46,16 @@ async def main():
     ok(await ev(A, "document.querySelector('#modal').hidden && CS.ui.scr === 'title'"), 'title screen after the gate')
     saved = await ev(A, "JSON.stringify(CS.save.data.tcode)")
     ok(code in saved, 'the code is kept in the save data (shared with linked devices)')
-    # ---- 再起動：同じコードが出る（発行し直さない） ----
-    await A.reload(); await A.wait_for_timeout(1800)
-    ok(await A.locator('#gs1-box').count() == 1, 'the gate shows again on the next launch')
-    btn = await ev(A, "document.querySelector('#gs1-box [data-c=issue]').textContent")
-    ok('表示' in btn, 'the button now says show the code: ' + btn.strip())
-    await A.click('#gs1-box [data-c=issue]'); await A.wait_for_timeout(900)
-    code2 = (await ev(A, "document.querySelector('#gs1-box .code').textContent")).replace('-', '')
-    ok(code2 == code and '発行済み' in await ev(A, "document.querySelector('#gs1-box .invite').textContent"), 'same code as before (already issued)')
-    await A.click('#gs1-box [data-c=copy]'); await A.wait_for_timeout(300)
-    await A.click('#gs2-btn'); await A.wait_for_timeout(1500)
-    await A.click('#modal .row.end .btn'); await A.wait_for_timeout(400)
+    # ---- 再起動：一度発行したら、もう出ない。コードは「引き継ぎ」で同じものが見られる ----
+    await A.reload(); await A.wait_for_timeout(2000)
+    ok(await A.locator('#gs1-box').count() == 0 and await ev(A, "document.querySelector('#modal').hidden && CS.ui.scr === 'title'"), 'the gate does not show again once the code is issued')
+    await A.click('#btn-transfer'); await A.wait_for_timeout(500)
+    btn = await ev(A, "document.querySelector('#tf-cb [data-c=issue]').textContent")
+    ok('表示' in btn, 'transfer screen offers to show the code: ' + btn.strip())
+    await A.click('#tf-cb [data-c=issue]'); await A.wait_for_timeout(900)
+    code2 = (await ev(A, "document.querySelector('#tf-cb .code').textContent")).replace('-', '')
+    ok(code2 == code and '発行済み' in await ev(A, "document.querySelector('#tf-cb .invite').textContent"), 'same code as before (already issued)')
+    await ev(A, "CS.ui.closeSheet()"); await A.wait_for_timeout(300)
     # ---- 遊ぶ：お店をつくって、プレイ時間と売上を記録 ----
     await A.click('#btn-new'); await A.click('#modal .btn.pink'); await A.wait_for_timeout(2500)
     ok(await ev(A, "CS.ui.scr") == 'game', 'A is in the shop'); await dismiss(A)
@@ -106,6 +105,8 @@ async def main():
     await C.fill('#tf-in', code); await C.click('#tf-redeem'); await C.wait_for_timeout(300); await C.click('#modal .btn.mint'); await C.wait_for_timeout(2500)
     cme = json.loads(await ev(C, "JSON.stringify([CS.save.data.name, CS.rank.mine(), CS.save.currentCode() && CS.save.currentCode().code])"))
     ok(cme[0] == 'あかり' and cme[1]['play'] >= 3725 and cme[2] == code, 'the new device has A data, record and code: ' + json.dumps(cme, ensure_ascii=False))
+    await C.reload(); await C.wait_for_timeout(2000)
+    ok(await C.locator('#gs1-box').count() == 0, 'after taking over with the code, the gate does not show on that device either')
     for pg in (A, B, C):
       errs = [l for l in pg.logs if 'PAGEERROR' in l or ('CONSOLE' in l and 'TUNNEL' not in l and 'favicon' not in l)]
       ok(not errs, 'no errors: ' + str(errs[:3]))

@@ -242,15 +242,17 @@
   };
 
   // =====================================================================
-  //  起動時：引き継ぎコードの発行と保存、データ同期を押してから始める
+  //  起動時：引き継ぎコードをまだ発行していなければ、発行と保存・データ同期を押してから始める
   // =====================================================================
+  // 一度コードを発行したら（ほかの端末で発行・引き継ぎした場合も、セーブデータに入っているので）もう出さない
+  R.needGate = () => !!(net.online && save.data && !save.currentCode());
   UI.dataGate = function () {
-    if (!net.online) return Promise.resolve();
+    if (!R.needGate()) return Promise.resolve();
     const lastSync = CS.LS.get('cs.lastSync', 0);
     return UI.modal({
       title: 'データを守ろう', sticky: true,
       html: `<div class="gate">
-        <p class="muted small" style="margin:0">機種変更やブラウザのデータ削除で消えないように、毎回ここで確認します。</p>
+        <p class="muted small" style="margin:0">機種変更やブラウザのデータ削除で消えないように、最初に引き継ぎコードを発行して保存しておこう（この画面は発行するまで出ます。あとからは「引き継ぎ」でいつでも見られます）。</p>
         <div class="gate-step" id="gs1"><div class="gs-h"><span class="gs-n">1</span><b>引き継ぎコードを発行して保存</b><span class="gs-ok">${ic('check')}</span></div>
           <div id="gs1-box"></div><small class="muted">「コピー」してメモに貼るか、「画像で保存」してね。新しい端末で「引き継ぎ」に入力するとデータを戻せます。</small></div>
         <div class="gate-step" id="gs2"><div class="gs-h"><span class="gs-n">2</span><b>データを同期</b><span class="gs-ok">${ic('check')}</span></div>

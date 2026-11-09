@@ -34,7 +34,7 @@
   ['gesturestart', 'gesturechange'].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault(), { passive: false }));
 
   if (!CS.save.data.edited || !CS.save.data.edited.name) await UI.welcome();
-  // 起動するたびに：引き継ぎコードの発行と保存、データ同期を押してから始める
+  // 引き継ぎコードをまだ発行していなければ：発行と保存、データ同期を押してから始める（一度発行したら出ない）
   try { await UI.dataGate(); } catch (e) { console.error(e); }
   UI.renderTitle();
 
