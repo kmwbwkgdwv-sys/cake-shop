@@ -390,16 +390,18 @@
       if (h.miss > h.cust * 0.3) tips.push('買わずに帰ったお客さんが ' + h.miss + ' 人。売り切れや値段の高さが原因かも。');
       if (h.waste > h.sales * 0.12) tips.push('廃棄が多めです。作る量や仕入れを見直そう。');
       if (h.sat && h.sat < 0.45) tips.push('満足度が低め。品質を上げるか、少し値下げしてみよう。');
+      if (h.loan) tips.push(h.lend ? '借金の最後の返済 ' + yen(h.loan) + ' を払って、返し終わりました！また借りられます。' : '借金の返済 ' + yen(h.loan) + ' を引きました（あと' + (s.loan ? s.loan.left : 0) + '回・残り ' + yen(s.loan ? s.loan.total - s.loan.paid : 0) + '）。');
+      if (s.funds < 0) tips.push('資金がマイナス（' + yen(s.funds) + '）です。黒字に戻るまで何も買えません。' + yen(R.BANKRUPT) + ' を下回ると倒産です。');
       if (h.profit < 0) tips.push('今日は赤字（' + yen(h.profit) + '）。たくさん作って売るほど家賃の負担は軽くなります。');
       if (h.profit > 0 && s.funds > 30000) tips.push('資金に余裕があります。パソコンの「家具・道具」でオーブンや棚を増やしたり、「拡張」でお店を広げよう！');
       if (h.wages) tips.push('アルバイトの日給 合計 ' + yen(h.wages) + '。働くほどレベルが上がって速くなります。');
       if (!tips.length) tips.push('いい調子！この調子でお店を大きくしよう。');
       const stat = (l, v, cls) => `<div class="stat"><small>${l}</small><b class="${cls || ''}">${v}</b></div>`;
       ov.innerHTML = `<div class="panel ov-card"><h2>${h.d}日目の営業結果</h2>
-        <div class="report-grid">${stat('来店', h.cust + '人')}${stat('販売', h.sold + '個' + (h.hole ? '（ホール ' + h.hole + '台）' : ''))}${stat('売上', yen(h.sales))}${stat('原価', yen(h.cogs))}${stat('送料', yen(h.ship || 0))}${stat('廃棄', yen(h.waste), h.waste ? 'neg' : '')}${stat('家賃・光熱費・人件費', yen(h.fixed))}${stat('広告・試作', yen(h.ads))}${stat('利益', yen(h.profit), h.profit >= 0 ? 'pos' : 'neg')}${stat('クレーム', (h.cmp || 0) + '件' + (h.pc ? '（値段 ' + h.pc + '）' : ''), h.cmp ? 'neg' : '')}${stat('評判', '★' + h.rep.toFixed(1) + (repD ? (repD > 0 ? ' ↑' : ' ↓') : ''), repD > 0 ? 'pos' : repD < 0 ? 'neg' : '')}</div>
+        <div class="report-grid">${stat('来店', h.cust + '人')}${stat('販売', h.sold + '個' + (h.hole ? '（ホール ' + h.hole + '台）' : ''))}${stat('売上', yen(h.sales))}${stat('原価', yen(h.cogs))}${stat('送料', yen(h.ship || 0))}${stat('廃棄', yen(h.waste), h.waste ? 'neg' : '')}${stat('家賃・光熱費・人件費', yen(h.fixed))}${h.loan ? stat('借金の返済', '-' + yen(h.loan), 'neg') : ''}${stat('広告・試作', yen(h.ads))}${stat('利益', yen(h.profit), h.profit >= 0 ? 'pos' : 'neg')}${stat('クレーム', (h.cmp || 0) + '件' + (h.pc ? '（値段 ' + h.pc + '）' : ''), h.cmp ? 'neg' : '')}${stat('評判', '★' + h.rep.toFixed(1) + (repD ? (repD > 0 ? ' ↑' : ' ↓') : ''), repD > 0 ? 'pos' : repD < 0 ? 'neg' : '')}</div>
         ${best ? `<div class="banner pink">${ic('star')} 一番人気：${esc(best.name)}</div>` : ''}
         <div class="banner sky" style="display:grid;gap:2px">${tips.map((t) => '<span>・' + esc(t) + '</span>').join('')}</div>
-        <div class="row between small"><span>現在の資金</span><b class="num">${yen(s.funds)}</b></div>
+        <div class="row between small"><span>現在の資金</span><b class="num ${s.funds < 0 ? 'neg' : ''}">${yen(s.funds)}</b></div>
         <button class="btn big pink wide" id="ov-next">${ic('play')} 次の日へ！</button>
         <div class="row" style="justify-content:center"><button class="btn sm ghost" id="ov-biz">${ic('chart')} 収支の推移</button><button class="btn sm ghost" id="ov-up">${ic('home')} 店舗拡張</button></div></div>`;
       $('#ov-next').onclick = () => { CS.sound.play('open'); act({ t: 'next' }); };
@@ -472,7 +474,7 @@
     r.setStation('pc');
     UI.openSheet({
       title: 'パソコン', live: true, key: 'pc', tab: tab || game.pcTab || 'ing',
-      tabs: [{ id: 'ing', label: '材料の注文' }, { id: 'furn', label: '家具・道具' }, { id: 'sell', label: '販売価格' }, { id: 'eq', label: '設備の性能' }, { id: 'staff', label: 'アルバイト' }, { id: 'up', label: '拡張' }, { id: 'ad', label: '広告' }, { id: 'today', label: '収支' }, { id: 'level', label: 'レベル' }],
+      tabs: [{ id: 'ing', label: '材料の注文' }, { id: 'furn', label: '家具・道具' }, { id: 'sell', label: '販売価格' }, { id: 'eq', label: '設備の性能' }, { id: 'staff', label: 'アルバイト' }, { id: 'up', label: '拡張' }, { id: 'ad', label: '広告' }, { id: 'today', label: '収支' }, { id: 'loan', label: '借金' }, { id: 'level', label: 'レベル' }],
       onClose: () => r.setStation(''),
       render(body, t) {
         const s = S(); game.pcTab = t;
@@ -481,6 +483,7 @@
         if (t === 'eq') return game.renderEquip(body, s);
         if (t === 'furn') return game.renderFurn(body, s);
         if (t === 'staff') return game.renderStaff(body, s);
+        if (t === 'loan') return game.renderLoan(body, s);
         return game.renderBizTab(body, s, t);
       },
     });
@@ -543,6 +546,45 @@
     if (!added) return UI.toast(game.cart.length >= R.CART_MAX ? 'カートがいっぱいです' : 'いまの在庫で足りています', 'good');
     UI.toast(added + '箱をカートに入れました'); CS.sound.play('pop'); game.mkView = 'cart'; UI.renderSheet(true);
   };
+  // ---------- 借金（パソコン） ----------
+  game.loanSel = game.loanSel || { amt: 10000, days: 5 };
+  game.renderLoan = function (body, s) {
+    const LN = R.LOAN, L = s.loan, fundsCls = s.funds < 0 ? 'neg' : '';
+    const head = `<div class="row between"><span class="small">資金 <b class="num ${fundsCls}">${yen(s.funds)}</b></span>${L ? '<span class="chip warn">返済中</span>' : '<span class="chip ok">借りられます</span>'}</div>`;
+    const rules = `<div class="card soft"><h3>借金のきまり</h3><ul class="small muted" style="margin:0;padding-left:1.2em;display:grid;gap:3px">
+        <li>借りられるのは <b>1万・3万・5万円</b>（最大5万円）</li>
+        <li><b>5日で返す</b>：1日に 借りた額÷5 に <b>50%上乗せ</b>（1万円なら1日 ${yen(sim.loanPlan(10000, 5).per)}）</li>
+        <li><b>10日で返す</b>：1日に 借りた額÷10 に <b>120%上乗せ</b>（1万円なら1日 ${yen(sim.loanPlan(10000, 10).per)}）</li>
+        <li>毎日、<b>閉店したときに自動で引かれます</b></li>
+        <li>お金が足りないと資金が<b>マイナス</b>になり、黒字に戻るまで<b>何も買えなくなります</b>（${yen(R.BANKRUPT)} を下回ると倒産）</li>
+        <li>返し終わるまで、次の借金はできません</li></ul></div>`;
+    if (L) {
+      const rest = L.total - L.paid, pct = Math.round((L.paid / L.total) * 100);
+      const short = s.funds < L.per;
+      body.innerHTML = head + `<div class="card loan-now"><h3>${ic('coin')} 返済中の借金</h3><dl class="kv">
+          <dt>借りた額</dt><dd>${yen(L.amt)}（${L.day}日目）</dd><dt>返し方</dt><dd>${L.days}日で返す</dd>
+          <dt>1日に返す額</dt><dd class="neg">-${yen(L.per)}</dd><dt>返した額</dt><dd>${yen(L.paid)} / ${yen(L.total)}</dd>
+          <dt class="tot">残り</dt><dd class="tot neg">${yen(rest)}（あと${L.left}回）</dd></dl>
+          <div class="loan-bar"><i style="width:${pct}%"></i></div>
+          <p class="small ${short ? 'neg' : 'muted'}" style="margin:0">${s.phase === 'report' ? '次の閉店のときに' : '今日の閉店のときに'} ${yen(Math.min(L.per, rest))} 引かれます。${short ? 'いまの資金では足りません（マイナスになると何も買えなくなります）。' : ''}</p></div>` + rules;
+      return;
+    }
+    const sel = game.loanSel, pl = sim.loanPlan(sel.amt, sel.days);
+    const amtB = LN.amounts.map((a) => `<button class="btn ${sel.amt === a ? 'pink' : ''}" data-la="${a}">${a / 10000}万円</button>`).join('');
+    const dayB = [5, 10].map((d) => { const p = sim.loanPlan(sel.amt, d); return `<button class="btn loan-plan ${sel.days === d ? 'pink' : ''}" data-ld="${d}"><b>${d}日で返す</b><small>1日 ${yen(p.per)}・合計 ${yen(p.total)}</small></button>`; }).join('');
+    body.innerHTML = head + `<div class="card"><h3>${ic('coin')} お金を借りる</h3>
+        <span class="small muted">借りる額</span><div class="loan-grid three">${amtB}</div>
+        <span class="small muted">返し方</span><div class="loan-grid">${dayB}</div>
+        <dl class="kv"><dt>すぐ入るお金</dt><dd class="pos">+${yen(pl.amt)}</dd><dt>閉店のたびに引かれる</dt><dd class="neg">-${yen(pl.per)} × ${pl.days}回</dd><dt class="tot">返す合計</dt><dd class="tot">${yen(pl.total)}（上乗せ ${yen(pl.total - pl.amt)}）</dd></dl>
+        <button class="btn big pink wide" id="ln-go">${ic('coin')} ${yen(pl.amt)} を借りる</button></div>` + rules;
+    $$('[data-la]', body).forEach((b) => (b.onclick = () => { CS.sound.play('tap'); sel.amt = +b.dataset.la; UI.renderSheet(true); }));
+    $$('[data-ld]', body).forEach((b) => (b.onclick = () => { CS.sound.play('tap'); sel.days = +b.dataset.ld; UI.renderSheet(true); }));
+    $('#ln-go', body).onclick = async () => {
+      const p = sim.loanPlan(sel.amt, sel.days);
+      if (!(await UI.confirm('お金を借りる', `${yen(p.amt)} を借りて、閉店のたびに ${yen(p.per)} ずつ ${p.days}回（合計 ${yen(p.total)}）返します。返し終わるまで次は借りられません。`, '借りる'))) return;
+      CS.sound.play('coin'); act({ t: 'borrow', amt: p.amt, days: p.days });
+    };
+  };
   // ---------- 経営のタブ（収支・拡張・広告・レベル） ----------
   game.renderBizTab = function (body, s, t) {
     if (t === 'level') return game.renderLevel(body, s);
@@ -558,7 +600,9 @@
         <dt>売上（ケーキ）</dt><dd>${yen(T.sales)}</dd><dt>売上（ドリンク）</dt><dd>${yen(T.drinks)}</dd>
         <dt>原価（売れた分）</dt><dd class="neg">-${yen(T.cogs)}</dd><dt>廃棄ロス</dt><dd class="neg">-${yen(T.waste)}</dd>
         <dt>広告・試作</dt><dd class="neg">-${yen(T.ads + (T.lab || 0))}</dd><dt>家賃・光熱費・日給（閉店時）</dt><dd class="neg">-${yen(fixed)}</dd>
-        <dt class="tot">営業利益（見込み）</dt><dd class="tot ${prof >= 0 ? 'pos' : 'neg'}">${yen(prof)}</dd></dl></div>
+        <dt class="tot">営業利益（見込み）</dt><dd class="tot ${prof >= 0 ? 'pos' : 'neg'}">${yen(prof)}</dd>
+        ${T.loanIn ? `<dt>借りたお金</dt><dd class="pos">+${yen(T.loanIn)}</dd>` : ''}
+        ${(() => { const lp = s.phase === 'report' && s.history.length ? s.history[s.history.length - 1].loan || 0 : s.loan ? Math.min(s.loan.per, s.loan.total - s.loan.paid) : 0; return lp ? `<dt>借金の返済（閉店時）</dt><dd class="neg">-${yen(lp)}</dd>` : ''; })()}</dl></div>
         <div class="card"><dl class="kv"><dt>来店</dt><dd>${T.cust}人</dd><dt>販売</dt><dd>${T.sold}個${T.hole ? '（うちホール ' + T.hole + '台）' : ''}</dd><dt>買わずに帰った</dt><dd>${T.miss}人（うち売り切れ ${T.soldout}人）</dd><dt>満足度</dt><dd>${T.cust - T.miss > 0 ? Math.round((T.sat / (T.cust - T.miss)) * 100) + '%' : '—'}</dd><dt>今日の仕入れ額</dt><dd>${yen(T.buy || 0)}</dd><dt>設備投資</dt><dd>${yen(T.capex || 0)}</dd><dt class="tot">現在の資金</dt><dd class="tot">${yen(s.funds)}</dd></dl></div>
         ${s.history.length ? `<div class="card"><h3>売上と利益（直近14日）</h3><div class="chart">${chartSVG(s.history.slice(-14))}</div><div class="row small" style="gap:14px"><span><i style="display:inline-block;width:12px;height:12px;background:rgba(201,163,94,.55);border:1.5px solid var(--gold);border-radius:3px"></i> 売上</span><span><i style="display:inline-block;width:14px;height:3px;background:var(--good)"></i> 利益</span></div></div>` : ''}
         <p class="muted small" style="margin:0">資金が ${yen(R.BANKRUPT)} を下回ると倒産です。</p>`;

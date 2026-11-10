@@ -55,6 +55,7 @@
     if (!S.today.issues) S.today.issues = {};
     ['batters', 'bases', 'creams', 'stock'].forEach((k) => { for (const id in S[k]) if (S[k][id]) S[k][id].df = toArr(S[k][id].df).filter((x) => x); });
     S.history = toArr(S.history);
+    if (S.loan && !(S.loan.left > 0 && S.loan.per > 0)) S.loan = null;
     // これまでの売上の合計（ランキング用）。前のバージョンのお店は、残っている記録（最大30日）と今日の分から
     if (!(S.life >= 0)) S.life = S.history.reduce((a, h) => a + ((h && h.sales) || 0), 0) + (S.phase === 'report' ? 0 : (S.today.sales || 0) + (S.today.drinks || 0)); // 閉店後の報告中は、今日の分はもう記録に入っている
     S.fx = toArr(S.fx);
@@ -311,11 +312,27 @@
     const f = ACT[a.t] || kf;
     if (!f) return { ok: false, msg: '不明な操作' };
     if (S.bankrupt && a.t !== 'reset') return { ok: false, msg: 'お店は倒産しました' };
+    if (BUY[a.t] && S.funds < 0 && !(a.t === 'ad' && a.kind === 'none')) return { ok: false, msg: '資金がマイナス（' + yenS(S.funds) + '）なので、黒字に戻るまで何も買えません' };
     if (kf && !ACT[a.t] && !working(S) && !(CS.kitchen.ANYTIME || {})[a.t]) return { ok: false, msg: S.phase === 'report' ? '今日の営業は終わりました' : 'まだ営業日が始まっていません' };
     try { return f(S, a, now) || { ok: true }; } catch (e) { return { ok: false, msg: 'エラー: ' + e.message }; }
   }
   const working = (S) => S.phase === 'prep' || S.phase === 'open';
+  // お金を使う操作（資金がマイナスの間はできない）
+  const BUY = { order: 1, buyEq: 1, buyFurn: 1, upgrade: 1, ad: 1, research: 1, fbuy: 1, tbuy: 1 };
+  const yenS = (n) => (n < 0 ? '-¥' : '¥') + Math.abs(Math.round(n)).toLocaleString('ja-JP');
+  // 借金：1日に返す額（5日：借りた額÷5 に50%上乗せ、10日：借りた額÷10 に120%上乗せ）
+  function loanPlan(amt, days) { const rate = (R.LOAN.plans || {})[days]; if (rate == null || !R.LOAN.amounts.includes(amt)) return null; const per = Math.round((amt / days) * (1 + rate)); return { amt, days, per, total: per * days }; }
   const ACT = {
+    // 借金（返し終わるまで次は借りられない）
+    borrow(S, a) {
+      if (S.loan) return { ok: false, msg: '借金を返し終わるまで、新しく借りることはできません（残り ' + S.loan.left + '回）' };
+      const pl = loanPlan(+a.amt, +a.days);
+      if (!pl) return { ok: false, msg: '借りられる額は 1万・3万・5万円、返す日数は 5日か10日です' };
+      S.loan = { amt: pl.amt, days: pl.days, per: pl.per, total: pl.total, paid: 0, left: pl.days, day: S.day };
+      S.funds += pl.amt; S.today.loanIn = (S.today.loanIn || 0) + pl.amt;
+      fx(S, 'info', yenS(pl.amt) + ' を借りました。閉店のたびに ' + yenS(pl.per) + ' ずつ、' + pl.days + '回で返します');
+      return { ok: true };
+    },
     start(S, a, now) { if (S.phase !== 'lobby') return { ok: false }; S.phase = 'prep'; S.phaseAt = now; S.dayT = 0; fx(S, 'phase', '準備中（CLOSE）。仕込みができたら入口の看板を OPEN に！'); return { ok: true }; },
     open(S, a, now) { if (S.phase !== 'prep') return { ok: false }; openShop(S, now); return { ok: true }; },
     close(S, a, now) { if (S.phase !== 'open') return { ok: false }; S.phase = 'prep'; CS.kitchen.sendAway(S, now, '準備中なんだ…'); fx(S, 'phase', 'CLOSE（準備中）。時計が止まりました'); return { ok: true }; },
@@ -518,11 +535,19 @@
     T.wages = wages;
     const fixed = R.RENT + (S.up.floor || 0) * (R.RENT_PER_FLOOR || 1500) + (equip + 2) * R.UTIL_PER_EQUIP + wages;
     S.funds -= fixed;
+    // 借金の返済（お金が足りなくても引く。マイナスになったら黒字に戻るまで何も買えない）
+    let loanPay = 0, loanDone = 0;
+    if (S.loan) {
+      const L = S.loan; loanPay = Math.min(L.per, L.total - L.paid);
+      S.funds -= loanPay; L.paid += loanPay; L.left -= 1;
+      if (L.left <= 0 || L.paid >= L.total) { S.loan = null; loanDone = 1; fx(S, 'info', '借金を返し終わりました！また借りられます'); }
+    }
+    T.loanPay = loanPay;
     const revenue = T.sales + T.drinks;
     const profit = revenue - T.cogs - T.waste - fixed - T.ads - (T.lab || 0) - (T.ship || 0);
     const satAvg = T.cust - T.miss > 0 ? T.sat / Math.max(1, T.cust - T.miss) : 0;
     let bestR = null, bestN = 0; for (const r in T.best) if (T.best[r] > bestN) { bestN = T.best[r]; bestR = r; }
-    S.history.push({ brk: T.broken || 0, ovr: T.over || 0, wsh: T.washed || 0, exp: T.expired || 0, slow: T.slow || 0, spl: T.spoiled || 0, pc: T.pcomp || 0, ship: T.ship || 0, cmp: T.complaints || 0, iss: Object.assign({}, T.issues || {}), d: S.day, sales: revenue, cogs: T.cogs, waste: T.waste, fixed, ads: T.ads + (T.lab || 0), profit, cust: T.cust, sold: T.sold, hole: T.hole || 0, miss: T.miss, rep: Math.round(S.rep * 100) / 100, sat: Math.round(satAvg * 100) / 100, funds: S.funds, best: bestR || '', buy: T.buy || 0, capex: T.capex || 0, wages });
+    S.history.push({ loan: loanPay, lend: loanDone, lin: T.loanIn || 0, brk: T.broken || 0, ovr: T.over || 0, wsh: T.washed || 0, exp: T.expired || 0, slow: T.slow || 0, spl: T.spoiled || 0, pc: T.pcomp || 0, ship: T.ship || 0, cmp: T.complaints || 0, iss: Object.assign({}, T.issues || {}), d: S.day, sales: revenue, cogs: T.cogs, waste: T.waste, fixed, ads: T.ads + (T.lab || 0), profit, cust: T.cust, sold: T.sold, hole: T.hole || 0, miss: T.miss, rep: Math.round(S.rep * 100) / 100, sat: Math.round(satAvg * 100) / 100, funds: S.funds, best: bestR || '', buy: T.buy || 0, capex: T.capex || 0, wages });
     while (S.history.length > 30) S.history.shift();
     S.cust = {};
     addXp(S, Math.round(Math.max(0, S.rep - 2) * 12));
@@ -542,7 +567,7 @@
   CS.sim = {
     shopLevel, rush, unlockedIngs, ingUnlocked, ingUnlockBy, recipeIngs, wholeable, holeMarket, holeWtp, addXp, upReq, eqv, pieceCount, furnMax, unlockByLevel, newState, normalize, gt, phaseInfo, clockStr, tick, apply, recipe, recipeTags, stars, recipeValue, comboKey, findRecipeByCombo,
     costEstimate, demandEstimate, wtp, cakeMarket, arrivalRate, invCount, hasAll, missing, expSoon, bakeQuality, bakeWindow, ovenDur, coolMs, upVal,
-    DECIDE_MS, LEAVE_MS, clamp, fx, appearance, cleanDf, ACT, working, cakeExpDay, cakeExpired, cakeExpText, HOST_ONLY: ['menuOn'],
+    DECIDE_MS, LEAVE_MS, clamp, fx, appearance, cleanDf, ACT, working, loanPlan, cakeExpDay, cakeExpired, cakeExpText, HOST_ONLY: ['menuOn'],
     _: { cakeExpired, toArr, uid, union, cleanDf, fx, invCount, invTake, invAdd, hasAll, takeAll, eqv, ovenDur, bakeQuality, bakeWindow, coolMs, findRecipeByCombo, wtp, cakeMarket, appearance, addXp, rate, pick, wpick, gauss, menuRecipes },
   };
 })(typeof window !== 'undefined' ? window : globalThis);

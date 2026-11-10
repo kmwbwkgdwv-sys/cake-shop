@@ -233,6 +233,7 @@
 
   // ============ アイコン ============
   const IC = {
+    coin: '<circle cx="12" cy="12" r="8.5"/><path d="M8.8 7.6 12 12l3.2-4.4M12 12v5M9.3 12.6h5.4M9.3 15h5.4"/>',
     trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4"/><path d="M12 13v4M8.5 21h7M10 17h4"/>',
     download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
