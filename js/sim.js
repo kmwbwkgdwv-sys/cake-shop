@@ -249,19 +249,26 @@
   // ケーキの今日の相場
   function cakeMarket(S, rid, r) { r = r || recipe(S, rid); return (S.cmk && S.cmk[rid]) || (r ? recipeValue(r) : 400); }
   function wtp(S, r, q, ct, noise, rid) {
-    let v = (rid ? cakeMarket(S, rid, r) : recipeValue(r)) * (0.5 + 0.75 * q) * ct.budget * (0.88 + 0.05 * S.rep);
+    let v = (rid ? cakeMarket(S, rid, r) : recipeValue(r)) * (0.66 + 0.5 * q) * ct.budget * (0.88 + 0.05 * S.rep) * (R.WTP_BASE || 1);
     const tags = recipeTags(r);
     if (tags.some((t) => ct.likes.includes(t))) v *= 1.18;
-    if (ct.picky > 0.6 && q < 0.65) v *= 0.6;
+    if (ct.picky > 0.6 && q < 0.65) v *= 0.75;
     v *= 1 + 0.03 * (S.up.interior || 0);
     return v * (noise || 1);
   }
+  // 買う確率：出してもいい値段 w と値段の比でなだらかに決まる（少し高いだけなら、買う人もいる）。相場の PRICE_MAX 倍を超えるとだれも買わない
+  function buyProb(w, price, mk) {
+    if (!(price > 0)) return 1;
+    if (mk && price > mk * (R.PRICE_MAX || 1.8)) return 0;
+    return 1 / (1 + Math.exp(-(w / price - 1) / (R.PRICE_SOFT || 0.22)));
+  }
   // 価格に対して、お客さんのうち何割が買ってくれそうか (メニュー画面の予想表示用)
+  const NOISE_W = [0.11, 0.24, 0.3, 0.24, 0.11];
   function demandEstimate(S, rid, price, q, hole) {
     const r = recipe(S, rid); if (!r) return 0;
     let tot = 0, ok = 0;
-    const lim = (hole ? holeMarket(S, rid, r) : cakeMarket(S, rid, r)) * R.PRICE_LIMIT;
-    for (const ct of D.CUSTOMERS) for (let i = -2; i <= 2; i++) { const n = Math.exp(i * 0.15); tot += ct.w; if ((hole ? holeWtp(S, r, q, ct, n, rid) : wtp(S, r, q, ct, n, rid)) >= price && price <= lim) ok += ct.w; }
+    const mk = hole ? holeMarket(S, rid, r) : cakeMarket(S, rid, r);
+    for (const ct of D.CUSTOMERS) for (let i = -2; i <= 2; i++) { const n = Math.exp(i * 0.15), g = ct.w * NOISE_W[i + 2]; tot += g; ok += g * buyProb(hole ? holeWtp(S, r, q, ct, n, rid) : wtp(S, r, q, ct, n, rid), price, mk); }
     return ok / tot;
   }
   function arrivalRate(S, hourIdx) {
@@ -567,7 +574,7 @@
   CS.sim = {
     shopLevel, rush, unlockedIngs, ingUnlocked, ingUnlockBy, recipeIngs, wholeable, holeMarket, holeWtp, addXp, upReq, eqv, pieceCount, furnMax, unlockByLevel, newState, normalize, gt, phaseInfo, clockStr, tick, apply, recipe, recipeTags, stars, recipeValue, comboKey, findRecipeByCombo,
     costEstimate, demandEstimate, wtp, cakeMarket, arrivalRate, invCount, hasAll, missing, expSoon, bakeQuality, bakeWindow, ovenDur, coolMs, upVal,
-    DECIDE_MS, LEAVE_MS, clamp, fx, appearance, cleanDf, ACT, working, loanPlan, cakeExpDay, cakeExpired, cakeExpText, HOST_ONLY: ['menuOn'],
+    DECIDE_MS, LEAVE_MS, clamp, fx, appearance, cleanDf, ACT, working, loanPlan, buyProb, cakeExpDay, cakeExpired, cakeExpText, HOST_ONLY: ['menuOn'],
     _: { cakeExpired, toArr, uid, union, cleanDf, fx, invCount, invTake, invAdd, hasAll, takeAll, eqv, ovenDur, bakeQuality, bakeWindow, coolMs, findRecipeByCombo, wtp, cakeMarket, appearance, addXp, rate, pick, wpick, gauss, menuRecipes },
   };
 })(typeof window !== 'undefined' ? window : globalThis);

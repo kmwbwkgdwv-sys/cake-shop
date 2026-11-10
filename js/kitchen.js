@@ -995,12 +995,12 @@
     const big = sim.rush(S).size;
     // ホールで買う人（お祝い・家族など）：ホールの値段で決める
     if (Math.random() < Math.min(0.95, (ct.hole || 0) * (1 + 0.2 * big))) {
-      const hopts = [];
+      const hopts = [], uh = Math.random(); // 1人1回の抽選：メニューが多くても「一番買いたいもの」で決まる
       for (const rid of _.menuRecipes(S)) {
         const m = S.menu[rid], r = sim.recipe(S, rid); if (!sim.wholeable(r) || !(m.hp > 0)) continue;
         const a = availH[rid] || avail[rid];
         const w = sim.holeWtp(S, r, a ? a.q : 0.78, ct, noise, rid) * (a ? _.appearance(a.df) : 1), mk = sim.holeMarket(S, rid, r);
-        if (w > m.hp && m.hp <= mk * R.PRICE_LIMIT) hopts.push({ rid, s: (w - m.hp) / m.hp + (availH[rid] ? 0.2 : 0) + Math.random() * 0.25, price: m.hp });
+        if (uh < sim.buyProb(w, m.hp, mk)) hopts.push({ rid, s: (w - m.hp) / m.hp + (availH[rid] ? 0.2 : 0) + Math.random() * 0.25, price: m.hp });
       }
       if (hopts.length) {
         hopts.sort((a, b) => b.s - a.s);
@@ -1011,13 +1011,14 @@
         return;
       }
     }
+    const u = Math.random();
     for (const rid of _.menuRecipes(S)) {
       const m = S.menu[rid], r = sim.recipe(S, rid);
       seen++;
       const a = avail[rid];
       const w = _.wtp(S, r, a ? a.q : 0.78, ct, noise, rid) * (a ? _.appearance(a.df) : 1);
       const mk = _.cakeMarket(S, rid, r); if (!worstP || m.price / mk > worstP.f) worstP = { rid, f: m.price / mk, mk };
-      if (w > m.price && m.price <= mk * R.PRICE_LIMIT) opts.push({ rid, s: (w - m.price) / m.price + (a ? 0.12 : 0) + Math.random() * 0.25, price: m.price });
+      if (u < sim.buyProb(w, m.price, mk)) opts.push({ rid, s: (w - m.price) / m.price + (a ? 0.12 : 0) + Math.random() * 0.25, price: m.price });
     }
     if (!opts.length) {
       c.st = 'out'; c.tEnd = now + R.WALK_MS; c.sayT = now; S.today.miss++; S.today.cust++;

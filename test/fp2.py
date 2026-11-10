@@ -228,11 +228,15 @@ async def main():
     print('to dry rack', await step("const sl='f:'+fr('sink')+':1'; return aimSlot(sl, 0.06)+' -> '+go('p')", 300))
     await js("Object.values(T.S().k.items).forEach(i=>{ if(i.wet && !String(i.at).startsWith('h:')) i.wd = T.R().now()+50; })"); await pg.wait_for_timeout(1500)
     chk(await js("Object.values(T.S().k.items).some(i=>i.t==='pan'&&i.st==='empty'&&!i.dirty&&!i.wet&&(CS.plan.slotDef(T.S(),i.at)||{}).type==='dry')"), 'pan dried on the rack')
-    # 10) お皿を落とすと割れる
+    # 10) その場では捨てられない（ゴミ箱まで運ぶ）
     n0 = await js("Object.values(T.S().k.items).filter(i=>i.t==='plate').length")
     print('pick plate', await step("const sl=Object.values(S().k.items).find(i=>i.t==='plate').at; return aimSlot(sl)+' -> '+go('p')"))
-    print('drop', await step("W.target=null; W.discard(); return 'dropped'", 300))
-    chk(await js("Object.values(T.S().k.items).filter(i=>i.t==='plate').length") == n0 - 1, 'plate broke when dropped')
+    print('discard in place', await step("W.target=null; W.discard(); return 'tried'", 300))
+    chk(await js("Object.values(T.S().k.items).filter(i=>i.t==='plate').length") == n0 and await js("!!T.held()"), 'plate is still in hand (no discard in place)')
+    chk(await js("document.querySelector('#b-del').hidden"), '「…」 button hidden while just holding')
+    r = await step("return aimF(fr('trash'), [0,0.6,0], 0.7)+' -> '+go('p')", 400)
+    print('to trash', r)
+    chk(await js("Object.values(T.S().k.items).filter(i=>i.t==='plate').length") == n0 - 1 and await js("!T.held()"), 'plate thrown away at the trash bin')
     await pg.screenshot(path=f'{OUT}/fp2_end.png')
     print('fx', await js("T.S().fx.slice(-4).map(f=>f.x).join(' / ')"))
     print('\n'.join(logs[:20]))

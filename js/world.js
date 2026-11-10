@@ -1928,7 +1928,8 @@
   const yen = (n) => '¥' + Math.round(n || 0).toLocaleString();
   W.itemName = (it, s) => (!it ? '' : K.label(s, it) + (it.t === 'ing' ? ' ×' + it.n : ''));
   // 手に持っている物を捨てるボタンの名前
-  W.delLabel = (held) => (!held || held.t === 'fcrate' ? '' : held.t === 'crate' ? ((held.sp || 0) >= 2 && held.n > 0 ? '捨てる' : '') : held.t === 'plate' ? '落とす（割れる）' : held.t === 'pan' && held.st !== 'empty' ? '中身を捨てる' : '捨てる');
+  // 手に持っている物を「その場で捨てる」ボタンはなし（捨てるときはゴミ箱まで運ぶ）
+  W.delLabel = () => '';
   const SHORT = (s, it) => (it.t === 'ing' ? nm(it.ing) + ' ' + it.n : it.t === 'plate' ? (it.dirty ? '汚れたお皿' : 'お皿') : it.t === 'pan' && it.st === 'empty' ? (it.dirty ? '汚れた型' : 'ケーキ型') : K.label(s, it));
   // ケーキに対する操作（ナイフで切る・ホールのまま箱へ・1切れずつ箱／お皿へ）
   function cakeT(s, t, held, top, topId) {
@@ -2357,6 +2358,8 @@
     if (!on) return;
     W._holdT = setInterval(() => { const t = W.target; if (!t || !t.pri || !t.pri.hold) { clearInterval(W._holdT); W._holdT = null; return; } send(t.pri.a); }, 180);
   };
+  // 3つめのボタン（Q）：ねらっている物ごとの操作だけ（ボウルを空ける・帰ってもらう・全部戻す など）。
+  // 手に持っている物をその場で捨てることはできない → ゴミ箱まで運んで「捨てる」
   W.discard = function () {
     const t = W.target;
     if (t && t.del) { if (t.del.fn) { CS.sound.play('tap'); t.del.fn(); } else send(t.del.a); return; }
@@ -2364,10 +2367,9 @@
     const s = W.S; if (!s || !W.room) return;
     const hid = K.held(s, W.room.pid); if (!hid) return;
     const it = s.k.items[hid];
-    if (it.t === 'fcrate') { CS.ui.toast('置きたい床をねらって「ここに展開する」', 'err'); return; }
-    if (it.t === 'crate' && !((it.sp || 0) >= 2 && it.n > 0)) { if (W.dropG && !W.dropG.why) { send({ t: 'floor', x: W.dropG.x, z: W.dropG.z, r: W.dropG.r }); return; } CS.ui.toast('段ボールは床（足もと）をねらって置こう。空ならゴミ箱へ', 'err'); return; }
-    if (it.t === 'plate') { send({ t: 'drop' }); return; }
-    send({ t: 'trash' });
+    if (it.t === 'crate' && W.dropG && !W.dropG.why) { send({ t: 'floor', x: W.dropG.x, z: W.dropG.z, r: W.dropG.r }); return; }
+    const now = performance.now();
+    if (!W._trashTip || now - W._trashTip > 2500) { W._trashTip = now; CS.ui.toast('捨てるときは、ゴミ箱まで運んで「捨てる」', 'err', 2200); }
   };
 
   // =====================================================================

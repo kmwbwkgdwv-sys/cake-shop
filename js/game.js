@@ -98,7 +98,7 @@
           <div class="mv joy" data-id="joy" id="joy" ${T ? '' : 'hidden'}><i></i></div>
           <button class="mv act-btn" data-id="act" id="b-act" aria-label="つかむ・置く"><span class="ab-ic">${ic('hand')}</span><span class="ab-t">つかむ</span></button>
           <button class="mv act-btn sub" data-id="sec" id="b-sec" aria-label="使う"><span class="ab-ic">${ic('bolt')}</span><span class="ab-t">使う</span></button>
-          <button class="mv act-btn sub del" data-id="del" id="b-del" aria-label="捨てる"><span class="ab-ic">${ic('trash')}</span><span class="ab-t">捨てる</span></button>
+          <button class="mv act-btn sub del" data-id="del" id="b-del" aria-label="そのほかの操作" hidden><span class="ab-ic">${ic('more')}</span><span class="ab-t"></span></button>
           <button class="mv fab" data-id="book">${ic('book')}レシピ</button>
           <button class="mv fab" data-id="chat">${ic('chat')}スタンプ</button>
           <button class="mv fab" data-id="build" id="b-build">${ic('move')}配置</button>
@@ -186,7 +186,8 @@
     const setB = (id, a, fallback) => { const b = $(id); if (!b) return; const lab = a ? a.label || a : fallback; b.querySelector('.ab-t').textContent = lab || fallback || ''; b.classList.toggle('on', !!a); b.classList.toggle('off', !a); };
     setB('#b-act', pri, t && t.build ? '動かす' : held ? '置く' : 'つかむ');
     setB('#b-sec', sec, '使う');
-    setB('#b-del', delLabel ? { label: delLabel } : null, '捨てる');
+    setB('#b-del', delLabel ? { label: delLabel } : null, '');
+    { const bd = $('#b-del'); if (bd) bd.hidden = !delLabel; } // 捨てるボタンはなし。ねらっている物ごとの操作があるときだけ出る
     const xh = $('#xhair'); if (xh) xh.className = 'xhair' + (pri || sec ? ' on' : '') + (t && t.pri && t.pri.aim ? (t.aimOK ? ' aim ok' : ' aim') : '');
   };
 
@@ -673,6 +674,8 @@
       render(body, t) { if (t === 'sell') game.renderSell(body); else if (t === 'book') game.renderBook(body); else game.renderLab(body); },
     });
   };
+  // 売れ行きの予想は、いまショーケースにあるケーキの出来で（無ければふつうの出来）
+  function qOf(s, rid) { let n = 0, q = 0; for (const id in s.k.items) { const k = s.k.items[id]; if (k.t === 'tray' && k.r === rid && k.q > 0) { q += k.q; n++; } } return n ? q / n : 0.75; }
   function markOf(p) { return p >= 0.7 ? ['◎', 'var(--good)'] : p >= 0.45 ? ['○', 'var(--info)'] : p >= 0.2 ? ['△', 'var(--warn)'] : ['×', 'var(--bad)']; }
   game.renderSell = function (body) {
     const s = S();
@@ -697,13 +700,13 @@
         <div class="row between small"><span>原価 ${yen(cost * sim.pieceCount(r))}/台</span><span data-hf></span></div>
         <div class="demand" data-hdm></div><div class="small" data-hmk></div></div>` : ''}</div></div>`;
     }).join('');
-    const fit = (f) => (f > R.PRICE_LIMIT ? `<span class="neg">${ic('megaphone')} 相場の${Math.round(f * 100)}%：高すぎてクレームが来ます</span>` : f > 1.12 ? `<span style="color:var(--warn)">相場の${Math.round(f * 100)}%：やや高め（味がいまいちだと文句が出るかも）</span>` : f < 0.85 ? `<span style="color:var(--info)">相場の${Math.round(f * 100)}%：安め（よく売れるが利益は少なめ）</span>` : `<span class="pos">相場の${Math.round(f * 100)}%：ちょうどいい</span>`);
+    const fit = (f) => (f > R.PRICE_MAX ? `<span class="neg">${ic('megaphone')} 相場の${Math.round(f * 100)}%：高すぎて、だれも買いません</span>` : f > R.PRICE_LIMIT ? `<span class="neg">${ic('megaphone')} 相場の${Math.round(f * 100)}%：高め。買う人は減り、買わなかった人がクレームを言います</span>` : f > 1.12 ? `<span style="color:var(--warn)">相場の${Math.round(f * 100)}%：やや高め（味がいまいちだと文句が出るかも）</span>` : f < 0.85 ? `<span style="color:var(--info)">相場の${Math.round(f * 100)}%：安め（よく売れるが利益は少なめ）</span>` : `<span class="pos">相場の${Math.round(f * 100)}%：ちょうどいい</span>`);
     const updH = (card, hp) => {
       const rid = card.dataset.r, s2 = S(), r = sim.recipe(s2, rid), cost = sim.costEstimate(s2, r);
       $('[data-hv]', card).textContent = yen(hp);
       $('[data-hf]', card).textContent = `利益 ${yen(hp - cost)}（${Math.round((1 - cost / hp) * 100)}%）・1切れあたり ${yen(Math.round(hp / sim.pieceCount(r)))}`;
       $('[data-hmk]', card).innerHTML = fit(hp / sim.holeMarket(s2, rid, r));
-      const p = sim.demandEstimate(s2, rid, hp, 0.8, 1); const [mk, col] = markOf(p);
+      const p = sim.demandEstimate(s2, rid, hp, qOf(s2, rid), 1); const [mk, col] = markOf(p);
       $('[data-hdm]', card).innerHTML = `<span>ホールを買う人の売れ行き</span><span class="bar"><u style="width:${Math.round(p * 100)}%;background:${col}"></u></span><span class="mark" style="color:${col}">${mk}</span>`;
     };
     const upd = (card, price) => {
@@ -712,7 +715,7 @@
       $('[data-pf]', card).textContent = `利益 ${yen(price - cost)}（${Math.round((1 - cost / price) * 100)}%）`;
       const mkp = sim.cakeMarket(s2, rid, r), f = price / mkp;
       $('[data-mk]', card).innerHTML = fit(f);
-      const p = sim.demandEstimate(s2, rid, price, 0.8); const [mk, col] = markOf(p);
+      const p = sim.demandEstimate(s2, rid, price, qOf(s2, rid)); const [mk, col] = markOf(p);
       $('[data-dm]', card).innerHTML = `<span>売れ行き</span><span class="bar"><u style="width:${Math.round(p * 100)}%;background:${col}"></u></span><span class="mark" style="color:${col}">${mk}</span>`;
     };
     const commit = (rid, price) => { clearTimeout(priceTimers[rid]); priceTimers[rid] = setTimeout(() => act({ t: 'price', r: rid, price }), 350); };
@@ -1432,8 +1435,8 @@
   game.tutorial = function (first) {
     const T = touch();
     const ctl = T
-      ? [['移動', '左下のスティック'], ['見回す', '画面の右側をスワイプ'], ['つかむ・置く', '大きいボタン（長押しで続けて）'], ['使う', '小さいボタン（ミキサーを回す・電源など）'], ['捨てる・落とす', 'ゴミ箱のボタン'], ['家具の配置', '「配置」ボタン']]
-      : [['移動', 'W A S D（Shift で小走り）'], ['見回す', 'マウスを動かすだけ（ボタンを押さなくてOK）'], ['つかむ・置く', 'E / 左クリック（長押しで続けて）'], ['使う', 'F / 右クリック'], ['捨てる・落とす', 'Q'], ['家具の配置', 'B'], ['パソコン・レシピ', 'Tab / R']];
+      ? [['移動', '左下のスティック'], ['見回す', '画面の右側をスワイプ'], ['つかむ・置く', '大きいボタン（長押しで続けて）'], ['使う', '小さいボタン（ミキサーを回す・電源など）'], ['そのほかの操作', '「…」のボタン（ボウルを空ける・帰ってもらう など。あるときだけ出る）'], ['捨てる', 'ゴミ箱まで運んで、ゴミ箱をねらって「捨てる」'], ['家具の配置', '「配置」ボタン']]
+      : [['移動', 'W A S D（Shift で小走り）'], ['見回す', 'マウスを動かすだけ（ボタンを押さなくてOK）'], ['つかむ・置く', 'E / 左クリック（長押しで続けて）'], ['使う', 'F / 右クリック'], ['そのほかの操作', 'Q（ボウルを空ける・帰ってもらう など）'], ['捨てる', 'ゴミ箱まで運んで、ゴミ箱をねらって E'], ['家具の配置', 'B'], ['パソコン・レシピ', 'Tab / R']];
     UI.modal({
       title: 'ようこそ！ケーキ屋さんへ',
       html: `<div style="display:grid;gap:10px"><p style="margin:0">一人称でお店の中を歩いて、<b>家具と材料を買う → トラックから運ぶ → 生地 → 焼く → クリーム → デコ → ショーケースに並べる（ホールのまま／ナイフで6等分）→ 接客・お会計 → 洗い物</b>を自分の手でやります。家具をどこに置くかもみんなで自由に。分担すると早い！</p>

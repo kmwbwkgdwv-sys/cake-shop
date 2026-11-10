@@ -80,6 +80,9 @@ ok(nh > nq * 0.06 && nh < nq * 0.35, 'some customers buy whole cakes (' + nh + '
 ok((holeBy.party || 0) > (holeBy.student || 0), 'party customers buy whole more than students');
 const hp0 = S.menu.short.hp; for (const r in S.menu) if (S.menu[r].hp) A({ t: 'price', r, hp: sim.holeMarket(S, r) * 1.5 });
 const [nh2, nq2] = holeRun(300);
-ok(nh2 < nh * 0.25, 'whole price too high → few whole orders (' + nh2 + '/' + nq2 + ')');
+ok(nh2 / nq2 < (nh / nq) * 0.65, 'whole price x1.5 → fewer whole orders (' + nh2 + '/' + nq2 + ' vs ' + nh + '/' + nq + ')');
+for (const r in S.menu) if (S.menu[r].hp) A({ t: 'price', r, hp: sim.holeMarket(S, r) * 1.9 });
+const [nh3, nq3] = holeRun(300);
+ok(nh3 === 0, 'whole price x1.9 (over PRICE_MAX) → nobody buys whole (' + nh3 + '/' + nq3 + ')');
 ok(A({ t: 'price', r: 'short', hp: hp0 }).ok && S.menu.short.hp === hp0 && !A({ t: 'price', r: 'butter_cookie', hp: 2000 }).ok, 'set whole price; cookies have no whole');
 console.log(fail ? fail + ' FAILED' : 'ALL OK');
